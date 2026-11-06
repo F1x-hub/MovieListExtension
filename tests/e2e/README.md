@@ -47,8 +47,8 @@ Everything else is unreachable: the browser's proxy and host rules from
 under a `demo-` project, and a test refuses to start if the page reports any
 other project, so a run cannot touch production data.
 
-Not covered: the toolbar popup and side panel, third-party sites and their
-content scripts, live video players, Cloud Functions.
+Not covered here: the toolbar popup and side panel, Cloud Functions. Live video
+players have their own specs: see [The player on real sources](#the-player-on-real-sources).
 
 ## What it checks
 
@@ -78,6 +78,81 @@ broken and clean motion, so a green journey means something.
 - On Settings, the Updates and Media Player sections grow after the first paint, by
   103px and 55px, and push the footer down with them. At 1440×900 it is already below
   the fold by then. The cause has not been looked into.
+
+## The player on real sources
+
+```bash
+npm run test:e2e:player
+```
+
+```bash
+npm run test:e2e:player:headed
+```
+
+```bash
+npm run test:e2e:player -- --no-build series
+```
+
+These specs in `player/` need the internet and take 10 to 30 minutes. They are not part
+of `test:e2e`, because their result depends on what providers do today. With a window,
+do not touch the browser while they run: a click there lands in the test.
+
+They watch with uBlock Origin Lite, as the extension's owner does, because ads and what a
+provider does when its ads are blocked change what a viewer gets. The rig copies only
+the extension's folder from Chrome's default profile, or from `E2E_UBLOCK_PATH`, so the
+browser's profile and settings stay out of it and the filter settings are the defaults.
+Without an installed copy a run prints a warning and goes on without it. Add
+`--no-ublock` to see what a viewer without a blocker gets:
+
+```bash
+npm run test:e2e:player -- --no-ublock
+```
+
+| Real | Replaced |
+| --- | --- |
+| The `dist/` build, its service worker and its network rules, uBlock Origin Lite | Firebase Auth and Firestore: the same local emulators |
+| Finding a film on each provider, embeds, players, streams, ads | The film's card: a fixed record in `player/films.cjs`, because the Kinopoisk proxy accepts only a production sign-in |
+| Real clicks and keys, the real clock, provider frames left untouched | TMDB answers for Home, used only while signing in |
+
+Production cannot be reached: `PRODUCTION_HOSTS` in `lib/config.cjs` are removed at the
+browser's name resolver, and `safety.spec.cjs` checks that on every run.
+
+| Spec | What it checks |
+| --- | --- |
+| `sources.spec.cjs` | «Смотреть», then every offered source, on a film, a series and an anime |
+| `controls.spec.cjs` | Pause, the timeline, keys, volume, settings, full screen, minimise and close, on KinoGo (provider frame) and Rutube (extension page) |
+| `look.spec.cjs` | Layout around a real picture in both themes at three window sizes, and Esc on the source list |
+| `series.spec.cjs` | Next, previous, the episode list, a source change, and «Попробовать другой источник» |
+| `safety.spec.cjs` | The control group: unreachable production, uBlock really blocking, and each guard shown catching what it should |
+
+A source counts as playing only when frames are being decoded, time is moving, the
+length matches the film and the picture is neither black nor frozen. A `ready` state
+proves nothing: it is what a source reports while its player shows nothing. An episode
+is checked by the real length of its stream, because the header can say anything.
+A source that says it is unavailable passes, since a provider may be down; one that
+claims to play and shows nothing fails, and `provider-refused` in the table names the
+HTTP error its frame got.
+
+Results go to `.e2e-output/`: `player-summary.md` holds one row per source, with times,
+ads, resolution and stalls, and `player-report/index.html` holds each run's screenshots
+and filmstrips. A failed source also leaves `<source>-frames.json` in `player-results/`,
+with what each frame really held. A person should look at those: the specs measure geometry and motion,
+and cannot say that a player looks right.
+
+Timings include the 3 seconds the spec waits before pressing play, as a viewer would
+pause. They come from one network on one day, and without a window Chromium decodes in
+software; compare with `test:e2e:player:headed` before relying on one.
+
+Providers answer differently by browser and by blocker, so read a result with its mode,
+named at the top of `player-summary.md`. On 2026-11-06 KinoGo served a series through
+`stravers.live` with a window and through `nextembed.ws` without one. Its next-episode
+controls worked on the first and not on the second, and with a window but no uBlock the
+same series never started, apparently waiting on its ad loader. AnimeGo showed about a minute of ads
+over the start of an episode without uBlock, and none with it.
+
+While a balancer refuses a source, specs that need it skip or use another source, and
+`player-summary.md` shows why. [`docs/TASKS.md`](../../docs/TASKS.md) lists the sources
+in that state.
 
 ## Rating dialogs outside the film page
 

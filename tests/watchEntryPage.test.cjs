@@ -154,6 +154,121 @@ function start(instance, manual = false) {
     assert.equal(saves, 0, 'alias activation does not write preferences');
 
     const activation = deferred(); let calls = 0;
+    // A title-only provider opens on its own first episode: it has to be told.
+    const episodeSync = ({ seasonNumber = 1, episodeNumber = 2, source = 'PLAYER_NAVIGATION', mode = 'NATIVE_BRIDGE', applyResult = true, bridgeSupportsFrame } = {}) => {
+        const container = w.document.createElement('div');
+        const frame = w.document.createElement('iframe');
+        frame.src = 'https://balancer.test/embed/1';
+        container.append(frame);
+        w.document.body.append(container);
+        const selection = { kinopoiskId: 42, seasonNumber, episodeNumber, source };
+        const applies = [];
+        const adapter = {
+            getSelectionMode: () => mode,
+            async applySelection(requested, options) { applies.push({ requested, options }); return typeof applyResult === 'function' ? applyResult() : applyResult; }
+        };
+        if (bridgeSupportsFrame !== undefined) adapter.supportsNativeBridgeSource = () => bridgeSupportsFrame;
+        const states = [];
+        let unmounted = 0;
+        const instance = Object.assign({
+            elements: { videoContainer: container }, sourceSwitchRequestId: 7, selectedMovie: { kinopoiskId: 42 },
+            playbackController: { getSelection: () => selection, getAdapter: id => (id === 'exfs' ? adapter : null) },
+            isSourceSwitchRequestCurrent(id) { return id === this.sourceSwitchRequestId; },
+            unmountActivePlayer() { unmounted++; },
+            setPlayerSourceState(state, options) { states.push({ state, ...options }); }
+        }, w.MovieDetailsWatchEntryMethods);
+        return { instance, applies, states, adapter, frame, container, selection, unmounted: () => unmounted };
+    };
+    const sync = fixture => fixture.instance.syncNativeProviderEpisode('exfs', 7, '42');
+
+    {
+        const later = episodeSync();
+        assert.equal(await sync(later), true, 'a later episode is sent to the provider frame');
+        assert.equal(later.applies.length, 1);
+        assert.equal(later.applies[0].requested, later.selection);
+        assert.equal(later.applies[0].options.waitForBridge, true, 'the frame is still loading, so the bridge has to wait for it');
+        assert.equal(later.adapter.activeContainer, later.container);
+        assert.deepEqual(later.states, []);
+    }
+    for (const source of ['HERO_WATCH', 'PROVIDER_SWITCH']) {
+        const first = episodeSync({ episodeNumber: 1, source });
+        assert.equal(await sync(first), false);
+        assert.equal(first.applies.length, 0, `${source} on S1E1 is where the frame opens anyway; pressing it would restart the stream`);
+    }
+    const backToFirst = episodeSync({ episodeNumber: 1, source: 'PLAYER_NAVIGATION' });
+    await sync(backToFirst);
+    assert.equal(backToFirst.applies.length, 1, 'a viewer who asked for S1E1 is taken there');
+    const resume = episodeSync({ seasonNumber: 3, episodeNumber: 5, source: 'HERO_WATCH' });
+    await sync(resume);
+    assert.equal(resume.applies.length, 1, '«Смотреть» resuming a later episode needs it too');
+    const direct = episodeSync({ mode: 'DIRECT' });
+    assert.equal(await sync(direct), false);
+    assert.equal(direct.applies.length, 0, 'a provider addressed directly already got the episode');
+    const inRoom = episodeSync();
+    inRoom.instance.watchRoomController = { room: {} };
+    await sync(inRoom);
+    assert.equal(inRoom.applies.length, 0, 'a watch room keeps its own selection flow');
+    const broadcast = episodeSync();
+    broadcast.instance.broadcastEpisode = { seasonNumber: 1, episodeNumber: 2 };
+    await sync(broadcast);
+    assert.equal(broadcast.applies.length, 0, 'a broadcast confirms its own episode');
+
+    {
+        const pending = deferred();
+        const moving = episodeSync({ applyResult: () => pending.promise });
+        const running = sync(moving);
+        const { instance } = moving;
+        assert.equal(instance.isStaleNativeProviderReport(1, 1), true, 'while moving to S1E2, the frame reporting S1E1 says nothing about the viewer');
+        assert.equal(instance.isStaleNativeProviderReport(1, 2), false, 'the requested episode is not stale');
+        instance.sourceSwitchRequestId = 8;
+        assert.equal(instance.isStaleNativeProviderReport(1, 1), false, 'a later source switch owns its own reports');
+        instance.sourceSwitchRequestId = 7;
+        pending.resolve(true);
+        await running;
+        assert.equal(instance.isStaleNativeProviderReport(1, 1), false, 'once confirmed, the provider is free to report again');
+    }
+    {
+        const refused = episodeSync({ applyResult: false });
+        assert.equal(await sync(refused), false);
+        assert.equal(refused.unmounted(), 1, 'another episode must not keep playing under this one\'s name');
+        assert.equal(refused.states[0].state, 'unavailable');
+        assert.match(refused.states[0].message, /не смог открыть эту серию/);
+    }
+    {
+        const noBridge = episodeSync({ bridgeSupportsFrame: false });
+        assert.equal(await sync(noBridge), false);
+        assert.equal(noBridge.applies.length, 0, 'a balancer without episode selectors is not asked');
+        assert.equal(noBridge.states[0].state, 'unavailable', 'and the viewer is told at once');
+    }
+    {
+        const moved = deferred();
+        const stale = episodeSync({ applyResult: () => moved.promise });
+        const running = sync(stale);
+        stale.instance.sourceSwitchRequestId = 8;
+        moved.resolve(false);
+        await running;
+        assert.deepEqual(stale.states, [], 'a failure of an abandoned attempt changes nothing');
+        assert.equal(stale.unmounted(), 0);
+    }
+    {
+        const failedAnyway = deferred();
+        const dead = episodeSync({ applyResult: () => failedAnyway.promise });
+        const running = sync(dead);
+        dead.container.dataset.sourceState = 'unavailable';
+        failedAnyway.resolve(false);
+        await running;
+        assert.deepEqual(dead.states, [], 'a source that already said it cannot play keeps its own message');
+    }
+    {
+        const another = deferred();
+        const moved = episodeSync({ applyResult: () => another.promise });
+        const running = sync(moved);
+        moved.selection.episodeNumber = 3;
+        another.resolve(false);
+        await running;
+        assert.deepEqual(moved.states, [], 'neither does a failure for an episode the viewer has left');
+    }
+
     class Manager {
         constructor() { this.proPlayerEnabled = true; this.elements = {}; }
         async handleWatchClick() { calls++; await activation.promise; return true; }

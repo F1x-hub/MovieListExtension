@@ -40,8 +40,16 @@ for (const file of ['src/pages/movie-details/WatchEntryController.js', 'src/shar
     replacement.click(); assert.equal(delegated, 1);
     assert.equal(control.popover.hidden, true); assert.equal(w.document.activeElement, control.toggle);
     control.open();
-    control.group.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    let escapesReachingThePage = 0;
+    const countEscape = event => { if (event.key === 'Escape') escapesReachingThePage++; };
+    w.document.addEventListener('keydown', countEscape);
+    w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     assert.equal(control.popover.hidden, true);
+    assert.equal(escapesReachingThePage, 0, 'Esc closes the source list only: the dialog stack above must not close the player too');
+    assert.equal(w.document.activeElement, control.toggle);
+    control.toggle.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(escapesReachingThePage, 1, 'with the list closed, Esc belongs to the page again');
+    w.document.removeEventListener('keydown', countEscape);
     control.sync('mediaplayer:torrent', { torrentEligible: true, busy: true });
     assert.equal(control.watch.dataset.aliasValue, value);
     assert.equal(control.watch.getAttribute('aria-busy'), 'true');

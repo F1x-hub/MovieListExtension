@@ -4,6 +4,8 @@
  * specs inside them. Arguments are passed to Playwright, plus:
  *   --no-build   reuse the existing dist/
  *   --headed     open a visible browser (real GPU timing)
+ *   --player     run the player specs against real providers (needs the internet)
+ *   --no-ublock  with --player, watch without uBlock Origin Lite
  */
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -54,7 +56,8 @@ function main() {
     const argv = process.argv.slice(2);
     const skipBuild = argv.includes('--no-build');
     const headed = argv.includes('--headed');
-    const playwrightArgs = argv.filter(arg => arg !== '--no-build' && arg !== '--headed');
+    const player = argv.includes('--player');
+    const playwrightArgs = argv.filter(arg => !['--no-build', '--headed', '--player', '--no-ublock'].includes(arg));
     // Baselines come from headless rendering; a GPU paints text differently.
     if (headed) playwrightArgs.push('--ignore-snapshots');
 
@@ -77,6 +80,8 @@ function main() {
             JAVA_HOME: javaHome,
             PATH: `${path.join(javaHome, 'bin')}${path.delimiter}${process.env.PATH}`,
             E2E_HEADED: headed ? '1' : '',
+            E2E_PLAYWRIGHT_CONFIG: player ? 'playwright.player.config.cjs' : '',
+            E2E_NO_UBLOCK: argv.includes('--no-ublock') ? '1' : '',
             E2E_PLAYWRIGHT_ARGS: JSON.stringify(playwrightArgs)
         }
     });

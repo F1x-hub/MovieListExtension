@@ -9116,6 +9116,7 @@ class MovieDetailsManager {
                 }
                 const incomingSeasonNumber = this.parsePlaybackNumber(seasonNumber ?? season);
                 const incomingEpisodeNumber = this.parsePlaybackNumber(episodeNumber ?? episode);
+                if (this.isStaleNativeProviderReport?.(incomingSeasonNumber, incomingEpisodeNumber)) return;
                 if (this.broadcastEpisode && ((incomingSeasonNumber != null
                     && incomingSeasonNumber !== this.broadcastEpisode.seasonNumber)
                     || (incomingEpisodeNumber != null && incomingEpisodeNumber !== this.broadcastEpisode.episodeNumber))) {
@@ -9166,6 +9167,10 @@ class MovieDetailsManager {
                     providerId,
                     providerState
                 } = event.data;
+                if (this.isStaleNativeProviderReport?.(
+                    this.parsePlaybackNumber(seasonNumber ?? season),
+                    this.parsePlaybackNumber(event.data.episodeNumber ?? episode)
+                )) return;
                 const currentSel = this.playbackController?.getSelection();
                 const activeAdapter = this.playbackController?.getAdapter?.(
                     this.playbackController?.getActiveProvider?.()
@@ -10965,6 +10970,7 @@ class MovieDetailsManager {
                 this.refreshProviderDubSelector?.(sourceChanged ? parserId : null);
                 this.bindProviderVideoTracking?.(sourceChanged ? parserId : null);
                 this.observePlayerMetrics?.('loading', { requestId, parserId });
+                if (sourceChanged) void this.syncNativeProviderEpisode?.(parserId, requestId, movieId);
             }
             return sourceChanged;
         }
@@ -11350,7 +11356,13 @@ class MovieDetailsManager {
         }
     }
 
-    renderDefaultPlayer(url, { requestId = null, movieId = this.selectedMovie?.kinopoiskId } = {}) {
+    /**
+     * @param {string} url What the frame loads.
+     * @param {object} [options]
+     * @param {string} [options.sourceValue] What the source list calls it, when that
+     *   differs from the frame's address: retries and the move to the next source go by it.
+     */
+    renderDefaultPlayer(url, { requestId = null, movieId = this.selectedMovie?.kinopoiskId, sourceValue = url } = {}) {
         if (!this.getPlayerSurface().mountFrame(url, {
             allow: 'autoplay; fullscreen', sandbox: MovieDetailsPlayerSurface.getProviderSandbox(url)
         })) return;
@@ -11361,7 +11373,7 @@ class MovieDetailsManager {
         }
         const lifecycle = window.PlayerSourceLifecycle;
         if (!iframe || !lifecycle) return;
-        const lifecycleOptions = this.createSourceLifecycleOptions({ url, movieId, requestId });
+        const lifecycleOptions = this.createSourceLifecycleOptions({ url: sourceValue, movieId, requestId });
         this.sourceLifecycleWatcher = lifecycle.watchIframe(iframe, {
             timeoutMs: 5000,
             isRequestCurrent: lifecycleOptions.isRequestCurrent,
@@ -11412,7 +11424,7 @@ class MovieDetailsManager {
         const url = this.buildVidSrcUrl(imdbId);
         console.log('[VidSrc] Loading embed');
         this.currentVideoUrl = url;
-        this.renderDefaultPlayer(url, lifecycleContext);
+        this.renderDefaultPlayer(url, { ...lifecycleContext, sourceValue: `vidsrc:${imdbId}` });
     }
 
     async getLastSource(movieId) {

@@ -41,6 +41,26 @@ records what was finished.
   can sit under the header when the page is scrolled to the end; scrolling up reveals
   it. This comes from the geometry, and no test covers it.
 
+## Sources worth a look
+
+- **`api.nextembed.ws` and `api.ortified.ws` refuse every embed.** Since the afternoon
+  of 2026-11-06 they answer `/embed/` with HTTP 422 and an empty body, so KinoGo films and
+  Ex-FS are unavailable, and the player now says so and moves on. Why is not known: it may
+  be a limit on this address after a day of test runs, or a change on their side. Nobody
+  has tried from another network. Next step: open a film on KinoGo in a normal browser.
+- **Next episode on KinoGo through `nextembed.ws`.** That balancer has no episode
+  selectors. The viewer should now get an error instead of S1E1 under a header saying
+  S1E2, but this has not been seen working, because the balancer refuses everything today.
+- **VidSrc** did not answer from this network in any run, and is the one source offered
+  without an availability check. It says plainly that it is unavailable, and after a
+  12-second grace period the page moves on, so a film can take about 20 seconds to reach a
+  working source when KinoGo and Ex-FS refuse. Ranking it after Rutube would shorten that.
+- **HDRezka** answers 403 and asks for a browser check, so it is not offered.
+- **Picture size at the start** differs a lot: Rutube 1280×720, KinoGo 854×480, Seasonvar
+  722×406, Kodik 640×360. Whether better quality was on offer has not been checked.
+- **KinoGo, Ex-FS and some Rutube starts need a second press** on the play button after
+  «Смотреть». Whether that can be avoided has not been looked into.
+
 ## Rig reliability
 
 - **A 23px snap when the rating dialog opens** was seen once and not reproduced. It

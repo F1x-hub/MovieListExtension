@@ -65,7 +65,13 @@
             listen(doc.defaultView, 'resize', () => { if (!this.popover.hidden) this.align(); });
             listen(group, 'keydown', event => {
                 if (this.popover.hidden) return;
-                if (event.key === 'Escape') { event.preventDefault(); this.close(true); }
+                if (event.key === 'Escape') {
+                    // The page's dialog stack listens further up and would close the player too.
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.close(true);
+                    return;
+                }
                 if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || !this.popover.contains(event.target)) return;
                 const buttons = this.buttons();
                 if (!buttons.length) return;

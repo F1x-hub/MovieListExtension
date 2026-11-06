@@ -176,7 +176,21 @@ function installMotionRecorder() {
     };
 }
 
-async function installInitScripts(context, { pinnedDate, projectId, authOrigin, firestoreHost, firestorePort }) {
+/**
+ * Live mode runs on the real clock, because providers sign links with it, and on
+ * extension pages only: a provider's own frames must load exactly as they would
+ * for a viewer.
+ */
+async function installLiveInitScripts(context, redirect) {
+    const onExtensionPages = (script, argument) => ({
+        content: `if (location.protocol === 'chrome-extension:') (${script})(${JSON.stringify(argument)});`
+    });
+    await context.addInitScript(onExtensionPages(redirectFirebaseToEmulators, redirect));
+    await context.addInitScript(onExtensionPages(installMotionRecorder));
+}
+
+async function installInitScripts(context, { pinnedDate, projectId, authOrigin, firestoreHost, firestorePort, live = false }) {
+    if (live) return installLiveInitScripts(context, { projectId, authOrigin, firestoreHost, firestorePort });
     await context.addInitScript(pinDate, { offsetMs: new Date(pinnedDate).getTime() - Date.now() });
     await context.addInitScript(redirectFirebaseToEmulators, { projectId, authOrigin, firestoreHost, firestorePort });
     await context.addInitScript(installMotionRecorder);

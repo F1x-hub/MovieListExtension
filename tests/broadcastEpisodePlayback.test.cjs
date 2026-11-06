@@ -143,6 +143,22 @@ test('every source entry rejects opaque broadcast playback before provider/netwo
     assert.match(manager.buildVidSrcUrl('tt1234567'), /\/tv\?.*season=2&episode=6/);
 });
 
+test('VidSrc fails under the name the source list knows it by, or the move to the next source never happens', () => {
+    const { manager } = managerHarness();
+    const renders = [];
+    Object.assign(manager, {
+        selectedMovie: { type: 'movie' },
+        renderDefaultPlayer(url, options) { renders.push({ url, options }); }
+    });
+    manager.loadVidSrcSource('tt1234567', { requestId: 4, movieId: 7 });
+    assert.match(renders[0].url, /^https:\/\/vidsrc-embed\.ru\/embed\/movie\?imdb=tt1234567/, 'the frame loads the embed');
+    assert.equal(renders[0].options.sourceValue, 'vidsrc:tt1234567', 'the lifecycle reports the source list value');
+    assert.equal(renders[0].options.requestId, 4);
+    assert.equal(renders[0].options.movieId, 7);
+    assert.match(fs.readFileSync('src/pages/movie-details/movie-details.js', 'utf8'),
+        /createSourceLifecycleOptions\(\{ url: sourceValue, movieId, requestId \}\)/);
+});
+
 test('native broadcast waits for exact confirmation and closes on refusal or bridge exception', async () => {
     for (const response of [true, false, 'DISPATCHED', new Error('bridge failed')]) {
         const { manager } = managerHarness();

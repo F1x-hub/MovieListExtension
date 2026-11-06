@@ -22,7 +22,7 @@ function proxyBypassForFixture(origin) {
 // The extension follows the browser language until the user picks one, so the
 // UI language is pinned: assertions are written against the Russian interface
 // and a CI runner's English Chromium must not change what the tests see.
-async function launchExtensionContext({ extensionPath = path.resolve(__dirname, '../..'), fixtureOrigin, additionalFixtureOrigins = [], uiLanguage = 'ru', headless = true, contextOptions = {} } = {}) {
+async function launchExtensionContext({ extensionPath = path.resolve(__dirname, '../..'), fixtureOrigin, additionalFixtureOrigins = [], uiLanguage = 'ru', liveNetworkBlockedHosts = null, extraExtensionPaths = [], headless = true, contextOptions = {} } = {}) {
     const fixtures = [fixtureOrigin, ...additionalFixtureOrigins];
     const bypass = `<-loopback>;${[...new Set(fixtures.map(origin => proxyBypassForFixture(origin).split(';')[1]))].join(';')}`;
     const manifest = JSON.parse(fs.readFileSync(path.join(extensionPath, 'manifest.json'), 'utf8'));
@@ -73,11 +73,18 @@ async function launchExtensionContext({ extensionPath = path.resolve(__dirname, 
             executablePath, channel: 'chromium', headless, env, locale: uiLanguage,
             args: [
                 `--lang=${uiLanguage}`,
-                `--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`,
-                `--proxy-server=http://127.0.0.1:${denyProxy.address().port}`,
-                `--proxy-bypass-list=${bypass}`,
-                '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
-                '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--disable-quic'
+                `--disable-extensions-except=${[extensionPath, ...extraExtensionPaths].join(',')}`,
+                `--load-extension=${[extensionPath, ...extraExtensionPaths].join(',')}`,
+                // Live mode reaches the real internet except for the hosts it names.
+                ...(liveNetworkBlockedHosts ? [
+                    `--host-resolver-rules=${liveNetworkBlockedHosts.map(host => `MAP ${host} ~NOTFOUND`).join(', ')}`,
+                    '--mute-audio'
+                ] : [
+                    `--proxy-server=http://127.0.0.1:${denyProxy.address().port}`,
+                    `--proxy-bypass-list=${bypass}`,
+                    '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
+                    '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--disable-quic'
+                ])
             ]
         });
         context.on('response', response => {
@@ -86,9 +93,12 @@ async function launchExtensionContext({ extensionPath = path.resolve(__dirname, 
                 if (['http:', 'https:'].includes(url.protocol) && url.hostname !== '127.0.0.1') external += 1;
             } catch { /* Non-network URL. No response data is retained. */ }
         });
-        const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker', { timeout: 15000 });
+        // Another loaded extension has a worker of its own, and may start first.
+        const expectedId = extensionIdFromKey(manifest.key);
+        const isOurs = candidate => new URL(candidate.url()).host === expectedId;
+        const worker = context.serviceWorkers().find(isOurs)
+            || await context.waitForEvent('serviceworker', { predicate: isOurs, timeout: 15000 });
         const extensionId = new URL(worker.url()).host;
-        if (extensionId !== extensionIdFromKey(manifest.key)) throw new Error('Loaded extension ID does not match manifest key.');
         return { context, extensionId, worker, userDataDir,
             blockedProxyRequests: () => blocked, proxyHitsFor: host => probes.get(host) || 0,
             externalResponses: () => external, close };

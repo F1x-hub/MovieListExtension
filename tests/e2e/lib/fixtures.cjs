@@ -5,6 +5,7 @@ const { launchExtensionContext } = require('../../helpers/extensionContext.cjs')
 const config = require('./config.cjs');
 const { installInitScripts } = require('./initScripts.cjs');
 const { installTmdb, emulator } = require('./externalWorld.cjs');
+const { prepareUblockCopy, waitForUblockRules } = require('./ublock.cjs');
 const { kinopoiskMappings } = require('./catalog.cjs');
 const { startFilmstrip, renderFilmstrip, measureBrightness } = require('./filmstrip.cjs');
 const { analyzeElement, layoutAnimations, summarizeShifts, summarizeLongFrames, themeFlashes } = require('./motionAnalysis.cjs');
@@ -45,9 +46,12 @@ async function signIn(page, extensionId, user) {
     }
 }
 
-function watchForPageErrors(page) {
+function watchForPageErrors(page, { ownCodeOnly = false } = {}) {
     const errors = [];
-    page.on('pageerror', error => errors.push(error.message));
+    page.on('pageerror', error => {
+        // In live mode a provider's own frames may throw whatever they like.
+        if (!ownCodeOnly || error.stack?.includes('chrome-extension://')) errors.push(error.message);
+    });
     return errors;
 }
 
@@ -99,7 +103,13 @@ function describeReport(report) {
 }
 
 const test = base.extend({
-    extension: async ({}, use) => {
+    /** True reaches real providers; see tests/e2e/README.md for what stays replaced. */
+    liveNetwork: [false, { option: true }],
+
+    /** Live mode only: watches with uBlock Origin Lite, as the owner does. */
+    ublock: [false, { option: true }],
+
+    extension: async ({ liveNetwork, ublock }, use) => {
         await emulator.reset();
         await emulator.createUser(config.TEST_USER);
         await emulator.putDocument(`users/${config.TEST_USER.uid}`, {
@@ -108,10 +118,14 @@ const test = base.extend({
             approvalStatus: 'approved',
             isAdmin: false
         });
+        const ublockPath = liveNetwork && ublock ? prepareUblockCopy() : null;
+        if (liveNetwork && ublock && !ublockPath) console.warn('[player] uBlock Origin Lite is not installed in Chrome: running without it');
         const harness = await launchExtensionContext({
             extensionPath: config.EXTENSION_PATH,
             fixtureOrigin: config.AUTH_ORIGIN,
             additionalFixtureOrigins: [config.FIRESTORE_ORIGIN],
+            liveNetworkBlockedHosts: liveNetwork ? config.PRODUCTION_HOSTS : null,
+            extraExtensionPaths: ublockPath ? [ublockPath] : [],
             headless: !HEADED,
             contextOptions: { viewport: config.VIEWPORT, timezoneId: config.TIMEZONE, deviceScaleFactor: 1 }
         });
@@ -120,16 +134,19 @@ const test = base.extend({
             projectId: config.PROJECT_ID,
             authOrigin: config.AUTH_ORIGIN,
             firestoreHost: config.FIRESTORE_HOST,
-            firestorePort: config.FIRESTORE_PORT
+            firestorePort: config.FIRESTORE_PORT,
+            live: liveNetwork
         });
         await installTmdb(harness.context);
         await seedReturningUser(harness.worker);
+        const ublockState = ublockPath ? await waitForUblockRules(harness.context) : null;
         try {
             await use({
                 context: harness.context,
                 id: harness.extensionId,
                 url: relativePath => pageUrl(harness.extensionId, relativePath),
-                user: config.TEST_USER
+                user: config.TEST_USER,
+                ublock: ublockState
             });
         } finally {
             await harness.close();
@@ -139,9 +156,9 @@ const test = base.extend({
     /** False hands the spec a blank page of a guest; how and whether to sign in is up to it. */
     startSignedIn: [true, { option: true }],
 
-    page: async ({ extension, startSignedIn }, use, testInfo) => {
+    page: async ({ extension, startSignedIn, liveNetwork }, use, testInfo) => {
         const page = await extension.context.newPage();
-        const pageErrors = watchForPageErrors(page);
+        const pageErrors = watchForPageErrors(page, { ownCodeOnly: liveNetwork });
         if (startSignedIn) await signIn(page, extension.id, extension.user);
         await use(page);
         await testInfo.attach('page-errors.json', { body: JSON.stringify(pageErrors, null, 2), contentType: 'application/json' });

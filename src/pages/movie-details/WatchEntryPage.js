@@ -62,6 +62,59 @@
             return [...(this.elements?.sourceButtonsContainer?.querySelectorAll('.source-btn') || [])]
                 .map(button => button.dataset.value).filter(value => value && value !== 'mediaplayer:torrent');
         },
+        /**
+         * A title-only provider's frame opens on its own first episode, so after a
+         * source change it has to be told which episode the viewer is on. Otherwise
+         * the header and the stream disagree, or the frame's report of that first
+         * episode moves the viewer back to it.
+         */
+        async syncNativeProviderEpisode(parserId, requestId, movieId) {
+            if (this.broadcastEpisode || this.watchRoomController?.room) return false;
+            const selection = this.playbackController?.getSelection?.();
+            if (selection?.seasonNumber == null || selection?.episodeNumber == null) return false;
+            const adapter = this.playbackController?.getAdapter?.(parserId);
+            if (adapter?.getSelectionMode?.() !== 'NATIVE_BRIDGE') return false;
+            // Where every frame opens anyway; pressing it again would only restart the stream.
+            const opensThereByItself = Number(selection.seasonNumber) === 1 && Number(selection.episodeNumber) === 1
+                && ['HERO_WATCH', 'PROVIDER_SWITCH'].includes(selection.source);
+            if (opensThereByItself) return false;
+            const container = this.elements?.videoContainer;
+            const frame = container?.querySelector?.('iframe[data-player-source-active="true"]') || container?.querySelector?.('iframe');
+            if (!frame) return false;
+
+            const sync = { requestId, seasonNumber: Number(selection.seasonNumber), episodeNumber: Number(selection.episodeNumber) };
+            this.nativeEpisodeSync = sync;
+            adapter.activeContainer = container;
+            let applied = false;
+            if (adapter.supportsNativeBridgeSource?.(frame.src) !== false) {
+                try { applied = await adapter.applySelection(selection, { waitForBridge: true }); }
+                catch (error) { console.warn('[MovieDetails] Provider episode sync failed:', error); }
+            }
+            if (this.nativeEpisodeSync === sync) this.nativeEpisodeSync = null;
+            if (applied === true) return true;
+
+            // Only this attempt's own failure: the viewer may have moved on, or the
+            // source may already have reported that it cannot play at all.
+            const current = this.playbackController?.getSelection?.();
+            if (!this.isSourceSwitchRequestCurrent(requestId, movieId)
+                || Number(current?.seasonNumber) !== sync.seasonNumber
+                || Number(current?.episodeNumber) !== sync.episodeNumber
+                || !frame.isConnected
+                || ['error', 'unavailable'].includes(container.dataset?.sourceState)) return false;
+            // Better an honest error than another episode under this one's name.
+            this.unmountActivePlayer?.();
+            this.setPlayerSourceState('unavailable', {
+                message: global.PlayerLocale?.t?.('episode_unavailable', {}, 'Источник не смог открыть эту серию.') || 'Источник не смог открыть эту серию.',
+                onRetry: () => this.changeVideoSource(`parser:${parserId}`)
+            });
+            return false;
+        },
+        /** While a frame is being moved to an episode, its reports of another one are stale. */
+        isStaleNativeProviderReport(seasonNumber, episodeNumber) {
+            const sync = this.nativeEpisodeSync;
+            if (!sync || sync.requestId !== this.sourceSwitchRequestId) return false;
+            return Number(seasonNumber) !== sync.seasonNumber || Number(episodeNumber) !== sync.episodeNumber;
+        },
         getWatchRankOptions() {
             const movie = this.selectedMovie;
             return { anime: Boolean(global.MediaClassifier?.isAnime?.(movie)

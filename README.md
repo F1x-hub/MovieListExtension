@@ -426,7 +426,8 @@ Set `$env:HDREZKA_PROBE_DIST='1'` as well to check the generated `dist/` files.
   CSS ownership, allowed color exceptions, and UI review checklist.
 - [`docs/UPDATER_RELEASE.md`](docs/UPDATER_RELEASE.md) — signed GitHub release and
   one-time Windows updater setup.
-- [`tests/e2e/README.md`](tests/e2e/README.md) — browser test rig: how to run it, read
+- [`tests/e2e/README.md`](tests/e2e/README.md) — browser test rig, including the player
+  on real sources (`npm run test:e2e:player`): how to run it, read
   its filmstrips, add a journey, and which defects it currently lists as open.
 - [`docs/TASKS.md`](docs/TASKS.md) — open work: checks to run first,
   known bugs, rig reliability, and possible cleanup.
@@ -450,6 +451,7 @@ keeps npm-compatible three-component semver metadata.
 - The torrent picker is now a side panel. «Торрент» opens it next to the player and moves the player aside, so the video stays fully visible; pressing it again closes the panel and restores the width. Below 900px wide the panel sits under the player.
 - Release rows lead with what differs between releases: quality, voice-over, size, tracker and seeders, with the full release name on a muted line. All releases are in one scrolling list, the filters offer only the qualities that were found, and «Рекомендуем» marks a top release only when it has enough seeders.
 - Releases and saved downloads are two tabs of the panel, and the current download stays pinned above them. A paused or finished download is managed with compact icon actions.
+- `npm run test:e2e:player` checks the player on real sources: the built extension finds and plays real films in Chromium with real clicks, with uBlock Origin Lite as a viewer has it, while Firebase stays on local emulators and production hosts cannot be reached. A source passes only if frames are decoded, time moves, the length matches the film and the picture is neither black nor frozen. It covers every offered source on a film, a series and an anime, the controls, the layout in both themes at three window sizes, and episode changes, and writes one row per source to `.e2e-output/player-summary.md`. What it found about individual sources is in [`docs/TASKS.md`](docs/TASKS.md).
 - `npm run test:e2e` adds a browser test rig: the built extension runs in real Chromium on Firebase emulators with the real security rules, and its tests click through Home, the film page, the rating dialogs, Settings and the old list-page links. It records per-frame motion, layout jumps and wrong-theme flashes, renders filmstrips, and compares screenshots in both themes. It has not been added to `npm test` or CI.
 
 ### Fixes
@@ -469,6 +471,9 @@ keeps npm-compatible three-component semver metadata.
 - The browser rig's sign-in now waits for what it promised. Its waits returned at once, because `page.waitForFunction` takes a returned promise as a truthy answer, so journeys started before the personal preview and name were saved, about 400 ms later. Every signed-in journey now starts with the auth token, Home cache, preview and name saved, as a returning user's does. The one test that relied on the race is gone; a page opened with no saved name is still checked, without a race, by `nav-first-load.spec.cjs`.
 - `tests/dropdownContract.test.js` passes again, and its style ownership checks run for the first time since 1.3.7. It still demanded the custom dropdown shell on Collection, Watchlist, Favorites and Ratings, which moved to native selects enhanced by `SortControl` in that release, and it stopped there. It now checks those selects, fails if the shell comes back, and extends the ownership rule to `.sort-control`. `npm test` now runs it through `pretest`; before, only `npm run test-dropdown-contract` did, which is why the failure went unnoticed.
 - Signing out while Collection is open now shows the sign-in message. The page called a method that does not exist and stopped before showing it. The message also replaces the empty state instead of appearing next to it, and the old count is cleared. `collectionPageState.test.cjs`, now part of `npm test`, covers this and checks that Collection, Ratings and Bookmarks call no missing methods.
+- Esc on the source list closes only the list. It also closed the player and stopped the film, because the key went on to the page's dialog stack.
+- A source that refuses to play no longer leaves a black player. A provider answering with an HTTP error and an empty page still fired the frame's load event, so the player called the source ready and showed nothing, with no error. The frame now reports it from inside, and the player says the source is unavailable and moves on to the next one. The move on from VidSrc also works now: its failures were reported under its embed address instead of its name in the source list, so the page stayed on its error, and «Повторить» bypassed the list. A page with anything in it is left alone, since a challenge can still recover by itself.
+- Changing source keeps the episode. A KinoGo or Ex-FS frame opens on its own first episode and was never told otherwise, so S1E2 became S1E1, sometimes under a header still saying S1E2. The player now moves the new frame to the episode and ignores its report of the first one meanwhile. If the source cannot open that episode, it says so instead of playing another one under its name. The same applies to «Смотреть» resuming a later episode, which went through the same path.
 
 ### Refactor
 

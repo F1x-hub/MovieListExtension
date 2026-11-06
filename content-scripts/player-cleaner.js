@@ -270,10 +270,41 @@
         return true;
     };
 
+    // A provider that refuses an embed can answer with an HTTP error and an empty
+    // page. The frame's load event still fires, so the host would call it ready and
+    // the viewer would get a black player with no error. Only this frame can tell:
+    // the host cannot read a cross-origin frame's status. A page with anything in it
+    // is left alone, since a challenge or an error page can still recover by itself.
+    const reportEmptyProviderPage = (isFinalCheck = false) => {
+        if (providerContentErrorReported || !document.body || window.self === window.top
+            || !/^https?:$/.test(window.location.protocol)) return false;
+        const isDecoration = node => ['SCRIPT', 'STYLE', 'LINK', 'NOSCRIPT', 'TEMPLATE'].includes(node.tagName);
+        const hasContent = Array.from(document.body.childNodes).some(node => (node.nodeType === Node.TEXT_NODE
+            ? Boolean(node.textContent.trim())
+            : node.nodeType === Node.ELEMENT_NODE && !isDecoration(node)));
+        if (hasContent) return false;
+        const status = Number(performance.getEntriesByType?.('navigation')?.[0]?.responseStatus) || 0;
+        // Without a status to go by, a slow page gets time to build itself.
+        if (status < 400 && !isFinalCheck) return false;
+
+        providerContentErrorReported = true;
+        console.warn('[PlayerCleaner] Provider returned an empty page', { hostname: window.location.hostname, status });
+        postToHost({
+            type: 'PLAYER_SOURCE_STATE',
+            state: 'unavailable',
+            reason: 'provider-empty-page',
+            url: window.location.href
+        });
+        return true;
+    };
+
     const scheduleProviderContentErrorCheck = () => {
         [0, 250, 750, 1500].forEach(delay => {
             setTimeout(reportProviderContentError, delay);
         });
+        // After the host has handled the frame's load event, which would overwrite this.
+        setTimeout(() => reportEmptyProviderPage(), 750);
+        setTimeout(() => reportEmptyProviderPage(true), 8000);
     };
 
     // An extension-page parser video (AnimeGo) whose episodes the host owns:
@@ -1079,6 +1110,12 @@
             const tryDispatch = async () => {
                 if (!isCurrentOperation()) {
                     acknowledge('CANCELLED', 'stale-selection');
+                    return;
+                }
+                // Pressing the episode already open would only restart its stream.
+                const openEpisode = readNativeProviderSelection();
+                if (openEpisode?.seasonNumber === requestedSeason && openEpisode?.episodeNumber === requestedEpisode) {
+                    acknowledge('APPLIED', 'provider-already-on-selection');
                     return;
                 }
                 if (await dispatchResult()) {

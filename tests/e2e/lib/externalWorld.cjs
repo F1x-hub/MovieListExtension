@@ -32,6 +32,21 @@ async function installTmdb(context) {
     });
 }
 
+/**
+ * Live mode: the film's card. The Kinopoisk proxy accepts only a production
+ * sign-in, so a card is a fixed record; finding and playing the film stay real.
+ */
+async function installFilmCards(context, films) {
+    await context.route(/^https:\/\/us-central1-[^/]+\.cloudfunctions\.net\/kinopoiskProxy/, route => {
+        const path = new URL(route.request().url()).searchParams.get('path') || '';
+        const id = Number(/\/movie\/(\d+)$/.exec(path)?.[1]);
+        const film = films.find(candidate => candidate.id === id);
+        return route.fulfill(film
+            ? { status: 200, headers: JSON_HEADERS, body: JSON.stringify(film) }
+            : { status: 404, headers: JSON_HEADERS, body: '{"statusCode":404}' });
+    });
+}
+
 const OWNER = { Authorization: 'Bearer owner', 'content-type': 'application/json' };
 const DOCUMENTS = `${FIRESTORE_ORIGIN}/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 
@@ -92,4 +107,4 @@ const emulator = {
     }
 };
 
-module.exports = { installTmdb, emulator };
+module.exports = { installTmdb, installFilmCards, emulator };

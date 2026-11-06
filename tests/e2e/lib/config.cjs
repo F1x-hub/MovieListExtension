@@ -17,6 +17,13 @@ module.exports = {
     // Pages see this date, so release badges and seasonal decor (the Halloween
     // window, for one) do not change the screenshots from one day to the next.
     PINNED_DATE: '2026-06-15T12:00:00+03:00',
+    // Live mode: the production services a run must never reach. Pages point at the
+    // emulators anyway; this is the second lock, at the browser's own name resolver.
+    PRODUCTION_HOSTS: [
+        '*.firebaseio.com', '*.firebaseapp.com', '*.firebasestorage.app', '*.cloudfunctions.net', '*.web.app',
+        'firestore.googleapis.com', 'identitytoolkit.googleapis.com', 'securetoken.googleapis.com',
+        'firebaseinstallations.googleapis.com', 'firebasestorage.googleapis.com'
+    ],
     TIMEZONE: 'Europe/Moscow',
     VIEWPORT: { width: 1440, height: 900 },
     TEST_USER: {
