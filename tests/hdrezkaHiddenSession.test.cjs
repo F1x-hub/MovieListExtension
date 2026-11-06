@@ -186,7 +186,7 @@ test('HDRezka bridge pagehide fails pending callers and suppresses late provider
     assert.equal(env.posted.length, count);
 });
 
-test('HDRezka hidden bridge manifest stays isolated and does not replace the watchlist script', () => {
+test('HDRezka hidden bridge manifest stays isolated and no site watchlist script comes back', () => {
     const manifest = JSON.parse(read('manifest.json'));
     const bridge = manifest.content_scripts.find(entry => entry.js.includes('content-scripts/hdrezka-session-bridge.js'));
     assert.deepEqual(bridge.matches, ['https://hdrezka.co/*']);
@@ -194,6 +194,6 @@ test('HDRezka hidden bridge manifest stays isolated and does not replace the wat
     assert.equal(bridge.all_frames, true);
     assert.equal(bridge.run_at, 'document_start');
     assert.equal(bridge.world, 'ISOLATED');
-    assert.ok(manifest.content_scripts.some(entry => entry.js.includes('content-scripts/hdrezka-watchlist.js')));
+    assert.ok(!manifest.content_scripts.some(entry => entry.js.some(file => file.includes('-watchlist'))));
     assert.ok(read('src/offscreen/offscreen.html').includes('src="hdrezka-session.js"'));
 });

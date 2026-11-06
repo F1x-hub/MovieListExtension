@@ -31,10 +31,6 @@ assert.match(rulesSource, /data\.review\.size\(\) <= 5000/);
 assert.match(rulesSource, /isValidReviewReport/);
 assert.match(rulesSource, /rating-review/);
 
-const backgroundSource = fs.readFileSync(path.join(root, 'src/background/background.js'), 'utf8');
-assert.match(backgroundSource, /normalizeReview\(review\)/);
-assert.match(backgroundSource, /hasReview/);
-
 const reportWidgetSource = fs.readFileSync(path.join(root, 'src/shared/components/ReportWidget.js'), 'utf8');
 const firestoreSource = fs.readFileSync(path.join(root, 'src/shared/firestore.js'), 'utf8');
 assert.match(reportWidgetSource, /openForContext/);

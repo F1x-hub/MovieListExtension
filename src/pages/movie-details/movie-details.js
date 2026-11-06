@@ -1769,11 +1769,7 @@ class MovieDetailsManager {
     }
 
     goBackToSearch() {
-        // If embedded, signal parent to close and restore native player
-        if (this.isEmbedded && window.parent !== window) {
-            this.postToEmbeddingParent({ type: 'CLOSE_EXTENSION_PLAYER' });
-            return;
-        }
+        if (this.isEmbedded && window.parent !== window) return;
         // Try to go back in history, otherwise go to search page
         if (window.history.length > 1) {
             window.history.back();
@@ -9305,12 +9301,6 @@ class MovieDetailsManager {
         }
     }
 
-    postToEmbeddingParent(message) {
-        if (window.parent === window) return;
-        const parentOrigin = window.location.ancestorOrigins?.[0];
-        window.parent.postMessage(message, parentOrigin && parentOrigin !== 'null' ? parentOrigin : '*');
-    }
-
     isTrustedPlayerMessage(event) {
         const playerMessageTypes = new Set([
             'PLAYER_READY',
@@ -9463,11 +9453,9 @@ class MovieDetailsManager {
     // Video Player Methods
     closeVideoModal() {
         this.closeEpisodePicker();
-        // If embedded, signal parent to restore native player
         if (this.isEmbedded && window.parent !== window) {
             this.unmountActivePlayer();
             this.destroyPlayer();
-            this.postToEmbeddingParent({ type: 'CLOSE_EXTENSION_PLAYER' });
             return;
         }
         // Closing must stop playback. A provider frame cannot confirm a pause
@@ -9637,10 +9625,6 @@ class MovieDetailsManager {
 
         if (this.playbackController) {
             this.playbackController.cleanupOrphanPreloadContainers(this.selectedMovie?.kinopoiskId);
-        }
-        
-        if (this.isEmbedded && window.parent !== window) {
-            this.postToEmbeddingParent({ type: 'CLOSE_EXTENSION_PLAYER' });
         }
     }
 

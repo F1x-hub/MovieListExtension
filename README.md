@@ -40,8 +40,6 @@ lists, provider-aware playback, and Firebase synchronization in one interface.
   provider frames. Embedded Rutube/VidSrc players are supported when their
   active HLS source is exposed; opaque, DRM, and DASH-only sources without an
   HLS/file alternative cannot supply frames to the independent preview decoder.
-- Add watchlist and rating controls to supported external movie websites through
-  content scripts.
 - Use light/dark themes with optional seasonal decor, Popup or Side Panel mode,
   localized UI, and accessible controls.
 - Give administrators tools for user approval, moderation, mappings, and service
@@ -104,7 +102,7 @@ seeking to prepared media; this is not full TorrServer/Lampa parity.
 │   ├── pages/            # Home, search, catalogue, details, profile, admin, etc.
 │   ├── popup/            # Popup and Side Panel entry point
 │   └── shared/           # Services, components, config, errors, i18n, styles
-├── content-scripts/      # Watchlist, rating, scraper, and player integrations
+├── content-scripts/      # Scraper, session bridge, and player integrations
 ├── functions/            # Firebase Cloud Functions
 ├── rules/                # Firestore and Storage security rules
 ├── scripts/              # Build, minification, backfill, and puzzle generators
@@ -474,7 +472,8 @@ keeps npm-compatible three-component semver metadata.
 
 ### Refactor
 
-- Favorites, Watchlist and Watching now open Bookmarks. No link in the interface has led to these pages since February and Bookmarks replaced them, so an old link lands on the matching Bookmarks filter, and their code and styles are gone. `list-pages.spec.cjs` checks the old links in the browser rig. Nothing is deleted from Firestore. The buttons on external sites still save to the old `watchlist` collection, which Bookmarks does not read, so films added that way do not appear there.
+- Favorites, Watchlist and Watching now open Bookmarks. No link in the interface has led to these pages since February and Bookmarks replaced them, so an old link lands on the matching Bookmarks filter, and their code and styles are gone. `list-pages.spec.cjs` checks the old links in the browser rig. Nothing is deleted from Firestore.
+- Removed the controls the extension added to external movie sites, which had not been developed for a long time: the poster button on HDRezka, Kinopoisk, IMDb, KinoGo, ZFilms and Ex-FS, the favourite and rating items in Ex-FS's menu, and the automatic swap of KinoGo's own player for the extension's. Their content scripts, stylesheet and service-worker handlers are gone, along with the `zfilms-hd.by` host permission, which nothing else used. Ex-FS, KinoGo and HDRezka stay available as video sources through their own parsers, and ratings and bookmarks inside the extension are unchanged. Nothing is deleted from Firestore: films those buttons saved stay in the old `watchlist` collection, which Bookmarks does not read.
 - Removed the rating dialogs from Search, Favorites, Watching and Watchlist, which nothing could open. Search's `?sourceUrl=` view, the one route left into that code, no longer offers rating or editing a rating; deleting one there is unchanged. Favorites cards lose their inert «Изменить оценку» menu item.
 - Removed the CSS the old custom dropdown shell left behind when Collection and Ratings moved to native selects in 1.3.7: their page-scoped `.custom-dropdown` and `.dropdown-*` rules, `.filter-select-hidden`, and the `.custom-dropdown.open` state nothing sets. The Settings language list, the shell's only user, keeps the shared rules and its `active` state. Nothing changes on screen.
 

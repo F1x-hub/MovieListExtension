@@ -48,7 +48,6 @@
     "https://*.solodcdn.com/*",
     "https://*.kodik-cdn.com/*",
     "https://*.kodik-storage.com/*",
-    "https://zfilms-hd.by/*",
     "https://hdrezka.co/*",
     "https://weyland.stream.voidboost.one/*",
     "https://hronos.stream.voidboost.one/*",
@@ -195,54 +194,6 @@
     },
     {
       "matches": [
-        "https://ex-fs.net/*"
-      ],
-      "js": [
-        "content-scripts/ex-fs-watchlist.js"
-      ],
-      "css": [
-        "src/shared/styles/ex-fs-watchlist.css"
-      ],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://zfilms-hd.by/*"
-      ],
-      "js": [
-        "content-scripts/zfilms-watchlist.js"
-      ],
-      "css": [
-        "src/shared/styles/ex-fs-watchlist.css"
-      ],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://hdrezka.co/*"
-      ],
-      "js": [
-        "content-scripts/hdrezka-watchlist.js"
-      ],
-      "css": [
-        "src/shared/styles/ex-fs-watchlist.css"
-      ],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://www.kinopoisk.ru/*"
-      ],
-      "js": [
-        "content-scripts/kinopoisk-watchlist.js"
-      ],
-      "css": [
-        "src/shared/styles/ex-fs-watchlist.css"
-      ],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
         "https://www.kinopoisk.ru/new-search*",
         "https://kinopoisk.ru/new-search*",
         "https://www.kinopoisk.ru/film/*",
@@ -254,40 +205,6 @@
         "content-scripts/kinopoisk-search-scraper.js"
       ],
       "all_frames": true,
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://www.imdb.com/*"
-      ],
-      "js": [
-        "content-scripts/imdb-watchlist.js"
-      ],
-      "css": [
-        "src/shared/styles/ex-fs-watchlist.css"
-      ],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://kinogo.inc/*",
-        "https://kinogo.my/*",
-        "https://fix.kinogo.luxury/*",
-        "https://kinogo.la/*",
-        "https://*.kinogo.la/*",
-        "https://kinogo.film/*",
-        "https://*.kinogo.film/*",
-        "https://kinogo.is/*",
-        "https://*.kinogo.is/*",
-        "https://kinogo.gg/*",
-        "https://*.kinogo.gg/*"
-      ],
-      "js": [
-        "content-scripts/kinogo-watchlist.js"
-      ],
-      "css": [
-        "src/shared/styles/ex-fs-watchlist.css"
-      ],
       "run_at": "document_idle"
     },
     {

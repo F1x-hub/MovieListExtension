@@ -123,15 +123,7 @@ async function main() {
             await mount(page, files.map(file => stylesheet(file)).join('\n'), 'dark-theme', 'no-preference');
             assert.equal(await page.locator('.movie-card-component').evaluate(node => getComputedStyle(node).animationName), 'mc-card-enter', 'card animation is independent of common/card stylesheet order');
         }
-        for (const site of ['kinopoisk', 'imdb', 'hdrezka', 'kinogo', 'zfilms', 'ex-fs']) {
-            const script = read(`content-scripts/${site}-watchlist-injected.js`);
-            const css = site === 'ex-fs' ? /const styles = `([\s\S]*?)`;/m.exec(script)[1] : /style.textContent = `([\s\S]*?)`;/m.exec(script)[1];
-            await page.emulateMedia({ reducedMotion: 'reduce' });
-            await page.setContent(`<style>${stylesheet('src/shared/styles/ex-fs-watchlist.css')}\n${css}</style><button class="movieListWatchlistBtn added"><span class="spin"></span></button><div class="movie-list-toast"></div>`);
-            assert.equal(await page.locator('.spin').evaluate(node => getComputedStyle(node).animationName), 'none', `${site}: static spinner under reduce`);
-            if (site === 'ex-fs') assert.equal(await page.locator('.movie-list-toast').evaluate(node => getComputedStyle(node).animationName), 'none');
-        }
-        console.log(`Motion P0 Chromium smoke passed: ${graphs} stylesheet graphs, dark/light, reduced motion, drawer exit, toast timing, CSS order and six injected adapters`);
+        console.log(`Motion P0 Chromium smoke passed: ${graphs} stylesheet graphs, dark/light, reduced motion, drawer exit, toast timing and CSS order`);
     } finally {
         await browser.close();
     }

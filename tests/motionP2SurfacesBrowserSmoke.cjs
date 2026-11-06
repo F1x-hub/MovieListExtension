@@ -108,27 +108,6 @@ async function main() {
                         return !gamesOwner.getFocusableElements().includes(exiting.firstElementChild);
                     }), 'Custom game focus trap excludes an inert visual exit');
 
-                    const exfs = read('content-scripts/ex-fs-watchlist-injected.js');
-                    await page.addStyleTag({ content: /const styles = `([\s\S]*?)`;/m.exec(exfs)[1] });
-                    await page.evaluate(() => {
-                        document.body.insertAdjacentHTML('beforeend', '<div id="exMenu" class="movie-list-dropdown active"><button>Item</button></div><div id="exModal" class="movie-list-modal-overlay"><div id="exSurface" class="movie-list-modal" data-movie-list-rating-modal="true"><button>Close</button></div></div>');
-                    });
-                    await page.addScriptTag({ content: exfs.slice(exfs.indexOf('    function closeDropdown'), exfs.indexOf('    // CSS Styles')) });
-                    await page.waitForTimeout(40);
-                    await page.evaluate(() => closeDropdown(document.querySelector('#exMenu')));
-                    assert(await page.evaluate(() => document.querySelector('#exMenu').inert && !document.querySelector('#exMenu').classList.contains('active')), 'External menu closes semantically at once');
-                    const closeCode = exfs.slice(exfs.indexOf('        const close = () => {'), exfs.indexOf('        closeBtn.onclick'));
-                    await page.addScriptTag({ content: `(() => { const overlay = document.querySelector('#exModal'); ${closeCode} window.closeExternal = close; })();` });
-                    await page.evaluate(() => closeExternal());
-                    assert.equal(await page.locator('#exModal').count(), 0, 'External modal root is removed immediately');
-                    const visual = page.locator('.movie-list-modal-overlay[aria-hidden="true"]');
-                    assert.equal(await visual.count(), reducedMotion === 'reduce' ? 0 : 1, 'External close has only an inert decorative copy, skipped for reduce');
-                    if (reducedMotion !== 'reduce') {
-                        assert.equal(await visual.locator('[id], [data-movie-list-rating-modal]').count(), 0, 'Visual copy cannot collide with ids/owners');
-                        await page.evaluate(() => Promise.all(document.querySelector('.movie-list-modal-overlay[aria-hidden="true"]').getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {}))));
-                        await page.waitForTimeout(0);
-                        assert.equal(await visual.count(), 0, 'External visual exit removes its own copy');
-                    }
                     await page.close();
                 }
             }

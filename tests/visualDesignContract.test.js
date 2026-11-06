@@ -22,7 +22,6 @@ const migrationGuardFiles = {
     random: 'src/pages/random/random.css',
     popup: 'src/shared/styles/popup.css',
     reportWidget: 'src/shared/styles/report-widget.css',
-    externalWatchlist: 'src/shared/styles/ex-fs-watchlist.css',
     movieDetails: 'src/pages/movie-details/movie-details.css',
     personDetails: 'src/pages/person-details/person-details.css',
     live: 'src/pages/live/live.css',
@@ -160,7 +159,6 @@ const migrationGuards = {
     random: ['#34d399', '#059669', '#fb7185', '#e11d48'],
     popup: ['#22c55e', '#fbbf24'],
     reportWidget: ['#ff4757', '#ff6b81', '#22d3ee'],
-    externalWatchlist: ['#6366f1', '#4f46e5'],
     movieDetails: ['#6366f1', '#4f46e5', '#818cf8', '#3b82f6', '#60a5fa', '#c084fc', '#a5b4fc', '#86efac', '#9333ea', '#a855f7', '#93c5fd', '#6ee7b7', '#2aabee'],
     personDetails: ['#6366f1'],
 };

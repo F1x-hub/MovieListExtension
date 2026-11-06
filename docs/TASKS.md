@@ -6,11 +6,11 @@ records what was finished.
 
 ## Do first
 
-- **Run the whole browser rig on the final code:** `npm run test:e2e`, then
-  `npm run test:e2e:headed`. The last full pass (43 of 43 in both modes) came before
-  the Settings language list spec, the dropdown CSS removal and the replacement of the
-  old list pages. Since then only the Settings specs and `list-pages.spec.cjs` have
-  run. `npm test` and `npm run lint` passed after the last code change.
+- **Run the browser rig in a visible window:** `npm run test:e2e:headed`. Without a
+  window, `npm run test:e2e` passed 57 of 57 after the external-site controls were
+  removed, and `npm test` and `npm run lint` passed on the same code. The last headed
+  pass (43 of 43) came before the Settings language list spec, the dropdown CSS removal
+  and the replacement of the old list pages.
 - **Find out why `tests/hdrezkaProviderBrowser.cjs` fails now and then.** `pretest`
   starts with it, so one failure stops the whole of `npm test`. So far it has failed
   only under load:
@@ -28,11 +28,6 @@ records what was finished.
 
 ## Bugs users can see
 
-- **Films added from external sites do not reach Bookmarks.** The watchlist buttons on
-  HDRezka, Kinopoisk, IMDb, Kinogo, ZFilms and Ex-FS write the old `watchlist`
-  collection (`addToWatchlistViaAPI` in `src/background/background.js`), and Bookmarks
-  reads only `favorites`. Fix the write first. Moving films already saved there is a
-  write to the production database and needs its own decision; nobody has counted them.
 - **Collections can be missing from the card menu on Ratings.** For a user with a
   collection, the section appeared in 1 load of 10. The list may be read before the
   session is known; this has not been confirmed.
@@ -86,3 +81,11 @@ Each of these needs a decision first.
 - **`search.css`** is still loaded by Collection and Ratings for rating-modal
   compatibility. See the search compatibility boundary in
   [`.agents/rules/agent.md`](../.agents/rules/agent.md).
+- **The old `watchlist` collection.** Films saved by the removed buttons on external
+  sites stay there and do not appear in Bookmarks; nobody has counted them. Moving or
+  deleting them is a write to the production database. `WatchlistService` still has
+  users: the navigation count, Profile, Search and `RatingService`.
+- **`web_accessible_resources`** still exposes `libs/*.js`, `src/shared/firestore.js`,
+  the shared services and several pages to every site through `<all_urls>`. The removed
+  site scripts loaded those files into host pages. What is left may need far less, but
+  `player-cleaner.js` and the provider frames must be checked before narrowing it.
