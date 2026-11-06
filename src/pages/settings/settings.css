@@ -570,18 +570,23 @@
 
 .settings-main .dropdown-arrow {
     color: var(--theme-text-muted);
+    transform: rotate(180deg);
     transition: transform 200ms var(--ease-spring);
     display: flex;
     align-items: center;
 }
 
 .settings-main .custom-dropdown.active .dropdown-arrow {
-    transform: rotate(180deg);
+    transform: rotate(0deg);
 }
 
+/* Opens upward. Below the trigger there is only the action footer, which covers the
+   bottom of the scrolling section at any scroll position, and this list cannot rise
+   above it: the section clips it and .settings-pane holds its z-index in. */
 .settings-main .dropdown-list {
     position: absolute;
-    top: calc(100% + 6px);
+    top: auto;
+    bottom: calc(100% + 6px);
     left: 0;
     width: 100%;
     background: var(--theme-bg-secondary);
@@ -590,7 +595,7 @@
     overflow: hidden;
     opacity: 0;
     visibility: hidden;
-    transform: translateY(-6px);
+    transform: translateY(6px);
     transition: opacity 180ms ease, transform 180ms var(--ease-out), visibility 180ms ease;
     box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
 }
