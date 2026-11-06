@@ -183,7 +183,7 @@ class CollectionPageManager {
                         this.collection = null;
                         this.movies = [];
                         this.filteredMovies = [];
-                        this.renderCollection();
+                        this.applyFilters();
                         this.showError('Для просмотра коллекции необходимо войти в аккаунт.');
                     } else if (!this.currentUser || this.currentUser.uid !== user.uid) {
                         this.currentUser = user;
@@ -610,6 +610,9 @@ class CollectionPageManager {
     }
 
     showError(message) {
+        if (this.elements.emptyState) {
+            this.elements.emptyState.style.display = 'none';
+        }
         if (this.elements.errorState) {
             this.elements.errorState.style.display = 'block';
         }
