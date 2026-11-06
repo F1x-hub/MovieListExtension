@@ -400,6 +400,7 @@ or remote provider URLs; adding a new definition remains a Jackett UI operation.
 | npm run test-games-modal | Runs mini-games menu, Rubik's Cube, and games regression tests |
 
 ## Known Issues / TODOs
+- `docs/TASKS.md` tracks open work from the browser rig and the removal of the old list pages. Remove an entry when it is done.
 - The updater is Windows-only and the first connection still requires Chrome Developer Mode plus one Load unpacked action; Native Host/Chrome end-to-end acceptance, multi-profile path mapping, and the release signing secret setup remain deployment work.
 - Current MediaPlayer Suite supports `detect_installation` from its registered bridge, plus manual `select_install_folder` and `verify_installation`. Settings attempts automatic detection on enable; older bridges can still use manual folder verification. Failed readiness never enables torrent playback.
 - Route `mediaplayer:torrent` through `changeVideoSource` to the torrent picker; never embed it as a URL. Active torrent play/pause must reuse the mounted video.

@@ -430,6 +430,8 @@ Set `$env:HDREZKA_PROBE_DIST='1'` as well to check the generated `dist/` files.
   one-time Windows updater setup.
 - [`tests/e2e/README.md`](tests/e2e/README.md) — browser test rig: how to run it, read
   its filmstrips, add a journey, and which defects it currently lists as open.
+- [`docs/TASKS.md`](docs/TASKS.md) — open work: checks to run first,
+  known bugs, rig reliability, and possible cleanup.
 - [`docs/README.md`](docs/README.md) — extended user-facing feature guide.
 
 ## License
@@ -475,6 +477,10 @@ keeps npm-compatible three-component semver metadata.
 - Favorites, Watchlist and Watching now open Bookmarks. No link in the interface has led to these pages since February and Bookmarks replaced them, so an old link lands on the matching Bookmarks filter, and their code and styles are gone. `list-pages.spec.cjs` checks the old links in the browser rig. Nothing is deleted from Firestore. The buttons on external sites still save to the old `watchlist` collection, which Bookmarks does not read, so films added that way do not appear there.
 - Removed the rating dialogs from Search, Favorites, Watching and Watchlist, which nothing could open. Search's `?sourceUrl=` view, the one route left into that code, no longer offers rating or editing a rating; deleting one there is unchanged. Favorites cards lose their inert «Изменить оценку» menu item.
 - Removed the CSS the old custom dropdown shell left behind when Collection and Ratings moved to native selects in 1.3.7: their page-scoped `.custom-dropdown` and `.dropdown-*` rules, `.filter-select-hidden`, and the `.custom-dropdown.open` state nothing sets. The Settings language list, the shell's only user, keeps the shared rules and its `active` state. Nothing changes on screen.
+
+### Docs
+
+- [`docs/TASKS.md`](docs/TASKS.md) lists what is still open after this work: the checks to run first, bugs users can see, rig reliability, what has not been seen outside the rig, and possible cleanup.
 
 </details>
 
