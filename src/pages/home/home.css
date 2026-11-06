@@ -467,6 +467,24 @@
     transform: translateY(0);
 }
 
+/* Text and button no longer fit on one row, so the button goes underneath. */
+@media (max-width: 639px) {
+    .home-cta-card {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 16px;
+        padding: 20px;
+    }
+
+    .home-cta-content {
+        gap: 14px;
+    }
+
+    .home-cta-btn {
+        white-space: normal;
+    }
+}
+
 /* Empty Personal Placeholder */
 .home-empty-personal {
     background: var(--theme-bg-card);

@@ -6,11 +6,11 @@ records what was finished.
 
 ## Do first
 
-- **Run the browser rig in a visible window:** `npm run test:e2e:headed`. Without a
-  window, `npm run test:e2e` passed 57 of 57 after the external-site controls were
-  removed, and `npm test` and `npm run lint` passed on the same code. The last headed
-  pass (43 of 43) came before the Settings language list spec, the dropdown CSS removal
-  and the replacement of the old list pages.
+- **Make `home-guest-card.spec.cjs` pass in a visible window.** On 2026-11-07
+  `npm run test:e2e:headed` passed 59 of 61 at 125% display scale. Both failures are this
+  spec at 639px, where the card stays a row; nothing overflows or is clipped, and the spec
+  passes 2 of 2 without a window. A window's width turns fractional at that scale, so
+  `max-width: 639px` probably misses it; the width itself was not read.
 - **Find out why `tests/hdrezkaProviderBrowser.cjs` fails now and then.** `pretest`
   starts with it, so one failure stops the whole of `npm test`. So far it has failed
   only under load:
@@ -40,6 +40,30 @@ records what was finished.
 - **The language list in very short windows.** Below about 400px high, the upper option
   can sit under the header when the page is scrolled to the end; scrolling up reveals
   it. This comes from the geometry, and no test covers it.
+
+- **A Kinopoisk page answer is thrown away when Kinopoisk adds `?socialAlias=` after the
+  hash.** `content-scripts/kinopoisk-search-scraper.js:599` cuts the request ID only at
+  `&`, so the background ignores the result, the slot stays busy for 8 seconds and the
+  card gets no rating. Seen twice in a real browser, on film 6469214.
+
+## Film page speed
+
+A real browser's first open from Home took 1289 and 1532 ms before the cache and
+Firestore fixes: about 355 ms to start the page, 340 ms for the session, 220–270 ms for
+Firestore and 370–545 ms for TMDB. `MovieDetailsPerf` prints this: see
+[`movie-details-performance-tracing.md`](movie-details-performance-tracing.md). The fixes
+have been measured only in the rig so far.
+
+- **Waiting for the session.** The page asks for nothing until the session is confirmed.
+  `tmdbProxy` takes no token and `movies` is publicly readable, so loading could start
+  sooner, but the rule that no provider work starts before auth is deliberate and a test
+  enforces it. A guest would spend a TMDB request. This needs a decision.
+- **123 separate scripts.** Home is bundled by `scripts/bundle-pages.js` and the film page
+  is not. Adding it breaks the page: `typeof EpisodeHistoryService` at
+  `PlaybackController.js:40` throws inside a bundle, because the class is declared later
+  in the same script. There may be more such places, and the gain has not been measured.
+- **Loading on hover.** Now possible, since it can use the same cache, but it spends a
+  `tmdbProxy` request per hover. Worth deciding after a real-browser measurement.
 
 ## Sources worth a look
 
@@ -77,6 +101,9 @@ records what was finished.
 
 ## Rig reliability
 
+- **`tests/sourceRefreshCoordinator.test.cjs` failed once in `npm test`** at line 45, with
+  `cooldown` instead of `refreshed`, and stopped the rest of the chain. It then passed 6 of
+  6 runs alone and every later full run. The cause has not been looked into.
 - **A 23px snap when the rating dialog opens** was seen once and not reproduced. It
   matches the arithmetic of the `scale(0.9)` entry, but that is unproven, and it could
   rarely fail `home-to-rating.spec.cjs` under load.

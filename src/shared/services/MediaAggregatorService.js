@@ -1311,6 +1311,33 @@ class MediaAggregatorService {
         let relationsRefreshRequired = false;
         let relationsOnlyRepair = false;
 
+        const candidateTmdbId = Number(options.candidateTmdbId || options.tmdbId) || null;
+        const skipKinopoiskApi = options.skipKinopoiskApi === true && candidateTmdbId > 0;
+        let homeRouteTmdbDetails = null;
+        const loadHomeRouteTmdbDetails = () => {
+            homeRouteTmdbDetails ||= (async () => {
+                try {
+                    if (this.tmdbService?.isConfigured?.() && typeof this.tmdbService.getMovieDetails === 'function') {
+                        return await this.tmdbService.getMovieDetails(
+                            candidateTmdbId,
+                            '',
+                            options.mediaType === 'tv' ? 'tv' : 'movie'
+                        );
+                    }
+                } catch (tmdbErr) {
+                    console.warn(`[MediaAggregator] TMDB-only detail lookup failed for ${candidateTmdbId}:`, tmdbErr);
+                }
+                return null;
+            })();
+            return homeRouteTmdbDetails;
+        };
+        // Without a local copy the page waits on the Firestore read below, which only
+        // community-rated films can answer, so TMDB does not wait for it. A film it does
+        // answer drops this request unused.
+        if (skipKinopoiskApi && !options.forceRefresh && !options.prefetchedCacheResolved && this.movieCacheService) {
+            void loadHomeRouteTmdbDetails();
+        }
+
         // 1. Check MovieCacheService unless forceRefresh requested. A speculative
         // pre-auth read may be supplied so authenticated continuation does not
         // issue the same public cache request twice.
@@ -1486,21 +1513,9 @@ class MediaAggregatorService {
         // provides a verified TMDB identity. That route must remain API-free.
         let kpMovie = null;
         let tmdbData = null;
-        const candidateTmdbId = Number(options.candidateTmdbId || options.tmdbId) || null;
-        const skipKinopoiskApi = options.skipKinopoiskApi === true && candidateTmdbId > 0;
 
         if (skipKinopoiskApi) {
-            try {
-                if (this.tmdbService?.isConfigured?.() && typeof this.tmdbService.getMovieDetails === 'function') {
-                    tmdbData = await this.tmdbService.getMovieDetails(
-                        candidateTmdbId,
-                        '',
-                        options.mediaType === 'tv' ? 'tv' : 'movie'
-                    );
-                }
-            } catch (tmdbErr) {
-                console.warn(`[MediaAggregator] TMDB-only detail lookup failed for ${candidateTmdbId}:`, tmdbErr);
-            }
+            tmdbData = await loadHomeRouteTmdbDetails();
 
             kpMovie = {
                 id: numKpId,
@@ -1712,6 +1727,14 @@ class MediaAggregatorService {
                 ? this.movieCacheService.cacheMovie(unifiedDto, false, { localOnly: true })
                 : this.movieCacheService.cacheMovie(unifiedDto))
                 .catch(cacheWriteErr => console.warn(`[MediaAggregator] Failed caching unified DTO for ${numKpId}:`, cacheWriteErr));
+        } else if (this.movieCacheService && skipKinopoiskApi && tmdbData
+            && MediaAggregatorService.isMeaningfulText(unifiedDto.name)
+            && (!cachedForRelations || cachedForRelations.provenance === 'synthetic-tmdb-only')) {
+            // The Home route's film stays unverified, so it never leaves this browser, but
+            // the next open can show it at once. A record from another source is kept.
+            void Promise.resolve()
+                .then(() => this.movieCacheService.cacheMovie({ ...unifiedDto, provenance: 'synthetic-tmdb-only' }, false, { localOnly: true }))
+                .catch(cacheWriteErr => console.warn(`[MediaAggregator] Failed caching Home route film ${numKpId}:`, cacheWriteErr));
         }
 
         // Observability

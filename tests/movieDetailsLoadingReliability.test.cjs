@@ -54,12 +54,94 @@ function firebase(services = {}) {
     const MovieCacheService = require('../src/shared/services/MovieCacheService.js');
     let databaseReads = 0;
     const cache = new MovieCacheService({ db: { collection() { databaseReads++; throw Error('network'); } } });
-    cache.getLocalCachedMovies = async () => ({ 101: { kinopoiskId: 101, _cacheExpired: true } });
+    cache.getLocalCachedMovies = async () => ({ 101: { kinopoiskId: 101, name: 'Film', _cacheExpired: true } });
     firebase({ getMovieCacheService: () => cache });
     const a = manager();
     const cached = await a.loadSpeculativeCachedMovie(101);
     assert.equal(cached.kinopoiskId, 101);
     assert.equal(databaseReads, 0);
+
+    // RatingsRefreshService keeps ratings under the same key: a record with no title is no film.
+    const stored = {};
+    global.chrome = { storage: { local: {
+        get: async key => (stored[key] ? { [key]: stored[key] } : {}),
+        set: async values => { Object.assign(stored, values); }
+    } } };
+    const ratingsOnly = { kinopoiskId: 101, kpRating: 7.5, votes: { kp: 900 }, lastRatingsParsedAt: '2026-11-01T00:00:00.000Z' };
+    const storedCache = new MovieCacheService({ db: { collection: () => ({ doc: () => ({ get: async () => ({ exists: false }) }) }) } });
+    stored.local_movie_cache_101 = ratingsOnly;
+    assert.equal(await storedCache.getCachedMovie(101, { localOnly: true }), null);
+    assert.equal(await storedCache.getCachedMovie(101), null);
+    const others = await storedCache.getLocalCachedMovies([101]);
+    assert.equal(others[101].kpRating, 7.5, 'Bookmark cards still read their ratings from such a record');
+    firebase({ getMovieCacheService: () => storedCache });
+    const noFilm = manager();
+    let paints = 0;
+    noFilm.displayMovieDetails = async () => { paints++; };
+    assert.equal(await noFilm.loadSpeculativeCachedMovie(101), null);
+    assert.equal(paints, 0, 'A ratings-only record never paints as an unknown film');
+    context.localStorage.getItem = () => JSON.stringify({ kinopoiskId: 101, votes: { kp: 1 } });
+    assert.equal(await manager().loadSpeculativeCachedMovie(101), null, 'Neither does a title-less legacy record');
+    context.localStorage.getItem = () => null;
+
+    // A local rewrite keeps what the ratings refresh parsed, so it does not parse again.
+    await storedCache.cacheMovie({ kinopoiskId: 101, name: 'Film', kpRating: 0, imdbRating: 8.1, votes: { kp: 0, tmdb: 5 } }, false, { localOnly: true });
+    const rewritten = stored.local_movie_cache_101;
+    assert.equal(rewritten.name, 'Film');
+    assert.equal(rewritten.lastRatingsParsedAt, ratingsOnly.lastRatingsParsedAt);
+    assert.equal(rewritten.kpRating, 7.5);
+    assert.equal(rewritten.imdbRating, 8.1, 'A rating the film already has is not replaced');
+    assert.deepEqual({ ...rewritten.votes }, { kp: 900, tmdb: 5 });
+    assert.equal((await storedCache.getCachedMovie(101, { localOnly: true })).name, 'Film');
+    delete global.chrome;
+
+    // A card clicked before it knows its ID opens the ordinary route when this browser has the mapping.
+    const canonical = [];
+    Object.assign(context.window, {
+        history: { replaceState: (state, title, url) => { canonical.push(url); context.window.location.search = url.slice(url.indexOf('?')); } }
+    });
+    context.chrome.runtime = { getURL: path => `chrome-extension://test/${path}` };
+    const homeSearch = '?resolveTmdbId=7&source=home-tmdb-only&title=Film&originalTitle=Original&year=2020&mediaType=movie';
+    const homeRouteLoad = async (search, knownId) => {
+        context.window.location.search = search;
+        const asked = [];
+        context.HomeMovieNavigationService = class {
+            async findKnownMapping(item) { asked.push(item); return knownId; }
+            async resolve() { return { kinopoiskId: 303 }; }
+        };
+        firebase({
+            getMovieCacheService: () => ({ getCachedMovie: async () => ({ kinopoiskId: 202, name: 'Film' }) }),
+            getKinopoiskService: () => ({})
+        });
+        const page = manager();
+        const events = [];
+        page.showHomeResolutionState = () => events.push('searching');
+        page.probeSourceAvailability = async () => {};
+        page.loadMovieById = async (id, loading, skip, options) => { events.push({ id, loading, skip, options }); };
+        await page.initializeUI();
+        return { events, asked };
+    };
+    const known = await homeRouteLoad(homeSearch, 202);
+    assert.equal(known.events.includes('searching'), false, 'No search screen for a film this browser knows');
+    assert.equal(known.events[0].id, '202');
+    assert.equal(known.events[0].skip, true, 'The film paints from the cache and refreshes behind it');
+    assert.equal(known.asked[0].tmdbId, 7);
+    const canonicalParams = new URLSearchParams(canonical.at(-1).split('?')[1]);
+    assert.equal(canonicalParams.get('movieId'), '202');
+    assert.equal(canonicalParams.get('tmdbId'), '7');
+    assert.equal(canonicalParams.get('source'), 'home-tmdb-only');
+    assert.equal(canonicalParams.has('resolveTmdbId'), false);
+
+    const unknown = await homeRouteLoad(homeSearch, null);
+    assert.equal(unknown.events[0], 'searching', 'An unknown film still searches first');
+    assert.equal(unknown.events[1].id, 303);
+
+    const retried = await homeRouteLoad(`${homeSearch}&retry=1`, 202);
+    assert.equal(retried.asked.length, 0, 'A retry goes back to the search');
+    assert.equal(retried.events[0], 'searching');
+
+    context.window.location.search = '?movieId=101';
+    delete context.HomeMovieNavigationService;
 
     // A richer expired cache remains a fallback rather than restarting the loader.
     context.localStorage.getItem = () => JSON.stringify({ kinopoiskId: 101, lastUpdated: '2020-01-01' });

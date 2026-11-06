@@ -1412,8 +1412,8 @@ class MovieDetailsManager {
     async initializeUI() {
         // Get movieId from URL
         const urlParams = new URLSearchParams(window.location.search);
-        const movieId = urlParams.get('movieId');
-        const resolveTmdbId = urlParams.get('resolveTmdbId');
+        let movieId = urlParams.get('movieId');
+        let resolveTmdbId = urlParams.get('resolveTmdbId');
         const autoplay = urlParams.get('autoplay') === 'true';
         // «Эфир» embeds this page as a locked, player-only broadcast tied to the channel clock.
         const broadcastStart = Number.parseInt(urlParams.get('broadcastStart') || '', 10);
@@ -1427,7 +1427,15 @@ class MovieDetailsManager {
         const clearMovieCache = urlParams.get('clearMovieCache') === '1';
 
         if (resolveTmdbId) {
-            this.showHomeResolutionState(urlParams.get('title') || 'фильм');
+            // A card clicked before it learned its ID may still be known to this browser.
+            // Such a film takes the ordinary route, which can paint from the local cache.
+            const knownMovieId = await this.openKnownHomeMovieRoute(urlParams);
+            if (knownMovieId) {
+                movieId = String(knownMovieId);
+                resolveTmdbId = null;
+            } else {
+                this.showHomeResolutionState(urlParams.get('title') || 'фильм');
+            }
         }
 
         // Embedded mode adjustments
@@ -1569,13 +1577,49 @@ class MovieDetailsManager {
         this.page.showLoader();
     }
 
+    homeRouteItem(urlParams) {
+        return {
+            tmdbId: Number(urlParams.get('resolveTmdbId')),
+            name: urlParams.get('title') || '',
+            alternativeName: urlParams.get('originalTitle') || '',
+            searchTitle: urlParams.get('searchTitle') || '',
+            year: Number(urlParams.get('year')) || null,
+            mediaType: urlParams.get('mediaType') || 'movie',
+            isTmdbOnly: true
+        };
+    }
+
+    replaceWithCanonicalHomeRoute({ tmdbId, name, year, mediaType }, kinopoiskId) {
+        const nextParams = new URLSearchParams({
+            movieId: String(kinopoiskId),
+            tmdbId: String(tmdbId),
+            source: 'home-tmdb-only',
+            title: name,
+            year: year ? String(year) : '',
+            mediaType
+        });
+        window.history.replaceState({}, '', chrome.runtime.getURL(
+            `src/pages/movie-details/movie-details.html?${nextParams.toString()}`
+        ));
+    }
+
+    /** @returns {Promise<number|null>} The film's ID when this browser already knows it. */
+    async openKnownHomeMovieRoute(urlParams) {
+        if (urlParams.has('retry') || typeof HomeMovieNavigationService === 'undefined') return null;
+        try {
+            const item = this.homeRouteItem(urlParams);
+            const kinopoiskId = await new HomeMovieNavigationService().findKnownMapping(item);
+            if (kinopoiskId) this.replaceWithCanonicalHomeRoute(item, kinopoiskId);
+            return kinopoiskId;
+        } catch (error) {
+            console.warn('[MovieDetails] Local Home route lookup failed:', error);
+            return null;
+        }
+    }
+
     async resolveHomeMovieRoute(urlParams) {
-        const tmdbId = Number(urlParams.get('resolveTmdbId'));
-        const title = urlParams.get('title') || '';
-        const originalTitle = urlParams.get('originalTitle') || '';
-        const searchTitle = urlParams.get('searchTitle') || '';
-        const year = Number(urlParams.get('year')) || null;
-        const mediaType = urlParams.get('mediaType') || 'movie';
+        const item = this.homeRouteItem(urlParams);
+        const { tmdbId, name: title, year, mediaType } = item;
 
         try {
             if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0) {
@@ -1595,39 +1639,20 @@ class MovieDetailsManager {
             const resolver = new HomeMovieNavigationService({
                 kinopoiskService: firebaseManager.getKinopoiskService()
             });
-            const resolved = await this.withMovieLoadDeadline(resolver.resolve({
-                tmdbId,
-                name: title,
-                alternativeName: originalTitle,
-                searchTitle,
-                year,
-                mediaType,
-                isTmdbOnly: true
-            }, { forceRetry: urlParams.has('retry') }));
+            const resolved = await this.withMovieLoadDeadline(resolver.resolve(item, { forceRetry: urlParams.has('retry') }));
             const kinopoiskId = Number(resolved?.kinopoiskId || resolved?.movieId);
             if (!Number.isSafeInteger(kinopoiskId) || kinopoiskId <= 0) {
                 throw new Error('Точная карточка фильма в Kinopoisk не найдена');
             }
 
-            const nextParams = new URLSearchParams({
-                movieId: String(kinopoiskId),
-                tmdbId: String(tmdbId),
-                source: 'home-tmdb-only',
-                title,
-                year: year ? String(year) : '',
-                mediaType
-            });
             console.log('[MovieDetails] Home TMDB-only route resolved:', {
                 tmdbId,
                 kinopoiskId
             });
-            const canonicalUrl = chrome.runtime.getURL(
-                `src/pages/movie-details/movie-details.html?${nextParams.toString()}`
-            );
             // Keep the existing details controller and loader alive. A full
             // location.replace() would initialize MovieDetails a second time
             // and show a second generic loading screen.
-            window.history.replaceState({}, '', canonicalUrl);
+            this.replaceWithCanonicalHomeRoute(item, kinopoiskId);
             await this.loadMovieById(kinopoiskId, false, false);
             this.initPlayerRegistry();
             if (this.selectedMovie) {
@@ -1674,6 +1699,8 @@ class MovieDetailsManager {
             try {
                 const localData = localStorage.getItem(`kp_movie_${movieId}`);
                 if (localData) localMovie = JSON.parse(localData);
+                // A record without a title would paint as an unknown film.
+                if (!String(localMovie?.name || '').trim()) localMovie = null;
             } catch (error) {
                 console.warn('MovieDetails: Failed reading speculative local cache:', error);
             }

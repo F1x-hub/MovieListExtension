@@ -123,7 +123,7 @@ async function run() {
     assert.match(utils, /getAttribute\('data-movie-search-title'\)/);
     assert.match(utils, /searchTitle: String\(info\.searchTitle\)/);
     assert.match(read('src/shared/services/MovieRatingsEnrichmentService.js'), /searchTitle: card\.dataset\.movieSearchTitle/);
-    assert.match(read('src/pages/movie-details/movie-details.js'), /const searchTitle = urlParams\.get\('searchTitle'\)/);
+    assert.match(read('src/pages/movie-details/movie-details.js'), /searchTitle: urlParams\.get\('searchTitle'\)/);
 
     // Only the latest discovery request renders (language switches).
     const homeJs = read('src/pages/home/home.js');

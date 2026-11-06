@@ -216,4 +216,91 @@ assert.equal(tmdbOnlyDetails.tmdbId, 999);
 assert.equal(tmdbOnlyDetails.name, 'История игрушек');
 assert.equal(tmdbOnlyDetails.identity.status, 'UNVERIFIED', 'Synthetic KP data cannot verify its own TMDB mapping');
 
+// A mapping this browser already verified opens the film without any search.
+const knownMappingStore = globalThis.chrome.storage.local.store;
+knownMappingStore.home_kp_html_mapping_v5 = {
+    'movie:5000': {
+        status: 'resolved', kpId: 482, tmdbId: 5000, title: 'История игрушек', originalTitle: 'Toy Story',
+        year: 1995, resolvedMediaType: 'movie', verified: true, updatedAt: Date.now()
+    },
+    'movie:5001': { status: 'not-found', updatedAt: Date.now() }
+};
+const knownLookups = new HomeMovieNavigationService({
+    htmlSearchService: { findMovieByTitle: async () => assert.fail('A known mapping must not search') }
+});
+const toyStory = { tmdbId: 5000, name: 'История игрушек', alternativeName: 'Toy Story', year: 1995, mediaType: 'movie' };
+assert.equal(await knownLookups.findKnownMapping(toyStory), 482);
+assert.equal(await knownLookups.findKnownMapping({ ...toyStory, name: 'Другой фильм', alternativeName: '' }), null,
+    'A mapping for another title opens nothing');
+assert.equal(await knownLookups.findKnownMapping({ ...toyStory, year: null }), null, 'Without a year nothing can be verified');
+assert.equal(await knownLookups.findKnownMapping({ ...toyStory, tmdbId: 5001 }), null, 'A negative mapping is not a film');
+assert.equal(await knownLookups.findKnownMapping({ ...toyStory, tmdbId: 5002 }), null);
+knownMappingStore.home_kp_html_mapping_v5['movie:5000'].updatedAt = Date.now() - 31 * 24 * 60 * 60 * 1000;
+assert.equal(await knownLookups.findKnownMapping(toyStory), null, 'An expired mapping is searched again');
+
+// The Home route keeps its film in this browser only, and TMDB does not wait for Firestore.
+const homeRouteDetails = { tmdbId: 999, title: 'История игрушек', original_title: 'Toy Story', year: 1995,
+    posterUrl: 'https://image.test/toy-story.jpg', overview: 'A story about toys with enough detail.', genres: [{ name: 'Animation' }] };
+const homeRouteOptions = { title: item.name, year: item.year, candidateTmdbId: item.tmdbId, mediaType: 'movie', skipKinopoiskApi: true };
+const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+function homeRouteAggregator({ cachedMovie = null, tmdbDetails = homeRouteDetails, heldCacheRead = null } = {}) {
+    const calls = { tmdb: 0, writes: [] };
+    const aggregatorUnderTest = new MediaAggregatorService({
+        kinopoiskService: { getMovieById: async () => assert.fail('Kinopoisk API must not be called for Home route') },
+        tmdbService: {
+            isConfigured: () => true,
+            getMovieDetails: async () => { calls.tmdb += 1; return tmdbDetails; }
+        },
+        movieCacheService: {
+            getCachedMovie: async () => { if (heldCacheRead) await heldCacheRead; return cachedMovie; },
+            cacheMovie: async (movie, isRated, options) => { calls.writes.push({ movie, isRated, options }); }
+        },
+        idMappingService: null
+    });
+    return { aggregatorUnderTest, calls };
+}
+
+let releaseCacheRead;
+const heldCacheRead = new Promise(resolve => { releaseCacheRead = resolve; });
+const parallel = homeRouteAggregator({ heldCacheRead });
+const parallelLoad = parallel.aggregatorUnderTest.getMovieDetails(482, homeRouteOptions);
+await settle();
+assert.equal(parallel.calls.tmdb, 1, 'TMDB starts while the Firestore read is still open');
+releaseCacheRead();
+const parallelMovie = await parallelLoad;
+assert.equal(parallelMovie.name, 'История игрушек');
+assert.equal(parallel.calls.tmdb, 1, 'The same TMDB answer is used, not requested twice');
+await settle();
+assert.equal(parallel.calls.writes.length, 1);
+assert.deepEqual(parallel.calls.writes[0].options, { localOnly: true }, 'An unverified film never leaves this browser');
+assert.equal(parallel.calls.writes[0].isRated, false);
+assert.equal(parallel.calls.writes[0].movie.provenance, 'synthetic-tmdb-only');
+assert.equal(parallel.calls.writes[0].movie.identity.status, 'UNVERIFIED', 'Caching does not change the identity');
+
+const repeat = homeRouteAggregator({ cachedMovie: { ...parallel.calls.writes[0].movie } });
+await repeat.aggregatorUnderTest.getMovieDetails(482, homeRouteOptions);
+await settle();
+assert.equal(repeat.calls.writes.length, 1, 'A cached Home film is refreshed in place');
+
+const fullRecord = homeRouteAggregator({ cachedMovie: { kinopoiskId: 482, name: 'История игрушек', lastUpdated: '2020-01-01', _cacheExpired: true } });
+await fullRecord.aggregatorUnderTest.getMovieDetails(482, homeRouteOptions);
+await settle();
+assert.equal(fullRecord.calls.writes.length, 0, 'A record from another source is not replaced by a Home film');
+
+const noTmdb = homeRouteAggregator({ tmdbDetails: null });
+await noTmdb.aggregatorUnderTest.getMovieDetails(482, homeRouteOptions);
+await settle();
+assert.equal(noTmdb.calls.writes.length, 0, 'A title from the address alone is not worth keeping');
+
+let earlyTmdbCalls = 0;
+const cachedLocally = new MediaAggregatorService({
+    tmdbService: { isConfigured: () => true, getMovieDetails: async () => { earlyTmdbCalls += 1; return homeRouteDetails; } },
+    movieCacheService: { getCachedMovie: async () => assert.fail('A resolved local read needs no Firestore'), cacheMovie: async () => {} }
+});
+const verifiedLocalCopy = { kinopoiskId: 482, name: 'История игрушек', tmdbId: 999, lastUpdated: new Date().toISOString(),
+    identity: { status: 'VERIFIED' }, _meta: { providers: { kp: { relationsSchemaVersion: 1 }, tmdb: { logoChecked: true, logoSelectionVersion: 99, collectionChecked: true, collectionCheckVersion: 1 } } },
+    sequelsAndPrequels: [], similarMovies: [] };
+await cachedLocally.getMovieDetails(482, { ...homeRouteOptions, prefetchedCachedMovie: verifiedLocalCopy, prefetchedCacheResolved: true });
+assert.equal(earlyTmdbCalls, 0, 'A film answered by the local cache spends no TMDB request');
+
 console.log('Home TMDB-only discovery and click-time HTML navigation tests passed');

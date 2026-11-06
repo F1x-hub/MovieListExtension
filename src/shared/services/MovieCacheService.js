@@ -139,6 +139,31 @@ class MovieCacheService {
     }
 
     /**
+     * RatingsRefreshService keeps a film's parsed ratings under the same key, so a
+     * record can hold ratings and no film at all. Such a record cannot be shown.
+     */
+    static hasDisplayTitle(movie) {
+        const name = String(movie?.name || '').trim();
+        return Boolean(name) && name !== 'Loading...' && name !== 'Unknown Movie';
+    }
+
+    /** A local rewrite must not lose the ratings RatingsRefreshService parsed for a week. */
+    static keepParsedRatings(movie, existing) {
+        if (!existing) return movie;
+        const kept = { ...movie };
+        if (existing.lastRatingsParsedAt) kept.lastRatingsParsedAt = existing.lastRatingsParsedAt;
+        for (const field of ['kpRating', 'imdbRating']) {
+            if (!(Number(kept[field]) > 0) && Number(existing[field]) > 0) kept[field] = existing[field];
+        }
+        for (const provider of ['kp', 'imdb']) {
+            if (!(Number(kept.votes?.[provider]) > 0) && Number(existing.votes?.[provider]) > 0) {
+                kept.votes = { ...kept.votes, [provider]: existing.votes[provider] };
+            }
+        }
+        return kept;
+    }
+
+    /**
      * Get cached movie by Kinopoisk ID
      * @param {number} kinopoiskId - Kinopoisk movie ID
      * @param {Object} options - localOnly skips Firestore and preserves stale local metadata
@@ -148,7 +173,8 @@ class MovieCacheService {
         try {
             if (options.localOnly) {
                 const movies = await this.getLocalCachedMovies([kinopoiskId]);
-                return movies[String(kinopoiskId)] || null;
+                const movie = movies[String(kinopoiskId)];
+                return MovieCacheService.hasDisplayTitle(movie) ? movie : null;
             }
             const docRef = this.db.collection(this.collection).doc(kinopoiskId.toString());
             const doc = await docRef.get();
@@ -182,9 +208,10 @@ class MovieCacheService {
             }
 
             const localMovie = await this.getLocalMovieCache(kinopoiskId);
-            return localMovie && this.isMetadataCacheValid(localMovie)
+            if (!MovieCacheService.hasDisplayTitle(localMovie)) return null;
+            return this.isMetadataCacheValid(localMovie)
                 ? localMovie
-                : (localMovie ? { ...localMovie, _cacheExpired: true } : null);
+                : { ...localMovie, _cacheExpired: true };
         } catch (error) {
             console.error('Error getting cached movie:', error);
             return null;
@@ -306,7 +333,8 @@ class MovieCacheService {
             
             const movieId = movieData.kinopoiskId.toString();
             if (options.localOnly) {
-                const localData = { ...movieData, lastUpdated: new Date().toISOString() };
+                const existing = await this.getLocalMovieCache(movieId);
+                const localData = { ...MovieCacheService.keepParsedRatings(movieData, existing), lastUpdated: new Date().toISOString() };
                 await this.setLocalMovieCache(movieId, localData);
                 return { id: movieId, ...localData };
             }

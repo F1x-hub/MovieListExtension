@@ -92,16 +92,32 @@ class HomeMovieNavigationService {
         return forCaller(await promise);
     }
 
+    /**
+     * The Kinopoisk ID this browser has already verified for a card, or null.
+     * Reads local storage only, so it is safe before the session is known.
+     */
+    async findKnownMapping(item = {}) {
+        const tmdbId = Number(item.tmdbId || item.id);
+        if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0) return null;
+        const mediaType = this._normalizeMediaType(item.mediaType || item.type);
+        const cached = (await this._readCache())[`${mediaType}:${tmdbId}`];
+        return this._isUsableMapping(cached, item, mediaType) ? Number(cached.kpId) : null;
+    }
+
+    _isUsableMapping(cached, item, mediaType) {
+        const cacheAge = Date.now() - Number(cached?.updatedAt);
+        return cached?.status === 'resolved' && cached.verified === true && Number(cached.kpId) > 0
+            && cacheAge >= 0 && cacheAge < this.resolvedCacheTtlMs
+            && this._isVerifiedIdentity(cached, this._requestedTitles(item), this._requestedYear(item), mediaType);
+    }
+
     async _resolveUnmapped(item, key, mediaType, tmdbId, options = {}) {
         const cache = await this._readCache();
         const cached = cache[key];
         const titles = this._requestedTitles(item);
         const year = this._requestedYear(item);
-        const cacheAge = Date.now() - Number(cached?.updatedAt);
         if (options.forceRetry !== true
-            && cached?.status === 'resolved' && cached.verified === true && Number(cached.kpId) > 0
-            && cacheAge >= 0 && cacheAge < this.resolvedCacheTtlMs
-            && this._isVerifiedIdentity(cached, titles, year, mediaType)
+            && this._isUsableMapping(cached, item, mediaType)
             && (options.requireRating !== true || Number(cached.kpRating) > 0)) {
             this._kpTrace('resolve:cache-hit', {
                 key,

@@ -9,6 +9,11 @@
     const TRACE_STORAGE_KEY = 'movie_details_perf_traces_v1';
     const TRACE_STORAGE_MAX = 20;
     const DEBUG_STORAGE_KEY = 'movie_details_perf_debug';
+    const REPORT_STORAGE_KEY = 'movie_details_perf_reports_v1';
+    const REPORT_STORAGE_MAX = 30;
+    const REPORT_NETWORK_MAX = 40;
+    // Long enough for the poster to count as the largest paint; leaving sooner still reports.
+    const REPORT_DELAY_MS = 3000;
 
     const safeNow = () => global.performance?.now?.() ?? 0;
     const safeMark = (name) => {
@@ -27,6 +32,32 @@
         } catch {
             return String(value).split('?')[0].slice(0, 200);
         }
+    };
+
+    // Read at the start: the resolve route later rewrites the address to the canonical one.
+    const routeOf = (search) => {
+        try {
+            const params = new URLSearchParams(search || '');
+            if (params.has('resolveTmdbId')) return 'resolve-tmdb';
+            return params.get('source') === 'home-tmdb-only' ? 'home-tmdb-only' : 'direct';
+        } catch {
+            return 'unknown';
+        }
+    };
+
+    const movieIdInAddress = (search) => {
+        try {
+            return Number(new URLSearchParams(search || '').get('movieId')) || null;
+        } catch {
+            return null;
+        }
+    };
+
+    const readStoredList = (key, max) => {
+        try {
+            const parsed = JSON.parse(global.localStorage?.getItem(key) || '[]');
+            return Array.isArray(parsed) ? parsed.slice(-max) : [];
+        } catch { return []; }
     };
 
     class MovieDetailsPerf {
@@ -54,7 +85,18 @@
                 playerPreload: null
             };
             this.mark('md:start');
+            if (this.isDebugEnabled()) this.prepareReport(this.trace);
             return this.trace;
+        }
+
+        prepareReport(trace) {
+            trace.route = routeOf(global.location?.search);
+            try {
+                new global.PerformanceObserver((list) => {
+                    const entry = list.getEntries().at(-1);
+                    if (entry) trace.largestPaintAt = entry.startTime;
+                }).observe({ type: 'largest-contentful-paint', buffered: true });
+            } catch { /* Diagnostic only: the report then has no largest paint. */ }
         }
 
         mark(name) {
@@ -179,8 +221,90 @@
             this.trace.completed = true;
             this.trace.summary = summary;
             this.sync();
-            if (this.isDebugEnabled()) console.info('[MovieDetailsPerf][Startup]', summary);
+            if (this.isDebugEnabled()) {
+                console.info('[MovieDetailsPerf][Startup]', summary);
+                this.scheduleReport();
+            }
             return summary;
+        }
+
+        scheduleReport() {
+            const trace = this.trace;
+            let timer = null;
+            const write = () => {
+                global.clearTimeout?.(timer);
+                global.removeEventListener?.('pagehide', write);
+                if (this.trace === trace) this.writeReport();
+            };
+            global.addEventListener?.('pagehide', write);
+            timer = global.setTimeout?.(write, REPORT_DELAY_MS);
+        }
+
+        /** Times are milliseconds after the navigation started, about 2 ms after the click. */
+        buildReport() {
+            const { marks, movieId, route, largestPaintAt } = this.trace;
+            const perf = global.performance;
+            const navigation = perf?.getEntriesByType?.('navigation')?.[0] || {};
+            const paint = (name) => perf?.getEntriesByName?.(name)?.[0]?.startTime;
+            const firstContent = marks['md:first-content-rendered'];
+            const timeline = Object.entries({
+                'html-read': navigation.responseEnd,
+                'first-paint': paint('first-paint'),
+                'first-contentful-paint': paint('first-contentful-paint'),
+                'dom-interactive': navigation.domInteractive,
+                'dom-content-loaded': navigation.domContentLoadedEventEnd,
+                'load-event': navigation.loadEventEnd,
+                'largest-paint': largestPaintAt,
+                ...marks
+            }).filter(([, at]) => at > 0).sort((a, b) => a[1] - b[1]);
+            // Only requests the first content could have waited for; a request still open
+            // when the report is written has no entry yet, and shows as a gap in the list.
+            const network = (perf?.getEntriesByType?.('resource') || [])
+                .filter(entry => /^https?:/.test(entry.name)
+                    && ['fetch', 'xmlhttprequest'].includes(entry.initiatorType)
+                    && (firstContent == null || entry.startTime <= firstContent))
+                .sort((a, b) => a.startTime - b.startTime)
+                .slice(0, REPORT_NETWORK_MAX)
+                .map(entry => ({
+                    url: sanitizeUrl(entry.name),
+                    startMs: round(entry.startTime),
+                    endMs: round(entry.responseEnd),
+                    durationMs: round(entry.responseEnd - entry.startTime),
+                    status: entry.responseStatus ?? null
+                }));
+            return {
+                version: 1,
+                // The resolve route starts without an ID and learns it on the way.
+                movieId: movieId || movieIdInAddress(global.location?.search),
+                route: route || 'unknown',
+                scenario: this.classifyScenario(),
+                navigationType: navigation.type || null,
+                paintedFromCache: marks['md:speculative-rendered'] != null,
+                firstContentMs: firstContent == null ? null : round(firstContent),
+                timeline: Object.fromEntries(timeline.map(([name, at]) => [name, round(at)])),
+                network
+            };
+        }
+
+        writeReport() {
+            if (!this.trace || this.trace.reported) return null;
+            this.trace.reported = true;
+            const report = this.buildReport();
+            console.info(`[MovieDetailsPerf][Report] film ${report.movieId}: first content at ${report.firstContentMs} ms, ${report.scenario}, route ${report.route}. All reports: copy(MovieDetailsPerf.exportReports())`);
+            console.table?.(Object.entries(report.timeline).map(([stage, ms]) => ({ stage, ms })));
+            if (report.network.length) console.table?.(report.network);
+            try {
+                global.localStorage?.setItem(REPORT_STORAGE_KEY, JSON.stringify([...this.getReports(), report].slice(-REPORT_STORAGE_MAX)));
+            } catch { /* Diagnostics must never affect MovieDetails behavior. */ }
+            return report;
+        }
+
+        getReports() {
+            return readStoredList(REPORT_STORAGE_KEY, REPORT_STORAGE_MAX);
+        }
+
+        exportReports() {
+            return JSON.stringify(this.getReports(), null, 2);
         }
 
         buildSummary() {
@@ -228,10 +352,7 @@
         }
 
         getRecentTraces() {
-            try {
-                const parsed = JSON.parse(global.localStorage?.getItem(TRACE_STORAGE_KEY) || '[]');
-                return Array.isArray(parsed) ? parsed.slice(-TRACE_STORAGE_MAX) : [];
-            } catch { return []; }
+            return readStoredList(TRACE_STORAGE_KEY, TRACE_STORAGE_MAX);
         }
 
         exportRecentTraces() {
@@ -243,5 +364,6 @@
     instance.TRACE_STORAGE_KEY = TRACE_STORAGE_KEY;
     instance.TRACE_STORAGE_MAX = TRACE_STORAGE_MAX;
     instance.DEBUG_STORAGE_KEY = DEBUG_STORAGE_KEY;
+    instance.REPORT_STORAGE_KEY = REPORT_STORAGE_KEY;
     global.MovieDetailsPerf = instance;
 })(window);
