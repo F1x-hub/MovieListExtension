@@ -1,5 +1,16 @@
 export const whatsNew = [
     {
+        id: '1.5.0', version: '1.5.0', date: '2026-11-07',
+        highlights: [
+            { id: 'sources-back', title: { ru: 'Источники снова работают', en: 'Sources work again' }, text: { ru: 'KinoGo, Ex-FS, HDRezka и AnimeGo снова запускаются в плеере.', en: 'KinoGo, Ex-FS, HDRezka and AnimeGo play in the player again.' } },
+            { id: 'watch-one-press', title: { ru: '«Смотреть» с одного нажатия', en: '“Watch” takes one press' }, text: { ru: 'Фильм стартует с первого нажатия, а если источника нет, плеер об этом скажет.', en: 'A film starts on the first press, and if there is no source, the player says so.' } },
+            { id: 'torrent-side-panel', title: { ru: 'Торренты рядом с плеером', en: 'Torrents beside the player' }, text: { ru: 'Панель раздач открывается сбоку и не закрывает видео. Различия между раздачами видны сразу.', en: 'The sources panel opens at the side and leaves the video uncovered. The differences between releases are visible at once.' } },
+            { id: 'stable-pages', title: { ru: 'Страницы не прыгают', en: 'Pages stay in place' }, text: { ru: 'Панель навигации, главная и настройки больше не сдвигаются при загрузке.', en: 'The navigation bar, Home and Settings no longer shift while they load.' } },
+            { id: 'all-in-bookmarks', title: { ru: 'Всё в закладках', en: 'Everything in Bookmarks' }, text: { ru: 'Избранное, «Буду смотреть» и «Смотрю» теперь открываются в закладках. Кнопки на сторонних сайтах убраны, а фильмы, добавленные ими, в закладках не показываются.', en: 'Favorites, Watchlist and Watching now open in Bookmarks. The buttons on external sites are gone, and films added with them do not appear in Bookmarks.' } },
+            { id: 'new-year-season', title: { ru: 'Новый год с 15 декабря', en: 'New Year from 15 December' }, text: { ru: 'С 15 декабря по 14 января: зимнее оформление, новогодний сеанс на главной и подарки с фильмами.', en: 'From 15 December to 14 January: winter decor, a New Year show on Home and gifts that open onto films.' } }
+        ]
+    },
+    {
         id: '1.4.10', version: '1.4.10', date: '2026-11-04',
         highlights: [
             { id: 'torrent-more-sources', title: { ru: 'Больше торрент-раздач', en: 'More torrent sources' }, text: { ru: 'Поиск находит фильмы, которые трекеры держат в разделах аниме и «Другое», например «Ариэтти из страны лилипутов».', en: 'Search now finds films that trackers keep in their anime and “Other” sections, such as “The Secret World of Arrietty”.' } },
