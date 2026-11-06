@@ -27,7 +27,9 @@ test('HDRezka profile cannot expand the existing remote allowlist or permit rout
     assert.equal(policy.check(url).ok, false, 'existing providers must retain their allowlist');
     for (const kind of ['manifest', 'level', 'fragment', 'init', 'key']) {
         assert.equal(policy.check(url, { kind, profile: 'hdrezka' }).ok, true);
-        for (const rejected of ['https://stream.voidboost.one/a.m3u8', 'https://other.stream.voidboost.one/a.m3u8',
+        assert.equal(policy.check('https://niobium.stream.voidboost.one/a.m3u8', { kind, profile: 'hdrezka' }).ok, true,
+            'a server the CDN added later needs no release');
+        for (const rejected of ['https://stream.voidboost.one/a.m3u8', 'https://voidboost.one/a.m3u8',
             'https://evil.weyland.stream.voidboost.one/a.m3u8', 'https://weyland.stream.voidboost.one.evil.test/a.m3u8',
             'https://127.0.0.1/a.m3u8', 'http://weyland.stream.voidboost.one/a.m3u8',
             'https://user:password@weyland.stream.voidboost.one/a.m3u8']) {

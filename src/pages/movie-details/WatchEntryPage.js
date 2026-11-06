@@ -1,5 +1,7 @@
 (function(global) {
     'use strict';
+    const WATCH_SOURCE_WAIT_MS = 10000;
+    const WATCH_SOURCE_POLL_MS = 120;
     const methods = {
         async initializeWatchEntry() {
             this.proPlayerEnabled = await global.ProPlayerPreferences?.isEnabled() === true;
@@ -91,7 +93,10 @@
                 catch (error) { console.warn('[MovieDetails] Provider episode sync failed:', error); }
             }
             if (this.nativeEpisodeSync === sync) this.nativeEpisodeSync = null;
-            if (applied === true) return true;
+            if (applied === true) {
+                this.startPlayerFrame?.(frame);
+                return true;
+            }
 
             // Only this attempt's own failure: the viewer may have moved on, or the
             // source may already have reported that it cannot play at all.
@@ -108,6 +113,21 @@
                 onRetry: () => this.changeVideoSource(`parser:${parserId}`)
             });
             return false;
+        },
+        /**
+         * Opening a source or an episode is already the viewer's press, but a provider
+         * frame's player fetches nothing until its video is told to play. A broadcast and
+         * a watch room start the media by their own rules.
+         */
+        startPlayerFrame(iframe = this.elements?.videoContainer?.querySelector?.('iframe')) {
+            if (!iframe || this.broadcastLock || this.broadcastEpisode || this.watchRoomController?.room) return;
+            this.postToPlayerFrame(iframe, { type: 'PLAYER_START' });
+        },
+        /** Once per source request, so a player rebuilt later cannot undo a pause. */
+        startReadyPlayerFrame(iframe) {
+            if (this.playerStartRequestId === this.sourceSwitchRequestId) return;
+            this.playerStartRequestId = this.sourceSwitchRequestId;
+            this.startPlayerFrame(iframe);
         },
         /** While a frame is being moved to an episode, its reports of another one are stale. */
         isStaleNativeProviderReport(seasonNumber, episodeNumber) {
@@ -143,20 +163,53 @@
         async resolveWatchSource() {
             const movieId = this.selectedMovie?.kinopoiskId;
             const generation = this.sourceSwitchRequestId;
-            // «Смотреть» right after opening the page waits for the availability
-            // check, so it starts a source that really has the film.
-            if (this.sourceProbePromise && !this.sourceProbeDone) {
-                await Promise.race([this.sourceProbePromise, new Promise(resolve => setTimeout(resolve, 10000))]);
-                if (this.selectedMovie?.kinopoiskId !== movieId || this.sourceSwitchRequestId !== generation) return null;
-            }
+            const isCurrent = () => this.selectedMovie?.kinopoiskId === movieId && this.sourceSwitchRequestId === generation;
             const [preference, last] = await Promise.all([
                 global.WatchSourcePolicy.read(movieId), this.getLastSource(movieId), this.loadWatchSourceHealth()
             ]);
-            if (this.selectedMovie?.kinopoiskId !== movieId || this.sourceSwitchRequestId !== generation) return null;
+            if (!isCurrent()) return null;
             const room = this.watchRoomController?.room && this.watchRoomController.activeProviderHint;
-            return global.WatchSourcePolicy.select(this.getWatchInnerValues(), {
+            // The last source may only be where a failed run ended, and VidSrc fails slowest.
+            const lastWorth = last?.startsWith?.('vidsrc:') ? null : last;
+            const choose = values => global.WatchSourcePolicy.select(values, {
                 room: room ? `parser:${room}` : null, explicit: this.activeSourceValue,
-                preference, last, ...this.getWatchRankOptions()
+                preference, last: lastWorth, ...this.getWatchRankOptions()
+            });
+            await this.waitForWatchSource(choose);
+            return isCurrent() ? choose(this.getWatchInnerValues()) : null;
+        },
+        /**
+         * «Смотреть» pressed before the availability check has finished. It starts as soon
+         * as the winner is known, which is when no source still being checked could outrank
+         * the best one found. A slow source holds it back for a limited time only, and the
+         * check itself is bounded, so this always ends.
+         */
+        async waitForWatchSource(choose) {
+            const probe = this.probeSourceAvailability?.();
+            if (!probe) return;
+            let finished = false;
+            void Promise.resolve(probe).then(() => { finished = true; });
+            const isDecided = () => {
+                const offered = this.getWatchInnerValues();
+                // In the list's own order, so a source still being checked keeps its place.
+                const contenders = [...(this.getParserSelectorIds?.() || [])].map(id => `parser:${id}`)
+                    .filter(value => offered.includes(value) || !this.sourceAvailability?.has(value.slice(7)));
+                return offered.includes(choose([...new Set([...contenders, ...offered])]));
+            };
+            const deadline = Date.now() + WATCH_SOURCE_WAIT_MS;
+            while (!finished && !isDecided() && Date.now() < deadline) {
+                await new Promise(resolve => setTimeout(resolve, WATCH_SOURCE_POLL_MS));
+            }
+            // Past the limit only a confirmed source may start. VidSrc is never checked, so
+            // with nothing else found yet the viewer waits for the verdict instead of it.
+            if (!finished && !this.getWatchInnerValues().some(value => value.startsWith('parser:'))) await probe;
+            // Answers of the last moment reach the list on its next repaint.
+            if (finished) await new Promise(resolve => setTimeout(resolve, WATCH_SOURCE_POLL_MS));
+        },
+        showNoWatchSource() {
+            this.setPlayerSourceState('unavailable', {
+                message: global.PlayerLocale?.t?.('no_watch_source', {}, 'Этого фильма нет ни в одном источнике.') || 'Этого фильма нет ни в одном источнике.',
+                onRetry: () => this.handleWatchClick()
             });
         },
         getPlayerCapabilitySnapshot() {

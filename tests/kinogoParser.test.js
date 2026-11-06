@@ -221,21 +221,24 @@ const mockMoviePage = `
 `;
 
 const sources = parser.extractKinogoDirectSources(mockMoviePage);
-assert.strictEqual(sources.length, 3, 'Should extract all 3 sources including cinemar.cc fallback');
+assert.strictEqual(sources.length, 2, 'Two retired balancer domains are one source on the current one, plus cinemar.cc');
 assert.strictEqual(sources[0].type, 'iframe');
-assert(sources[0].url.startsWith('https://api.ortified.ws/embed/movie/2268'), 'Ortified must be primary');
-assert(sources[1].url.startsWith('https://api.variyt.ws/embed/movie/2268'), 'Variyt must be secondary');
-assert(sources[2].url.startsWith('https://cinemar.cc/embed/1692/'), 'Cinemar must be included as fallback');
+assert(sources[0].url.startsWith('https://api.femd.ws/embed/movie/2268'), 'The balancer on its current domain must be primary');
+assert(sources[1].url.startsWith('https://cinemar.cc/embed/1692/'), 'Cinemar must be included as fallback');
 
 const nextembedSources = parser.extractKinogoDirectSources(
     '<iframe data-src="https://api.nextembed.ws/embed/movie/31631"></iframe>'
 );
-assert.strictEqual(nextembedSources[0]?.url, 'https://api.nextembed.ws/embed/movie/31631',
-    'extract the current lazy-loaded KinoGo provider for Diler 3');
+assert.strictEqual(nextembedSources[0]?.url, 'https://api.femd.ws/embed/movie/31631',
+    'a lazy-loaded address on a retired domain moves to the current one');
 assert.strictEqual(parser.extractKinogoDirectSources(
     'var player = "//api.nextembed.ws/embed/movie/31631";'
-)[0]?.url, 'https://api.nextembed.ws/embed/movie/31631',
-    'the new provider also works without DOMParser');
+)[0]?.url, 'https://api.femd.ws/embed/movie/31631',
+    'it also moves without DOMParser');
+assert.strictEqual(parser.extractKinogoDirectSources(
+    '<iframe data-src="https://api.femd.ws/embed/movie/31631"></iframe>'
+)[0]?.url, 'https://api.femd.ws/embed/movie/31631',
+    'an address already on the current domain stays');
 
 // 5b. Movie page with ONLY cinemar.cc (Cause 3 edge case)
 console.log('  5b. Testing title with ONLY cinemar.cc balancer (Cause 3)...');

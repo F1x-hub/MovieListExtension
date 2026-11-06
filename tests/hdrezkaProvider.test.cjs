@@ -106,14 +106,15 @@ test('HDRezka page URLs reject foreign hosts, credentials and non-page endpoints
 test('HDRezka stream routing is explicit and limited to reviewed public HTTPS hosts', t => {
     const { dom, protocol } = environment();
     t.after(() => dom.window.close());
-    for (const host of ['weyland', 'hronos', 'dagon', 'magic', 'bingo', 'eleos', 'ember']) {
+    // Niobium is one the CDN added later: a server under its name needs no release.
+    for (const host of ['weyland', 'hronos', 'dagon', 'magic', 'bingo', 'eleos', 'ember', 'niobium']) {
         assert.equal(protocol.streamUrl(manifest(`${host}.stream.voidboost.one`)), manifest(`${host}.stream.voidboost.one`));
     }
     const routing = manifest('stream.voidboost.one');
     assert.equal(protocol.streamUrl(routing), null);
     assert.equal(protocol.streamUrl(routing, { routing: true }), routing);
     for (const rejected of [null, '', 'not a URL', 'file:///C:/movie.m3u8',
-        manifest().replace('https:', 'http:'), manifest('other.stream.voidboost.one'),
+        manifest().replace('https:', 'http:'), manifest('stream.voidboost.one.evil.test'),
         manifest('evil.weyland.stream.voidboost.one'), manifest('weyland.stream.voidboost.one.evil.test'),
         manifest('evil.eleos.stream.voidboost.one'), manifest('eleos.stream.voidboost.one.evil.test'),
         manifest('evil.ember.stream.voidboost.one'), manifest('ember.stream.voidboost.one.evil.test'),
@@ -517,7 +518,7 @@ test('HDRezka extension challenges fail recoverably if background acquisition is
     }
 });
 
-test('HDRezka resolver frame CSP permits exactly the router and reviewed CDN hosts', t => {
+test('HDRezka resolver frame CSP permits exactly the router and the servers under it', t => {
     const { dom, protocol } = environment();
     t.after(() => dom.window.close());
     const markup = new JSDOM(read('src/pages/hdrezka-resolver/resolver.html'));
@@ -525,7 +526,7 @@ test('HDRezka resolver frame CSP permits exactly the router and reviewed CDN hos
     const directives = markup.window.document.querySelector('meta[http-equiv="Content-Security-Policy"]').content.split(';')
         .map(value => value.trim().split(/\s+/));
     assert.deepEqual(directives.find(value => value[0] === 'connect-src').slice(1).sort(),
-        [protocol.ROUTER, ...protocol.CDN_HOSTS].map(host => `https://${host}`).sort());
+        [`https://${protocol.ROUTER}`, `https://*.${protocol.ROUTER}`].sort());
     assert.deepEqual(directives.find(value => value[0] === 'default-src'), ['default-src', "'none'"]);
 });
 

@@ -145,7 +145,13 @@
         iframe?.addEventListener?.('load', onLoad);
         iframe?.addEventListener?.('error', onError);
         emit(STATES.LOADING, { reason: 'start' });
-        timer = setTimeout(() => finish(STATES.UNAVAILABLE, { reason: 'timeout' }), timeoutMs);
+        const armTimeout = () => {
+            timer = setTimeout(() => {
+                if (iframe?.ownerDocument?.hidden) { armTimeout(); return; }
+                finish(STATES.UNAVAILABLE, { reason: 'timeout' });
+            }, timeoutMs);
+        };
+        armTimeout();
 
         return {
             cancel() {
@@ -171,7 +177,12 @@
         };
         const armTimeout = (ms) => {
             if (timer) clearTimeout(timer);
-            timer = setTimeout(() => finish(STATES.UNAVAILABLE, { reason: 'timeout' }), ms);
+            timer = setTimeout(() => {
+                // Chrome loads no media for a hidden page that has played nothing yet, which
+                // says nothing about the source. It gets its time once the page can be seen.
+                if (video?.ownerDocument?.hidden) { armTimeout(ms); return; }
+                finish(STATES.UNAVAILABLE, { reason: 'timeout' });
+            }, ms);
         };
         const finish = (state, detail) => {
             if (!active) return;

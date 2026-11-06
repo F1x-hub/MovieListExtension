@@ -161,17 +161,18 @@ class BaseParserService {
                 } else fail('unsupported');
             }
         } else {
-            const iframeSourceUrl = toPlayerFrameSrcAttribute(withVenomAdFreeParam(source.url, this.baseUrl));
+            const frameUrl = BalancerDomains.actualize(source.url);
+            const iframeSourceUrl = toPlayerFrameSrcAttribute(withVenomAdFreeParam(frameUrl, this.baseUrl));
             if (!iframeSourceUrl) {
                 console.warn(`[${this.name}] Rejected player URL with an unsupported scheme`);
                 container.innerHTML = '<div class="video-placeholder"><span>Источник вернул некорректный адрес плеера</span></div>';
                 return false;
             }
-            const iframeReferrerPolicy = isVenomProviderUrl(source.url)
+            const iframeReferrerPolicy = isVenomProviderUrl(frameUrl)
                 ? ' referrerpolicy="no-referrer"'
                 : '';
             const sandbox = typeof window !== 'undefined'
-                ? window.MovieDetailsPlayerSurface?.getProviderSandbox?.(source.url) : null;
+                ? window.MovieDetailsPlayerSurface?.getProviderSandbox?.(frameUrl) : null;
             const sandboxAttribute = sandbox ? ` sandbox="${escapePlayerAttribute(sandbox)}"` : '';
             container.innerHTML = `<iframe class="player-surface__media" src="${iframeSourceUrl}"${iframeReferrerPolicy}${sandboxAttribute} allowfullscreen allow="autoplay; fullscreen" title="${escapePlayerAttribute(this.name)} player"></iframe>`;
         }
@@ -208,10 +209,17 @@ class BaseParserService {
         }
 
         // Mount first; probe availability in parallel. Ignore stale mounts.
-        if (playerType === 'iframe' && playerElement && BaseParserService.isCheckableEmbedUrl(source.url)) {
+        if (playerType === 'iframe' && playerElement
+            && BaseParserService.isCheckableEmbedUrl(BalancerDomains.actualize(source.url))) {
+            const mountedHost = BalancerDomains.actualHost;
             void this.checkEmbedAvailable(source.url).then(available => {
                 if (available || !playerElement.isConnected
                     || (options.isRequestCurrent && !options.isRequestCurrent())) return;
+                // The balancer moved while this frame loaded: the same sources work from there.
+                if (BalancerDomains.actualHost !== mountedHost && container.isConnected) {
+                    this.renderPlayer(container, sources, options);
+                    return;
+                }
                 this._handleStreamFailure({ container, video: playerElement, failedSource: source,
                     sources, options, reason: 'embed-missing' });
             });
@@ -741,7 +749,8 @@ class BaseParserService {
         return available;
     }
 
-    checkEmbedAvailable(url) {
+    checkEmbedAvailable(sourceUrl) {
+        const url = BalancerDomains.actualize(sourceUrl);
         if (!BaseParserService.isCheckableEmbedUrl(url)) return Promise.resolve(true);
         const cached = this._embedChecks.get(url);
         if (cached && Date.now() - cached.timestamp < this.cacheTTL) return cached.promise;
@@ -755,6 +764,11 @@ class BaseParserService {
                 const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
                 const response = perf ? await perf.trackRequest('EMBED_CHECK', { purpose: this.getPerfCategory('EMBED_CHECK') }, request) : await request();
                 try { await response.body?.cancel?.(); } catch { /* ignore */ }
+                // What a domain the balancer has left answers.
+                if (response.status === 422) {
+                    await BalancerDomains.refresh({ force: true });
+                    return false;
+                }
                 if (response.status === 404 || response.status === 410) {
                     console.warn('[BaseParserService] Player embed has no video', { status: response.status });
                     return false;
@@ -827,6 +841,27 @@ class BaseParserService {
     static isSupportedProviderFrameUrl(sourceUrl) {
         return isVenomProviderUrl(sourceUrl);
     }
+
+    /**
+     * The same address on the domain the balancer answers from today.
+     * @param {string} sourceUrl
+     * @returns {string}
+     */
+    static actualizeProviderUrl(sourceUrl) {
+        return BalancerDomains.actualize(sourceUrl);
+    }
+
+    /**
+     * @param {string} sourceUrl
+     * @returns {boolean} Whether the address is on the balancer's current domain.
+     */
+    static isActualBalancerUrl(sourceUrl) {
+        try {
+            return BalancerDomains.domainOf(new URL(sourceUrl).hostname) === BalancerDomains.domainOf(BalancerDomains.actualHost);
+        } catch {
+            return false;
+        }
+    }
 }
 
 const PARSER_DEBUG_STORAGE_KEY = 'movieExtension.debugParsers';
@@ -835,6 +870,7 @@ const PARSER_DEBUG_STORAGE_KEY = 'movieExtension.debugParsers';
 const EMBED_CHECK_TIMEOUT_MS = 4000;
 
 const VENOM_AD_FREE_HOSTS = new Set([
+    'femd.ws',
     'namy.ws',
     'variyt.ws',
     'nextembed.ws',
@@ -845,6 +881,129 @@ const VENOM_AD_FREE_HOSTS = new Set([
     'allarknow.online',
     'stloadi.live'
 ]);
+
+const BALANCER_SCRIPT_URL = 'https://kodir2.github.io/actualize.js';
+const BALANCER_STORAGE_KEY = 'venomBalancerDomainsV1';
+const BALANCER_REFRESH_MS = 60 * 60 * 1000;
+const BALANCER_FORCED_REFRESH_GAP_MS = 60 * 1000;
+const BALANCER_SCRIPT_TIMEOUT_MS = 5000;
+// A balancer address: the same shape the balancer's own script looks for.
+const BALANCER_HOST_PATTERN = /^(?:mm|app?i\w*)\.((?:[a-z0-9-]+\.)+[a-z]{2,})$/;
+
+/**
+ * The balancer behind KinoGo and Ex-FS keeps moving to new domains. A domain it has
+ * left answers every embed with HTTP 422, yet those sites go on printing the address:
+ * on their pages a script of the balancer's own rewrites it (actualize.js). The
+ * extension reads the sites' HTML without running it, so it rewrites the address here.
+ * It reads the same script, as text and never as code, to follow the next move without
+ * a release. A domain missing from the manifest still plays, but through the
+ * balancer's own player, because the extension's frame scripts do not run there.
+ */
+const BalancerDomains = {
+    // As published by actualize.js on 2026-11-06.
+    actualHost: 'api.femd.ws',
+    retired: new Set([
+        'delivembed.cc', 'buildplayer.com', 'embedstorage.net', 'mir-dikogo-zapada.com', 'multikland.net',
+        'placehere.link', 'synchroncode.com', 'ameytools.club',
+        ...['tobaco', 'topdbltj', 'delivembd', 'hostemb', 'loadbox', 'getcodes', 'strvid', 'ebder', 'framprox',
+            'embprox', 'bedemp2', 'embr', 'lessornot', 'linktodo', 'insertunit', 'marts', 'ninsel', 'embess',
+            'luxembd', 'domem', 'atomics', 'namy', 'variyt', 'zenithjs', 'ortified', 'nextembed'
+        ].map(name => `${name}.ws`)
+    ]),
+    checkedAt: 0,
+    lastForcedAt: 0,
+    loading: null,
+    refreshing: null,
+
+    domainOf(host) {
+        return BALANCER_HOST_PATTERN.exec(String(host || '').toLowerCase())?.[1] || null;
+    },
+
+    /** @returns {{actualHost: string, retired: string[]}|null} null when it is not the script we know. */
+    parseScript(text) {
+        const source = String(text || '');
+        const actualHost = /\bactual\s*=\s*["']https:\/\/([a-z0-9.-]+?)\/?["']/i.exec(source)?.[1]?.toLowerCase();
+        if (!this.domainOf(actualHost)) return null;
+        const pattern = /\bre\s*=\s*\/(.+)\//.exec(source)?.[1] || '';
+        const retired = [
+            ...[...pattern.matchAll(/([a-z0-9-]+\\\.[a-z]{2,})(?=\||\))/gi)].map(match => match[1].replace('\\', '')),
+            ...(/\(([a-z0-9|-]+)\)\(\\\.ws\)/i.exec(pattern)?.[1]?.split('|') || []).map(name => `${name}.ws`)
+        ].map(domain => domain.toLowerCase());
+        return { actualHost, retired };
+    },
+
+    apply({ actualHost, retired = [], checkedAt = 0 } = {}) {
+        const nextDomain = this.domainOf(actualHost);
+        if (!nextDomain) return false;
+        const previousDomain = this.domainOf(this.actualHost);
+        const moved = actualHost !== this.actualHost;
+        if (moved && previousDomain && previousDomain !== nextDomain) this.retired.add(previousDomain);
+        retired.forEach(domain => this.retired.add(domain));
+        this.retired.delete(nextDomain);
+        this.actualHost = actualHost;
+        this.checkedAt = Math.max(this.checkedAt, Number(checkedAt) || 0);
+        return moved;
+    },
+
+    /** Reads what an earlier page learned, then checks for a move in the background. */
+    load() {
+        this.loading ||= (async () => {
+            try {
+                const stored = await globalThis.chrome?.storage?.local?.get?.(BALANCER_STORAGE_KEY);
+                this.apply(stored?.[BALANCER_STORAGE_KEY]);
+            } catch { /* The built-in domain still works. */ }
+            if (Date.now() - this.checkedAt >= BALANCER_REFRESH_MS) void this.refresh();
+        })();
+        return this.loading;
+    },
+
+    /** @returns {Promise<boolean>} Whether the balancer turned out to have moved. */
+    refresh({ force = false } = {}) {
+        if (this.refreshing) return this.refreshing;
+        const now = Date.now();
+        if (force && now - this.lastForcedAt < BALANCER_FORCED_REFRESH_GAP_MS) return Promise.resolve(false);
+        if (force) this.lastForcedAt = now;
+        this.refreshing = (async () => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), BALANCER_SCRIPT_TIMEOUT_MS);
+            try {
+                const response = await fetch(BALANCER_SCRIPT_URL, { credentials: 'omit', cache: 'no-store', signal: controller.signal });
+                const parsed = response.ok ? this.parseScript(await response.text()) : null;
+                if (!parsed) {
+                    console.warn('[BalancerDomains] The balancer script has changed; keeping the known domain');
+                    return false;
+                }
+                const moved = this.apply({ ...parsed, checkedAt: Date.now() });
+                if (moved) console.info('[BalancerDomains] The balancer moved', { actualHost: this.actualHost });
+                await globalThis.chrome?.storage?.local?.set?.({ [BALANCER_STORAGE_KEY]: {
+                    actualHost: this.actualHost, retired: [...this.retired], checkedAt: this.checkedAt
+                } });
+                return moved;
+            } catch {
+                // Nothing to act on: the next page checks again.
+                return false;
+            } finally {
+                clearTimeout(timer);
+                this.refreshing = null;
+            }
+        })();
+        return this.refreshing;
+    },
+
+    /** The same address on the domain the balancer answers from today. */
+    actualize(sourceUrl) {
+        if (typeof sourceUrl !== 'string' || !sourceUrl) return sourceUrl;
+        try {
+            const parsed = new URL(sourceUrl, 'https://relative.invalid');
+            if (!this.retired.has(this.domainOf(parsed.hostname))) return sourceUrl;
+            parsed.protocol = 'https:';
+            parsed.host = this.actualHost;
+            return parsed.href;
+        } catch {
+            return sourceUrl;
+        }
+    }
+};
 
 // Provider URLs come from scraped pages. Only web/extension schemes may become
 // frame sources, and the serialized URL is escaped for a quoted attribute.
@@ -907,7 +1066,7 @@ function isVenomProviderUrl(sourceUrl) {
             ? sourceUrl
             : new URL(sourceUrl, typeof window !== 'undefined' ? window.location?.href : undefined);
         const hostname = parsed.hostname.toLowerCase();
-        return Array.from(VENOM_AD_FREE_HOSTS).some(host =>
+        return [...VENOM_AD_FREE_HOSTS, BalancerDomains.domainOf(BalancerDomains.actualHost)].some(host =>
             hostname === host || hostname.endsWith(`.${host}`)
         );
     } catch {
@@ -935,6 +1094,7 @@ function isVenomProviderUrl(sourceUrl) {
 // Export
 if (typeof window !== 'undefined') {
     window.BaseParserService = BaseParserService;
+    window.BalancerDomains = BalancerDomains;
 }
 
 if (typeof module !== 'undefined' && module.exports) {

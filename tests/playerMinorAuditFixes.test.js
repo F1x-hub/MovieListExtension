@@ -48,7 +48,7 @@ const { KinogoParser, ExFsParser, SeasonvarParser, BaseParserService } = context
     assert.equal(parser.extractKinogoDirectSources(trailerOnly).length, 0,
         'a trailer must not be presented as the KinoGo player');
     const withPlayer = `${trailerOnly}<iframe data-src="https://api.ortified.ws/embed/movie/42"></iframe>`;
-    assert.equal(parser.extractKinogoDirectSources(withPlayer)[0]?.url, 'https://api.ortified.ws/embed/movie/42');
+    assert.equal(parser.extractKinogoDirectSources(withPlayer)[0]?.url, 'https://api.femd.ws/embed/movie/42');
 }
 
 // 2. Ex-FS: Full HD stays first; supported providers from other tabs become fallbacks.

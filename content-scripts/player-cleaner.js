@@ -410,6 +410,9 @@
         try { return Promise.resolve(video.play()); } catch (error) { return Promise.reject(error); }
     }
 
+    const PROVIDER_START_LIMIT_MS = 8000;
+    const PROVIDER_START_RETRY_MS = 600;
+
     function broadcastPlay(video) {
         tryPlay(video).catch(error => {
             // A refused play() fires no «play»: don't let the marker swallow a later real one.
@@ -1912,7 +1915,13 @@
         if (typeof lifecycleOptions.isRequestCurrent === 'function') {
             activeRequestGuard = lifecycleOptions.isRequestCurrent;
         }
-        if (!activeRequestGuard()) return;
+        if (!activeRequestGuard()) {
+            // Request IDs only grow, so this guard will never pass again. Kept, it would also
+            // refuse the next source's video, leaving that paused with the browser's controls.
+            activePlaybackRetry?.cancel?.();
+            activeRequestGuard = () => true;
+            return;
+        }
         // Isolation: Strict check to ensure we are running inside OUR Extension
         let isInsideExtension = false;
         
@@ -3209,74 +3218,105 @@
                 return { season, episode };
             };
 
-            // Inside provider frames the embed path identifies the title. On the
-            // extension page every title shares movie-details.html, so the key
-            // uses the movie MovieDetails stamps on <html>; without it there is
-            // no safe key. Videos whose position the canonical ProgressService
+            // Inside provider frames the embed path identifies the title, except in
+            // Allplay frames: they all sit at "/" and name the title in token_movie.
+            // On the extension page every title shares movie-details.html, so the key
+            // uses the movie MovieDetails stamps on <html>. Without any of these there
+            // is no safe key. Videos whose position the canonical ProgressService
             // restores (Seasonvar) opt out so they are not seeked twice.
             const isExtensionPage = window.location.protocol === 'chrome-extension:'
                 || document.documentElement?.dataset?.playerProgressScope !== undefined;
-            const readProgressScope = () => (isExtensionPage
-                ? String(document.documentElement?.dataset?.playerProgressScope || '')
-                : window.location.pathname);
+            const readProgressScope = () => {
+                if (isExtensionPage) return String(document.documentElement?.dataset?.playerProgressScope || '');
+                const { pathname, search } = window.location;
+                const token = new URLSearchParams(search).get('token_movie');
+                if (token) return `${pathname}${token}`;
+                return pathname === '/' ? '' : pathname;
+            };
             const progressScope = readProgressScope();
             const localProgressEnabled = Boolean(progressScope)
                 && video.dataset?.progressOwner !== 'canonical';
             const isProgressScopeCurrent = () => localProgressEnabled && readProgressScope() === progressScope;
 
+            // Allplay's season and episode are in data-select menus, which the scan above does not read.
+            const allplayMenuLabel = type => document
+                .querySelector(`[data-select="${type}"] .select__drop-item.active`)?.textContent?.trim() || null;
+
             const getProgressKey = () => {
                 let key = 'movieExtension_progress_' + progressScope.replace(/\W/g, '_');
                 const info = getActiveSeriesInfo();
-                if (info.season) key += '_' + info.season.replace(/\s+/g, '');
-                if (info.episode) key += '_' + info.episode.replace(/\s+/g, '');
+                const season = info.season || allplayMenuLabel('seasonType1');
+                const episode = info.episode || allplayMenuLabel('episodeType1');
+                if (season) key += '_' + season.replace(/\s+/g, '');
+                if (episode) key += '_' + episode.replace(/\s+/g, '');
                 return key;
             };
-            
-            const saveProgress = () => {
-                if (broadcastState) return;
-                if (!isProgressScopeCurrent()) return;
-                if (video.currentTime > 5 && video.duration > 0) {
+
+            // The key of the media now loaded. A provider marks the next episode in its menu
+            // while the old one still plays, and a save in that moment must not land on the new one.
+            let loadedProgressKey = null;
+            let stopTrackingProgress = null;
+
+            // A provider's next episode can arrive as a new video element (the swap in
+            // replacePlayer), so the position follows the element in use.
+            const trackLocalProgress = (media) => {
+                stopTrackingProgress?.();
+                stopTrackingProgress = null;
+                loadedProgressKey = null;
+                if (!localProgressEnabled || media.dataset?.progressOwner === 'canonical') return;
+
+                const saveProgress = () => {
+                    if (broadcastState) return;
+                    if (!isProgressScopeCurrent()) return;
+                    if (media.currentTime > 5 && media.duration > 0) {
+                        const key = loadedProgressKey || getProgressKey();
+                        // Don't save if near the end (e.g. < 30s remaining) to avoid stuck at credits
+                        if (media.duration - media.currentTime > 30) {
+                            localStorage.setItem(key, media.currentTime);
+                        } else {
+                            localStorage.removeItem(key);
+                        }
+                    }
+                };
+
+                const restoreProgress = () => {
+                    if (broadcastState) return;
+                    if (!isProgressScopeCurrent()) return;
                     const key = getProgressKey();
-                    // Don't save if near the end (e.g. < 30s remaining) to avoid stuck at credits
-                    if (video.duration - video.currentTime > 30) {
-                        localStorage.setItem(key, video.currentTime);
-                    } else {
-                        localStorage.removeItem(key); 
+                    loadedProgressKey = key;
+                    const savedTime = parseFloat(localStorage.getItem(key));
+                    if (savedTime && !isNaN(savedTime) && media.duration) {
+                        // Sanity check
+                        if (savedTime < media.duration - 5) {
+                            // Restore with -10 seconds rewind for context
+                            media.currentTime = Math.max(0, savedTime - 10);
+                        }
                     }
-                }
-            };
+                };
 
-            const restoreProgress = () => {
-                if (broadcastState) return;
-                if (!isProgressScopeCurrent()) return;
-                const key = getProgressKey();
-                const savedTime = parseFloat(localStorage.getItem(key));
-                // console.log('[MovieExtension] Restoring progress for key:', key, 'Time:', savedTime);
-                if (savedTime && !isNaN(savedTime) && video.duration) {
-                    // Sanity check
-                    if (savedTime < video.duration - 5) {
-                        // Restore with -10 seconds rewind for context
-                        video.currentTime = Math.max(0, savedTime - 10);
-                    }
-                }
-            };
+                const forgetProgress = () => {
+                    if (isProgressScopeCurrent()) localStorage.removeItem(loadedProgressKey || getProgressKey());
+                };
 
-            if (localProgressEnabled) {
                 // Save periodically
                 const progressInterval = setInterval(saveProgress, 5000);
-                listenerScope.addDisposer(() => clearInterval(progressInterval));
-                video.addEventListener('pause', saveProgress);
-                listenerScope.listen(window, 'beforeunload', saveProgress);
+                media.addEventListener('pause', saveProgress);
+                window.addEventListener('beforeunload', saveProgress);
+                media.addEventListener('loadedmetadata', restoreProgress);
+                media.addEventListener('ended', forgetProgress);
+                stopTrackingProgress = () => {
+                    clearInterval(progressInterval);
+                    media.removeEventListener('pause', saveProgress);
+                    window.removeEventListener('beforeunload', saveProgress);
+                    media.removeEventListener('loadedmetadata', restoreProgress);
+                    media.removeEventListener('ended', forgetProgress);
+                };
 
-                // Restore
-                video.addEventListener('loadedmetadata', restoreProgress);
                 // Try immediately if ready
-                if (video.readyState >= 1) restoreProgress();
-
-                video.addEventListener('ended', () => {
-                    if (isProgressScopeCurrent()) localStorage.removeItem(getProgressKey());
-                });
-            }
+                if (media.readyState >= 1) restoreProgress();
+            };
+            trackLocalProgress(video);
+            listenerScope.addDisposer(() => stopTrackingProgress?.());
             // --- PERSISTENT PROGRESS END ---
 
             progressContainer.addEventListener('click', (e) => {
@@ -3753,28 +3793,29 @@
             // Track progress for movies (send timestamp to parent)
             let lastProgressUpdate = 0;
             const PROGRESS_UPDATE_INTERVAL = 30000; // 30 seconds
-            
-            video.addEventListener('timeupdate', () => {
+
+            const reportProgressToHost = (media) => media.addEventListener('timeupdate', () => {
                 const now = Date.now();
                 if (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
                     lastProgressUpdate = now;
-                    
-                    const timestamp = Math.floor(video.currentTime);
+
+                    const timestamp = Math.floor(media.currentTime);
                     const info = getActiveSeriesInfo();
-                    
+
                     // Send progress to parent window
-                    if (window.parent && video.currentTime > 0 && !isNaN(video.duration)) {
+                    if (window.parent && media.currentTime > 0 && !isNaN(media.duration)) {
                         const progressData = {
                             type: 'UPDATE_WATCHING_PROGRESS',
                             timestamp: timestamp,
                             season: info.season,
                             episode: info.episode
                         };
-                        
+
                         postToHost(progressData);
                     }
                 }
             });
+            reportProgressToHost(video);
 
             // Left Controls Group
             const leftControls = document.createElement('div');
@@ -4517,6 +4558,8 @@
             window._movieExtension_setupListeners = (videoEl) => {
                 setupVideoListeners(videoEl);
                 syncPendingMediaState(videoEl);
+                trackLocalProgress(videoEl);
+                reportProgressToHost(videoEl);
             };
 
             volumeBtn.addEventListener('click', (e) => {
@@ -5948,8 +5991,43 @@
             } else {
                  console.warn('[MovieExtension] No video element found to pause');
             }
+        } else if (event.data.type === 'PLAYER_START') {
+            startProviderVideo();
         }
     });
+
+    let cancelProviderStart = null;
+
+    /**
+     * A provider's player fetches nothing until its video is told to play, and a source
+     * it is still swapping cancels a play() in flight, so this asks until the video runs.
+     * It stops at a refusal, which leaves the play button as any blocked autoplay does,
+     * and when the viewer touches the player.
+     */
+    function startProviderVideo() {
+        cancelProviderStart?.();
+        const deadline = Date.now() + PROVIDER_START_LIMIT_MS;
+        let timer = null;
+        const cancel = () => {
+            clearTimeout(timer);
+            window.removeEventListener('pointerdown', cancel, true);
+            window.removeEventListener('keydown', cancel, true);
+            if (cancelProviderStart === cancel) cancelProviderStart = null;
+        };
+        cancelProviderStart = cancel;
+        window.addEventListener('pointerdown', cancel, true);
+        window.addEventListener('keydown', cancel, true);
+        const attempt = () => {
+            const video = permanentVideo || document.querySelector('video');
+            if ((video && !video.paused && video.readyState >= 2) || Date.now() >= deadline) {
+                cancel();
+                return;
+            }
+            timer = setTimeout(attempt, PROVIDER_START_RETRY_MS);
+            if (video?.paused) tryPlay(video).catch(error => { if (error?.name === 'NotAllowedError') cancel(); });
+        };
+        attempt();
+    }
 
 })();
 

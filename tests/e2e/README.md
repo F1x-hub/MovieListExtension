@@ -145,7 +145,7 @@ software; compare with `test:e2e:player:headed` before relying on one.
 
 Providers answer differently by browser and by blocker, so read a result with its mode,
 named at the top of `player-summary.md`. On 2026-11-06 KinoGo served a series through
-`stravers.live` with a window and through `nextembed.ws` without one. Its next-episode
+`stravers.live` with a window and through the balancer's own domain without one. Its next-episode
 controls worked on the first and not on the second, and with a window but no uBlock the
 same series never started, apparently waiting on its ad loader. AnimeGo showed about a minute of ads
 over the start of an episode without uBlock, and none with it.
@@ -153,6 +153,40 @@ over the start of an episode without uBlock, and none with it.
 While a balancer refuses a source, specs that need it skip or use another source, and
 `player-summary.md` shows why. [`docs/TASKS.md`](../../docs/TASKS.md) lists the sources
 in that state.
+
+### In the owner's own browser
+
+The rig's Chromium is not the browser the extension lives in. `npm run test:live:player`
+drives the running Chrome instead, with its real profile, sign-in, blocker and network:
+
+```bash
+npm run test:live:player
+```
+
+```bash
+npm run test:live:player -- --reload 301 404900
+```
+
+Chrome has to allow it: open `chrome://inspect/#remote-debugging`, turn on the switch, and
+press Allow when Chrome asks about the connection, which it does for each run. The run waits
+three minutes for that answer. `--reload` reloads the extension first, which closes its open
+tabs; Chrome loads it from the repository root, so a reload picks up source edits without a
+build. Turn the switch off again when finished: while it is on, Chrome lets local programs ask
+for control of the browser.
+
+Each title opens in its own muted window. The run presses «Смотреть» with a real click, then
+«Следующая» on a series, then every offered source, and a source counts as playing only when
+frames are decoded and time moves. It sets aside the title's last source, preference and
+positions and the local source-health counters before starting, so each title starts from the
+default order, and puts them back afterwards. A provider frame keeps its own position
+in that site's storage, out of the run's reach, so a title played in a frame may later resume
+on that frame where the test stopped. Keep the windows in view: Chrome loads no media for a hidden
+page that has played nothing yet, and such a source is reported as `window hidden`, which says
+nothing about the source. Results and screenshots go to `.e2e-output/live/`; a person should look
+at them, because frames and time say that a video runs, not that it looks right. It does not
+check the length against the film.
+
+The exit code is 1 when a title has no source that plays and 2 when Chrome cannot be reached.
 
 ## Rating dialogs outside the film page
 

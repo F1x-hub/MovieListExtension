@@ -124,6 +124,26 @@ const ftor = {
     await Promise.all([resolver.resolve(embed, { forceRefresh: true }), resolver.resolve(embed)]);
     assert.equal(calls.length, 4, 'a forced refresh requests again; a parallel call reuses it');
 
+    // 2b. The CDN redirects a manifest to the server holding it, and the HLS transport
+    // refuses every redirect, so the stream has to start from the final address.
+    const manifests = new Map();
+    const redirecting = new KodikStreamResolver({ settleManifests: true, fetch: async url => {
+        if (url === pageUrl) return { ok: true, status: 200, text: async () => page };
+        if (url === 'https://kodikplayer.com/ftor') return { ok: true, status: 200, json: async () => ftor };
+        const answer = manifests.get(url.match(/(\d+)\.mp4/)[1]);
+        if (answer instanceof Error) throw answer;
+        let cancelled = 0;
+        return { ok: true, status: 200, ...answer, body: { cancel: async () => { cancelled += 1; } }, get cancelled() { return cancelled; } };
+    } });
+    manifests.set('720', { redirected: true, url: 'https://scorpius.cloud.solodcdn.com/useruploads/x/720.mp4:hls:manifest.m3u8' });
+    manifests.set('480', new Error('offline'));
+    manifests.set('360', { redirected: true, url: 'https://evil.example/x/360.mp4:hls:manifest.m3u8' });
+    const settled = await redirecting.resolve(embed);
+    assert.deepEqual(settled.map(stream => stream.height), [720, 480], 'a redirect off the CDN loses that quality');
+    assert.equal(settled[0].url, 'https://scorpius.cloud.solodcdn.com/useruploads/x/720.mp4:hls:manifest.m3u8',
+        'the stream starts from the final address');
+    assert.equal(settled[1].url, `https:${cdn(480)}`, 'a failed check leaves the address to the transport');
+
     ftorResponse = { links: {} };
     resolver.clearCache();
     await assert.rejects(resolver.resolve(embed), /no streams/);

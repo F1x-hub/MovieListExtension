@@ -468,7 +468,7 @@ class AnimeGoParser extends BaseParserService {
             ? KodikStreamResolver
             : (typeof window !== 'undefined' ? window.KodikStreamResolver : null);
         if (typeof Resolver !== 'function') return null;
-        this._streamResolver = new Resolver({ fetch: (url, init) => this.fetchWithTimeout(url, init) });
+        this._streamResolver = new Resolver({ fetch: (url, init) => this.fetchWithTimeout(url, init), settleManifests: true });
         return this._streamResolver;
     }
 

@@ -43,23 +43,37 @@ records what was finished.
 
 ## Sources worth a look
 
-- **`api.nextembed.ws` and `api.ortified.ws` refuse every embed.** Since the afternoon
-  of 2026-11-06 they answer `/embed/` with HTTP 422 and an empty body, so KinoGo films and
-  Ex-FS are unavailable, and the player now says so and moves on. Why is not known: it may
-  be a limit on this address after a day of test runs, or a change on their side. Nobody
-  has tried from another network. Next step: open a film on KinoGo in a normal browser.
-- **Next episode on KinoGo through `nextembed.ws`.** That balancer has no episode
-  selectors. The viewer should now get an error instead of S1E1 under a header saying
-  S1E2, but this has not been seen working, because the balancer refuses everything today.
-- **VidSrc** did not answer from this network in any run, and is the one source offered
-  without an availability check. It says plainly that it is unavailable, and after a
-  12-second grace period the page moves on, so a film can take about 20 seconds to reach a
-  working source when KinoGo and Ex-FS refuse. Ranking it after Rutube would shorten that.
-- **HDRezka** answers 403 and asks for a browser check, so it is not offered.
-- **Picture size at the start** differs a lot: Rutube 1280×720, KinoGo 854×480, Seasonvar
-  722×406, Kodik 640×360. Whether better quality was on offer has not been checked.
-- **KinoGo, Ex-FS and some Rutube starts need a second press** on the play button after
-  «Смотреть». Whether that can be avoided has not been looked into.
+- **The balancer's next move.** A new domain is followed without a release, but the frame
+  scripts, the Referer rules and the host permission are lists in `manifest.json` and
+  `src/background/provider-embed-rules.json`. Until the domain is added there, films play
+  through the balancer's own player with its ads. `BalancerDomains` logs `The balancer
+  moved` when it happens. Covering every `.ws` host would avoid this, at the price of
+  running the frame scripts on sites that have nothing to do with films, so it needs a
+  decision.
+- **A series on KinoGo through the balancer's own frame.** `KinogoAdapter` counts only
+  `stravers.live`, `allarknow.online` and `stloadi.live` as able to change episodes, and the
+  series tried (Breaking Bad, The Simpsons) all came through `stravers.live`, where
+  «Следующая» works. A series with only the balancer's frame has not been seen: it would
+  say it cannot open the episode, though Ex-FS changes episodes on that same player.
+- **«Следующая» on KinoGo stayed black once.** S1E2 of Breaking Bad showed `0:00 / 0:01` for the
+  26 seconds the run waited. It did not return in 17 later presses, and nothing recorded whether
+  that window was visible. Chrome loads no media for a hidden page that has played nothing yet,
+  which explains the other stalls seen, but this frame had just played S1E1, and pressing
+  «Следующая» in a minimized window worked. The cause is unknown.
+- **VidSrc** did not answer from this network in any run. `vidsrc-embed.ru` and
+  `vidsrc-embed.su` are silent; `vsembed.ru` answers with a page that showed only black in a
+  frame, and `vidsrc.me` redirects to an unrelated host. It now runs last, so it costs
+  nothing while another source works. Nobody has tried from another network.
+- **A balancer move loses the positions kept in its frames.** They live in that site's storage,
+  and the page's own position (`watching_progress_`) is never sent to a frame. Sending it at the
+  start would keep a viewer's place across moves.
+- **The picture at the start** differs a lot: Rutube 1280×720, KinoGo 854×480, Seasonvar
+  722×406, HDRezka 640×360, the balancer 864×486. HDRezka starts at its 480p variant by
+  design. Whether the others could start higher has not been checked.
+- **`movieExtension_videoVolume` is 0 in the owner's browser**, so players on the extension's
+  own pages (Rutube, Seasonvar, HDRezka, AnimeGo) start muted while provider frames, with
+  their own storage, do not. Only the mute button and the volume slider write that value,
+  so this is probably a choice made once and forgotten. Worth asking before changing it.
 
 ## Rig reliability
 

@@ -25,7 +25,7 @@ class MovieDetailsPlayerSurface {
         if (!value) return null;
         try {
             const base = typeof window !== 'undefined' ? window.location?.href : undefined;
-            const parsed = new URL(value, base);
+            const parsed = new URL(globalThis.BalancerDomains?.actualize?.(value) ?? value, base);
             return ['https:', 'http:', 'chrome-extension:'].includes(parsed.protocol) ? parsed.href : null;
         } catch {
             return null;

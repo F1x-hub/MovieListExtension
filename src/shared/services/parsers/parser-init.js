@@ -10,6 +10,8 @@
 (function() {
     'use strict';
 
+    void window.BalancerDomains?.load();
+
     const registry = new ParserRegistry(['kinogo', 'exfs', 'seasonvar', 'rutube', 'animego', 'officialyt', 'hdrezka']);
 
     // Register KinoGo parser

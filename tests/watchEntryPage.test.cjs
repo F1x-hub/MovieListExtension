@@ -30,7 +30,7 @@ function manager() {
     const instance = Object.assign({
         proPlayerEnabled: true, selectedMovie: { kinopoiskId: 42, type: 'anime' },
         sourceSwitchRequestId: 1, activeSourceValue: null, elements: { sourceButtonsContainer: container },
-        getLastSource: async () => null, isTorrentMovie: () => false,
+        getLastSource: async () => null, isTorrentMovie: () => false, postToPlayerFrame: () => true,
         isSourceSwitchRequestCurrent(id) { return id === this.sourceSwitchRequestId; },
         changes: [],
         async changeVideoSource(value) {
@@ -60,7 +60,9 @@ function start(instance, manual = false) {
     m.activeSourceValue = null;
     assert.equal(await m.resolveWatchSource(), 'parser:rutube', 'preference wins over last source');
     prefs = null;
-    assert.equal(await m.resolveWatchSource(), 'vidsrc:tt42', 'last source wins over anime default');
+    assert.equal(await m.resolveWatchSource(), 'parser:animego', 'VidSrc as the last source may only be where a failed run ended');
+    m.getLastSource = async () => 'parser:exfs';
+    assert.equal(await m.resolveWatchSource(), 'parser:exfs', 'last source wins over anime default');
     m.getLastSource = async () => null;
     assert.equal(await m.resolveWatchSource(), 'parser:animego');
     m.selectedMovie.type = 'film';
@@ -169,21 +171,24 @@ function start(instance, manual = false) {
         };
         if (bridgeSupportsFrame !== undefined) adapter.supportsNativeBridgeSource = () => bridgeSupportsFrame;
         const states = [];
+        const started = [];
         let unmounted = 0;
         const instance = Object.assign({
             elements: { videoContainer: container }, sourceSwitchRequestId: 7, selectedMovie: { kinopoiskId: 42 },
             playbackController: { getSelection: () => selection, getAdapter: id => (id === 'exfs' ? adapter : null) },
             isSourceSwitchRequestCurrent(id) { return id === this.sourceSwitchRequestId; },
+            postToPlayerFrame(target, message) { started.push([target, message.type]); return true; },
             unmountActivePlayer() { unmounted++; },
             setPlayerSourceState(state, options) { states.push({ state, ...options }); }
         }, w.MovieDetailsWatchEntryMethods);
-        return { instance, applies, states, adapter, frame, container, selection, unmounted: () => unmounted };
+        return { instance, applies, states, started, adapter, frame, container, selection, unmounted: () => unmounted };
     };
     const sync = fixture => fixture.instance.syncNativeProviderEpisode('exfs', 7, '42');
 
     {
         const later = episodeSync();
         assert.equal(await sync(later), true, 'a later episode is sent to the provider frame');
+        assert.deepEqual(later.started, [[later.frame, 'PLAYER_START']], 'and started: moving it there leaves its video idle');
         assert.equal(later.applies.length, 1);
         assert.equal(later.applies[0].requested, later.selection);
         assert.equal(later.applies[0].options.waitForBridge, true, 'the frame is still loading, so the bridge has to wait for it');

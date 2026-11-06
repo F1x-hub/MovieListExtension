@@ -216,7 +216,7 @@ console.log(`        - Total attempts taken: ${attempts.length}`);
 console.log(`        - Sources returned: ${failoverSources[0].url}`);
 assert.strictEqual(attempts.length, 2);
 assert.strictEqual(failoverSources.length, 1);
-assert.strictEqual(failoverSources[0].url, 'https://api.ortified.ws/embed/movie/5555');
+assert.strictEqual(failoverSources[0].url, 'https://api.femd.ws/embed/movie/5555');
 
 // 2.3 Verify persistence of working mirror for subsequent requests
 console.log(`  [2.3] Active mirror persistence:`);
@@ -275,8 +275,8 @@ extractedMulti.forEach((s, idx) => {
     console.log(`        #${idx + 1}: ${s.url} (Rank: ${idx === 0 ? 'Primary' : 'Fallback'})`);
 });
 assert.strictEqual(extractedMulti.length, 5);
-assert(extractedMulti[0].url.includes('ortified.ws'), 'Ortified must rank #1 (Score 100)');
-assert(extractedMulti[1].url.includes('variyt.ws'), 'Variyt must rank #2 (Score 95)');
+assert(extractedMulti[0].url.includes('femd.ws'), 'The balancer on its current domain must rank first (Score 100)');
+assert(extractedMulti[1].url.includes('femd.ws'), 'Both addresses on retired domains moved to it');
 assert(extractedMulti[2].url.includes('lumex.cloud'), 'Lumex must rank #3 (Score 85)');
 // Fallback balancers cinemar and stravers should be last
 assert(extractedMulti[3].url.includes('cinemar.cc') || extractedMulti[3].url.includes('stravers.live'));

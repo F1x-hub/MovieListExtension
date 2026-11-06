@@ -4,9 +4,10 @@
     // Grounded in existing Kodik fixtures and Rutube's declared CDN consumers.
     // New provider/CDN hosts need a reviewed update; this is not live availability proof.
     const MANIFEST_HOSTS = Object.freeze(['solodcdn.com', 'rtbcdn.ru', 'rutube.ru']);
-    // Final CDN hosts observed in HDRezka captures. Routing is handled in a
-    // bundled resolver frame with a closed CSP, never by this HLS transport.
-    const HDREZKA_HOSTS = new Set(['weyland', 'hronos', 'dagon', 'magic', 'bingo', 'eleos', 'ember'].map(name => `${name}.stream.voidboost.one`));
+    // Final HDRezka CDN servers: one label under the CDN's own name, since new ones keep
+    // appearing. Routing is handled in a bundled resolver frame with a closed CSP, never
+    // by this HLS transport.
+    const HDREZKA_HOST = /^[a-z0-9-]+\.stream\.voidboost\.one$/;
     const KINDS = new Set(['manifest', 'level', 'init', 'fragment', 'key', 'file']);
 
     function publicV4(parts) {
@@ -65,7 +66,7 @@
                 ? { ok: true, url: url.href } : { ok: false, reason: 'local-origin' };
             if (url.protocol !== 'https:' || !publicHost(url.hostname)) return { ok: false, reason: 'non-public-url' };
             const host = url.hostname.toLowerCase().replace(/\.+$/, '');
-            if (profile === 'hdrezka') return HDREZKA_HOSTS.has(host)
+            if (profile === 'hdrezka') return HDREZKA_HOST.test(host)
                 ? { ok: true, url: url.href } : { ok: false, reason: 'unapproved-host' };
             if (['manifest', 'file'].includes(kind) && !allowed.some(base => host === base || host.endsWith(`.${base}`))) {
                 return { ok: false, reason: 'unapproved-host' };

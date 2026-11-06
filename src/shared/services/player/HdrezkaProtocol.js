@@ -1,7 +1,9 @@
 /** Closed URL and response contracts for the movie-only HDRezka provider. */
 (function (global) {
     'use strict';
-    const CDN_HOSTS = Object.freeze(['weyland', 'hronos', 'dagon', 'magic', 'bingo', 'eleos', 'ember'].map(name => `${name}.stream.voidboost.one`));
+    // The CDN keeps adding servers, each a new name under this one, and a name missing
+    // here would fail the film. So the contract is the shape: one label, this domain.
+    const CDN_HOST = /^[a-z0-9-]+\.stream\.voidboost\.one$/;
     const ROUTER = 'stream.voidboost.one';
     function parse(value) {
         try {
@@ -18,7 +20,7 @@
     function streamUrl(value, { routing = false } = {}) {
         const url = parse(value);
         if (!url || url.hash || !url.pathname.endsWith('.m3u8')
-            || !(CDN_HOSTS.includes(url.hostname) || routing && url.hostname === ROUTER)) return null;
+            || !(CDN_HOST.test(url.hostname) || routing && url.hostname === ROUTER)) return null;
         return url.href;
     }
     function qualities(response) {
@@ -45,5 +47,5 @@
         if (['html', 'json', 'empty', 'other'].includes(value?.responseType)) result.responseType = value.responseType;
         return result;
     }
-    global.HdrezkaProtocol = Object.freeze({ CDN_HOSTS, ROUTER, pageUrl, streamUrl, qualities, resolverFailure });
+    global.HdrezkaProtocol = Object.freeze({ CDN_HOST, ROUTER, pageUrl, streamUrl, qualities, resolverFailure });
 })(typeof window !== 'undefined' ? window : globalThis);

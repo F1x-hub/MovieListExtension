@@ -8610,6 +8610,7 @@ class MovieDetailsManager {
                         ? await this.playbackController.applySelection(selectionPayload)
                         : { status: 'UNAVAILABLE' };
                     nativeSelectionApplied = applyResult.status === 'PENDING_NATIVE_UI';
+                    if (nativeSelectionApplied) this.startPlayerFrame?.();
                     console.log('[SeasonPickerTrace] native bridge apply result', {
                         provider: activeProvider,
                         requestedSeason: selectionPayload.seasonNumber,
@@ -8766,7 +8767,8 @@ class MovieDetailsManager {
         this.showVideoModal(this.selectedMovie);
         this.videoModalMovie = this.selectedMovie;
         this.setPlayerSourceState('loading', { message: 'Поиск источников…' });
-        
+        const watchRequestId = this.sourceSwitchRequestId;
+
         try {
             // POPULATE SOURCES UI — dynamically from ParserRegistry
             this.populateSourceSelector();
@@ -8813,9 +8815,7 @@ class MovieDetailsManager {
                 this.watchSearching = false;
                 this.syncWatchEntry?.();
                 if (this.proPlayerEnabled && !targetSource) {
-                    if (this.sourceProbeDone && typeof Utils !== 'undefined') {
-                        Utils.showToast('Этого фильма нет ни в одном источнике. Попробуйте «Торрент».', 'warning', 6000);
-                    }
+                    if (this.sourceSwitchRequestId === watchRequestId) this.showNoWatchSource();
                     return;
                 }
 
@@ -8881,6 +8881,7 @@ class MovieDetailsManager {
                     this.watchSearching = false;
                     this.syncWatchEntry();
                     if (target) await this.changeVideoSource(target);
+                    else if (this.sourceSwitchRequestId === watchRequestId) this.showNoWatchSource();
                     return;
                 }
                 const currentType = this.selectedMovie?.type;
@@ -9056,6 +9057,7 @@ class MovieDetailsManager {
                      
                      this.restoreProgressForReadyIframe(iframe);
                      this.sendAnimeSkipTimes(iframe);
+                     this.startReadyPlayerFrame?.(iframe);
                  }
             } else if (event.data.type === 'PLAYER_SOURCE_STATE') {
                 const { state, url } = event.data;
@@ -9944,6 +9946,10 @@ class MovieDetailsManager {
                 }
                 if (!this.broadcastEpisode && selection.initialTimestamp > 0) {
                     renderOptions.resolvedTimestamp = selection.initialTimestamp;
+                } else if (Number(entry.renderOptions?.resolvedEpisodeNumber) !== Number(selection.episodeNumber)
+                    || Number(entry.renderOptions?.resolvedSeasonNumber) !== Number(selection.seasonNumber)) {
+                    // A position read while preloading belongs to the episode it was read for.
+                    renderOptions.resolvedTimestamp = 0;
                 }
             }
 

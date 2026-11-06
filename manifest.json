@@ -49,14 +49,7 @@
     "https://*.kodik-cdn.com/*",
     "https://*.kodik-storage.com/*",
     "https://hdrezka.co/*",
-    "https://weyland.stream.voidboost.one/*",
-    "https://hronos.stream.voidboost.one/*",
-    "https://dagon.stream.voidboost.one/*",
-    "https://magic.stream.voidboost.one/*",
-    "https://bingo.stream.voidboost.one/*",
-    "https://eleos.stream.voidboost.one/*",
-    "https://ember.stream.voidboost.one/*",
-    "https://stream.voidboost.one/*",
+    "https://*.stream.voidboost.one/*",
     "https://www.kinopoisk.ru/*",
     "https://kinopoisk.ru/*",
     "https://*.kinopoisk.ru/*",
@@ -74,6 +67,7 @@
     "https://*.namy.ws/*",
     "https://*.variyt.ws/*",
     "https://*.nextembed.ws/*",
+    "https://*.femd.ws/*",
     "https://*.lumex.cloud/*",
     "https://myanimelist.net/*",
     "https://api.aniskip.com/*",
@@ -209,6 +203,7 @@
     },
     {
       "matches": [
+        "*://*.femd.ws/*",
         "*://*.namy.ws/*",
         "*://*.variyt.ws/*",
         "*://*.nextembed.ws/*",
@@ -237,6 +232,7 @@
     },
     {
       "matches": [
+        "*://*.femd.ws/*",
         "*://*.namy.ws/*",
         "*://*.lumex.cloud/*",
         "*://*.variyt.ws/*",

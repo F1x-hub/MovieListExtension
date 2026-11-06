@@ -924,7 +924,7 @@ class KinogoParser extends BaseParserService {
 
         // 2. Script & HTML regex scanning
         const scriptPatterns = [
-            /(?:https?:)?\/\/(?:api\.)?(?:ortified|variyt|namy|nextembed)\.ws\/embed\/(?:movie|serial)\/\d+/gi,
+            /(?:https?:)?\/\/(?:api\.)?(?:femd|ortified|variyt|namy|nextembed)\.ws\/embed\/(?:movie|serial)\/\d+/gi,
             /https?:\/\/cinemar\.cc\/embed\/\d+\/[^\s"'<>]+/gi,
             /https?:\/\/[a-zA-Z0-9_-]+\.stravers\.live\/\?token_movie=[^\s"'<>]+/gi,
             /https?:\/\/[a-zA-Z0-9_-]+\.allarknow\.online\/\?token_movie=[^\s"'<>]+/gi,
@@ -973,6 +973,7 @@ class KinogoParser extends BaseParserService {
     _scoreEmbedUrl(url) {
         if (!url) return -1000;
         // Known reliable working balancers
+        if (BaseParserService.isActualBalancerUrl(url)) return 100;
         if (url.includes('ortified.ws')) return 100;
         if (url.includes('nextembed.ws')) return 95;
         if (url.includes('variyt.ws')) return 95;
@@ -1024,7 +1025,7 @@ class KinogoParser extends BaseParserService {
         let u = url.trim();
         if (u.startsWith('//')) u = 'https:' + u;
         u = u.replace(/&amp;/g, '&').replace(/&#58;/g, ':');
-        return u;
+        return BaseParserService.actualizeProviderUrl(u);
     }
 }
 

@@ -45,7 +45,8 @@
             return Number.isFinite(known) ? known : NEUTRAL_HEALTH;
         };
         return unique.map((value, index) => ({ value, index, health: score(value),
-            rank: anime && value === 'parser:animego' ? -1 : film && value === 'parser:rutube' ? 1 : 0
+            // VidSrc is offered without an availability check, so it fails slowest.
+            rank: value.startsWith('vidsrc:') ? 2 : anime && value === 'parser:animego' ? -1 : film && value === 'parser:rutube' ? 1 : 0
         })).sort((a, b) => a.rank - b.rank || b.health - a.health || a.index - b.index).map(entry => entry.value);
     }
     function select(values, { room, explicit, preference, last, ...options } = {}) {

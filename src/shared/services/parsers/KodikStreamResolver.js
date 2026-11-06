@@ -15,10 +15,14 @@ class KodikStreamResolver {
      * @param {Object} [options]
      * @param {(url: string, init?: RequestInit) => Promise<Response>} [options.fetch]
      * @param {number} [options.cacheTTL] - How long resolved manifests are reused
+     * @param {boolean} [options.settleManifests] - Replace each manifest address with the
+     *   one its redirect ends at. Playback needs it; the source-health probe follows no
+     *   redirect by design.
      */
-    constructor({ fetch: fetchImpl = null, cacheTTL = KODIK_STREAM_CACHE_TTL_MS } = {}) {
+    constructor({ fetch: fetchImpl = null, cacheTTL = KODIK_STREAM_CACHE_TTL_MS, settleManifests = false } = {}) {
         this._fetch = fetchImpl || ((url, init) => fetch(url, init));
         this.cacheTTL = cacheTTL;
+        this.settleManifests = settleManifests;
         /** @private @type {Map<string, {data: Array<{height: number, url: string}>, timestamp: number}>} */
         this._cache = new Map();
         /** @private @type {Map<string, Promise<Array<{height: number, url: string}>>>} */
@@ -63,7 +67,8 @@ class KodikStreamResolver {
                     body: KodikStreamResolver.buildFtorBody(info).toString()
                 });
                 if (!ftorResponse.ok) throw new Error(`Kodik stream request failed: ${ftorResponse.status}`);
-                const streams = KodikStreamResolver.parseLinks(await ftorResponse.json());
+                const parsed = KodikStreamResolver.parseLinks(await ftorResponse.json());
+                const streams = this.settleManifests ? await this.settleRedirects(parsed) : parsed;
                 if (streams.length === 0) throw new Error('Kodik returned no streams');
                 this._cache.set(pageUrl, { data: streams, timestamp: Date.now() });
                 return streams;
@@ -73,6 +78,28 @@ class KodikStreamResolver {
         })();
         this._inFlight.set(pageUrl, request);
         return request;
+    }
+
+    /**
+     * The CDN answers a manifest address with a redirect to the server holding it, and
+     * the HLS transport accepts no redirect at all. Reading the final address here keeps
+     * that rule: the stream plays from an address the policy has approved. A redirect
+     * off the approved hosts drops the quality; a failed check leaves it to the transport.
+     * @param {Array<{height: number, url: string}>} streams
+     * @returns {Promise<Array<{height: number, url: string}>>}
+     */
+    async settleRedirects(streams) {
+        const settled = await Promise.all(streams.map(async stream => {
+            try {
+                const response = await this._fetch(stream.url, { credentials: 'omit', referrerPolicy: 'no-referrer' });
+                try { await response.body?.cancel?.(); } catch { /* Only the address was needed. */ }
+                if (!response.redirected) return stream;
+                return KodikStreamResolver.isManifestSource(response.url) ? { ...stream, url: response.url } : null;
+            } catch {
+                return stream;
+            }
+        }));
+        return settled.filter(Boolean);
     }
 
     clearCache() {

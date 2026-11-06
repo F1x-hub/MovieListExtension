@@ -58,7 +58,7 @@ test('late missing embeds fail over finitely; a stale or detached mount cannot r
         const parser = new h.window.ExFsParser();
         const completions = new Map();
         parser.fetchWithTimeout = url => new Promise(resolve => completions.set(url, resolve));
-        const sources = [301, 302].map(id => ({ type: 'iframe', url: `https://api.variyt.ws/embed/kp/${id}` }));
+        const sources = [301, 302].map(id => ({ type: 'iframe', url: `https://api.femd.ws/embed/kp/${id}` }));
         let current = true;
         parser.renderPlayer(h.host, sources, { lifecycle: false, isRequestCurrent: () => current });
         completions.get(sources[0].url)({ status: 404 }); await tick();
