@@ -5,8 +5,13 @@
 class Navigation {
     // Cache key for storing user display data
     static USER_DISPLAY_CACHE_KEY = 'userDisplayCache';
-    // Cache lifetime: 7 days
-    static CACHE_LIFETIME = 7 * 24 * 60 * 60 * 1000;
+
+    /** The name a profile shows, falling back to the session's own copy of the user. */
+    static displayTextFor(profile, user) {
+        if (profile?.displayNameFormat === 'username' && profile.username) return profile.username;
+        const fullName = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ');
+        return fullName || profile?.displayName || user?.displayName || user?.email || 'User';
+    }
 
     constructor(currentPage = '') {
         this.currentPage = currentPage;
@@ -18,7 +23,9 @@ class Navigation {
         this.favoriteService = null;
         this.watchingService = null;
         this.cachedUserDisplay = null;
+        this.showGames = false;
         this._updateInProgress = false;
+        this._pendingUser = null;
         this._searchNavigationPending = false;
         if (typeof window !== 'undefined') {
             window.navigationInstance = this;
@@ -30,8 +37,8 @@ class Navigation {
     async init() {
         this.applyTheme(this.getCurrentTheme());
         
-        // CRITICAL: Load cached user display BEFORE rendering to prevent flickering
-        await this.loadCachedUserDisplay();
+        // CRITICAL: Load this BEFORE rendering, so nothing in the bar changes width a frame later
+        await this.loadFirstPaintState();
         
         // Initialize i18n via dynamic import to maintain compatibility with non-module scripts
         try {
@@ -70,45 +77,45 @@ class Navigation {
     }
 
     /**
-     * Load cached user display data from chrome.storage.local
-     * This is called BEFORE render to prevent flickering
+     * Reads from chrome.storage.local what the first paint needs.
      */
-    async loadCachedUserDisplay() {
+    async loadFirstPaintState() {
         try {
             if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
                 const result = await chrome.storage.local.get([
                     Navigation.USER_DISPLAY_CACHE_KEY,
                     'isAuthenticated',
-                    'user'
+                    'user',
+                    'showGames'
                 ]);
-                
-                const cache = result[Navigation.USER_DISPLAY_CACHE_KEY];
-                
-                if (result.isAuthenticated && cache) {
-                    // Validate: cache belongs to current user
-                    const currentUserId = result.user?.uid;
-                    if (cache.uid === currentUserId) {
-                        // Check cache lifetime (7 days)
-                        const isExpired = cache.timestamp && (Date.now() - cache.timestamp > Navigation.CACHE_LIFETIME);
-                        
-                        if (!isExpired) {
-                            this.cachedUserDisplay = cache;
-                            // console.log('Navigation: Loaded cached user display:', cache.displayName);
-                        } else {
-                            // Clear expired cache
-                            // console.log('Navigation: Cached user display expired, clearing');
-                            await chrome.storage.local.remove([Navigation.USER_DISPLAY_CACHE_KEY]);
-                        }
-                    } else {
-                        // UID mismatch, clear stale cache
-                        // console.log('Navigation: Cached user display UID mismatch, clearing');
-                        await chrome.storage.local.remove([Navigation.USER_DISPLAY_CACHE_KEY]);
-                    }
+                this.showGames = Boolean(result.showGames);
+                if (result.isAuthenticated) {
+                    this.cachedUserDisplay = await this.bestKnownUserDisplay(result[Navigation.USER_DISPLAY_CACHE_KEY], result.user);
                 }
             }
         } catch (error) {
             console.warn('Navigation: Could not load cached user display:', error);
         }
+    }
+
+    /**
+     * The saved display if it belongs to this session, however old: Firestore
+     * corrects it anyway, and it is the closest guess. Otherwise the profile the
+     * popup keeps, as signing in there saves no display, then the session's copy.
+     */
+    async bestKnownUserDisplay(cache, user) {
+        if (cache) {
+            if (cache.uid === user?.uid) return cache;
+            await chrome.storage.local.remove([Navigation.USER_DISPLAY_CACHE_KEY]);
+        }
+        if (!user) return null;
+        const profileKey = `user_profile_${user.uid}`;
+        const { [profileKey]: profile } = await chrome.storage.local.get([profileKey]);
+        return {
+            uid: user.uid,
+            displayName: Navigation.displayTextFor(profile, user),
+            photoURL: profile?.photoURL || user.photoURL || null
+        };
     }
 
     /**
@@ -220,13 +227,11 @@ class Navigation {
             return;
         }
 
-        // Use cached user display data to prevent flickering
+        // Everything in the bar sits where the account block leaves room, so it
+        // paints in its final shape, as far as anything known so far can tell.
         const cachedName = this.cachedUserDisplay?.displayName || 'User';
         const cachedAvatar = this.cachedUserDisplay?.photoURL || chrome.runtime.getURL('src/shared/assets/icons/app/icon48.png');
-        const hasCachedUser = !!this.cachedUserDisplay;
-        
-        // Determine initial visibility based on cache
-        const userProfileDisplay = hasCachedUser ? 'block' : 'none';
+        const isSignedIn = !!this.cachedUserDisplay;
 
         const navHTML = `
             <header class="nav-header">
@@ -305,7 +310,7 @@ class Navigation {
                         </a>
 
                         <!-- Games Button -->
-                        <button class="nav-icon-btn" id="navGamesBtn" title="Мини-игры" style="display: none; margin-left: 2px;">
+                        <button class="nav-icon-btn" id="navGamesBtn" title="Мини-игры" style="display: ${this.showGames ? 'inline-flex' : 'none'}; margin-left: 2px;">
                             <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="12" x2="10" y2="12"></line><line x1="8" y1="10" x2="8" y2="14"></line><line x1="15" y1="13" x2="15.01" y2="13"></line><line x1="18" y1="11" x2="18.01" y2="11"></line><rect x="2" y="6" width="20" height="12" rx="6"></rect></svg></span>
                         </button>
                     </div>
@@ -313,10 +318,10 @@ class Navigation {
                     <!-- User Section -->
                     <div class="nav-user" id="navUser">
                         <!-- User Profile Dropdown -->
-                        <div class="nav-user-profile" id="navUserProfile" style="display: ${userProfileDisplay};">
+                        <div class="nav-user-profile" id="navUserProfile" style="display: ${isSignedIn ? 'block' : 'none'};">
                             <button type="button" class="nav-user-trigger" id="navUserTrigger" aria-controls="navUserDropdown" aria-expanded="false">
                                 <span class="nav-user-avatar-wrap"><img src="${cachedAvatar}" alt="User" class="nav-user-avatar" id="navUserAvatar"><span class="nav-rank-frame" id="navRankFrame" hidden></span></span>
-                                <span class="nav-user-name" id="navUserName">${cachedName}</span>
+                                <span class="nav-user-name" id="navUserName">${this.escapeHtml(cachedName)}</span>
                                 <span class="nav-dropdown-arrow">${typeof Icons !== 'undefined' && Icons.CHEVRON_DOWN ? Icons.CHEVRON_DOWN : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>'}</span>
                             </button>
                             
@@ -349,7 +354,7 @@ class Navigation {
                         </div>
                         
                         <!-- Sign In Button (for non-authenticated users) -->
-                        <button class="nav-signin-btn" id="navSignInBtn" style="display: none;">
+                        <button class="nav-signin-btn" id="navSignInBtn" style="display: ${isSignedIn ? 'none' : 'flex'};">
                             <span class="nav-signin-icon">${typeof Icons !== 'undefined' ? Icons.USER : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>'}</span>
                             <span data-i18n="navbar.sign_in">Sign In</span>
                         </button>
@@ -442,12 +447,6 @@ class Navigation {
 
         const gamesBtn = document.getElementById('navGamesBtn');
         if (gamesBtn) {
-            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-                chrome.storage.local.get('showGames', (data) => {
-                    gamesBtn.style.display = (data.showGames ?? false) ? 'inline-flex' : 'none';
-                });
-            }
-
             gamesBtn.addEventListener('mousedown', async (e) => {
                 if (e.button !== 0) return;
                 e.preventDefault();
@@ -1279,8 +1278,11 @@ class Navigation {
                     // Check if auth data is not too old (max 24 hours)
                     const authAge = Date.now() - (result.authTimestamp || 0);
                     const maxAge = 24 * 60 * 60 * 1000; // 24 hours
-                    
-                    if (authAge < maxAge) {
+                    // Firebase on this page answers for the session and refreshes this
+                    // copy. Clearing the copy first would show the sign-in button until then.
+                    const firebaseWillAnswer = typeof firebaseManager !== 'undefined' && firebaseManager.isInitialized;
+
+                    if (authAge < maxAge || firebaseWillAnswer) {
                         // User is authenticated according to storage
                         // console.log('Navigation: Found valid auth in storage:', result.user.displayName || result.user.email);
                         this.updateUserDisplay(result.user);
@@ -1362,7 +1364,9 @@ class Navigation {
     async updateUserDisplay(user) {
         // Prevent multiple simultaneous updates (race condition protection)
         if (this._updateInProgress) {
-            // console.log('Navigation: Update already in progress, skipping');
+            // Another account, or none, corrects the one running: it must not be lost.
+            const sameAccount = (user?.uid ?? null) === (this.user?.uid ?? null);
+            this._pendingUser = sameAccount ? null : { user };
             return;
         }
         this._updateInProgress = true;
@@ -1387,7 +1391,7 @@ class Navigation {
                 this.checkReactionNotifications(user);
 
                 // Get display name based on user preference
-                let displayText = user.displayName || user.email || 'User';
+                let displayText = Navigation.displayTextFor(null, user);
                 let photoURL = user.photoURL || null;
                 
                 // Try to get from cache first for immediate update
@@ -1398,20 +1402,7 @@ class Navigation {
                         const cachedProfile = cachedResult[cacheKey];
 
                         if (cachedProfile) {
-                            const displayNameFormat = cachedProfile.displayNameFormat || 'fullname';
-                            
-                            if (displayNameFormat === 'username' && cachedProfile.username) {
-                                displayText = cachedProfile.username;
-                            } else {
-                                const firstName = cachedProfile.firstName || '';
-                                const lastName = cachedProfile.lastName || '';
-                                const fullName = [firstName, lastName].filter(Boolean).join(' ');
-                                if (fullName) {
-                                    displayText = fullName;
-                                } else {
-                                    displayText = cachedProfile.displayName || user.displayName || user.email || 'User';
-                                }
-                            }
+                            displayText = Navigation.displayTextFor(cachedProfile, user);
                             // Use cached photoURL if available
                             if (cachedProfile.photoURL) {
                                 photoURL = cachedProfile.photoURL;
@@ -1437,20 +1428,7 @@ class Navigation {
                                 return;
                             }
 
-                            const displayNameFormat = profile.displayNameFormat || 'fullname';
-                            
-                            if (displayNameFormat === 'username' && profile.username) {
-                                displayText = profile.username;
-                            } else {
-                                const firstName = profile.firstName || '';
-                                const lastName = profile.lastName || '';
-                                const fullName = [firstName, lastName].filter(Boolean).join(' ');
-                                if (fullName) {
-                                    displayText = fullName;
-                                } else {
-                                    displayText = profile.displayName || user.displayName || user.email || 'User';
-                                }
-                            }
+                            displayText = Navigation.displayTextFor(profile, user);
                             // Use profile photoURL if available
                             if (profile.photoURL) {
                                 photoURL = profile.photoURL;
@@ -1484,8 +1462,7 @@ class Navigation {
                         const cacheData = {
                             displayName: displayText,
                             photoURL: finalAvatarUrl,
-                            uid: user.uid,
-                            timestamp: Date.now()
+                            uid: user.uid
                         };
                         await chrome.storage.local.set({
                             [Navigation.USER_DISPLAY_CACHE_KEY]: cacheData
@@ -1539,6 +1516,9 @@ class Navigation {
             }
         } finally {
             this._updateInProgress = false;
+            const pending = this._pendingUser;
+            this._pendingUser = null;
+            if (pending) this.updateUserDisplay(pending.user);
         }
     }
 

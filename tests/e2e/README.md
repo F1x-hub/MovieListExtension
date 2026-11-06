@@ -70,9 +70,14 @@ broken and clean motion, so a green journey means something.
 
 ## Known open defects
 
-- The first Home load after signing in moves the nav items sideways (by 105px and
-  then 39px on the search control), with or without a window. Later loads are
-  stable. The journey measures a later load, so this does not fail it.
+- A name only Firestore knows, on a page opened before anything has saved it. The
+  page paints the session's copy of the name, so the bar moves once when Firestore
+  answers: 43px on the search control from `E2E Viewer` to `Константин Иванов`. No
+  spec fails on this, because nobody opens a page that soon after signing in, and
+  later loads are stable.
+- On Settings, the Updates and Media Player sections grow after the first paint, by
+  103px and 55px, and push the footer down with them. At 1440×900 it is already below
+  the fold by then. The cause has not been looked into.
 
 ## Rating dialogs outside the film page
 
