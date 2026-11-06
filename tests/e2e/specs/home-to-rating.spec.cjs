@@ -7,13 +7,15 @@ const firstCard = '#films-grid .movie-card-component';
 
 // Each entry was looked at on a filmstrip. Anything else that moves while a page
 // loads fails the journey, including small elements the shift score forgives.
-// These loads are a returning user's; see tests/e2e/README.md for what they miss.
+// These loads are a returning user's; nav-first-load.spec.cjs measures the first one.
 const EXPLAINED_LOAD_JUMPS = {
     home: [
-        // Expected once for an empty account: a saved preview may not be shown
-        // before Firebase confirms the session, so the personal tier reserves
+        // Expected on every load of an empty account: a saved preview may not be
+        // shown before Firebase confirms the session, so the personal tier reserves
         // full lists and then collapses, moving the dashboard up. It moves one
-        // way, and the sections below it stay out of view.
+        // way, and the sections below it stay out of view. Tracked frame by frame
+        // it moved in 24 loads of 24, but only some loads report it, so a run
+        // without this jump does not make the entry stale.
         /^(section#dashboard-section|div\.home-dashboard-card)[^ ]* entering view$/
     ],
     filmPage: [

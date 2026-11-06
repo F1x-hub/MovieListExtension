@@ -48,6 +48,33 @@ function redirectFirebaseToEmulators({ projectId, authOrigin, firestoreHost, fir
 }
 
 /**
+ * For a single page, after redirectFirebaseToEmulators: Firebase answers late, so
+ * the page has to paint before it knows who is there. How often that happens by
+ * itself depends on the machine, and a test should not depend on it.
+ */
+function delayAuthAnswer({ delayMs }) {
+    const { get, set } = Object.getOwnPropertyDescriptor(globalThis, 'firebase');
+    Object.defineProperty(globalThis, 'firebase', {
+        configurable: true,
+        enumerable: true,
+        get,
+        set(value) {
+            set(value);
+            if (!value?.initializeApp || value.__e2eAuthDelayed) return;
+            const initializeApp = value.initializeApp;
+            value.initializeApp = function (...args) {
+                const app = initializeApp.apply(this, args);
+                const auth = app.auth();
+                const listen = auth.onAuthStateChanged.bind(auth);
+                auth.onAuthStateChanged = (next, ...rest) => listen(user => setTimeout(next, delayMs, user), ...rest);
+                return app;
+            };
+            value.__e2eAuthDelayed = true;
+        }
+    });
+}
+
+/**
  * Records what the user would see over time: layout shifts and slow frames for
  * the whole document, plus per-frame geometry and opacity of tracked elements.
  */
@@ -155,4 +182,4 @@ async function installInitScripts(context, { pinnedDate, projectId, authOrigin, 
     await context.addInitScript(installMotionRecorder);
 }
 
-module.exports = { installInitScripts, installMotionRecorder };
+module.exports = { installInitScripts, installMotionRecorder, delayAuthAnswer };

@@ -25,6 +25,9 @@ async function seedReturningUser(worker) {
     });
 }
 
+// To wait on this, poll it: page.waitForFunction takes any promise as a truthy answer.
+const stored = (page, key) => page.evaluate(name => chrome.storage.local.get(name).then(all => all[name]), key);
+
 async function signIn(page, extensionId, user) {
     await page.goto(pageUrl(extensionId, 'src/pages/home/home.html'));
     await page.waitForFunction(() => globalThis.firebaseManager?.isInitialized);
@@ -33,11 +36,13 @@ async function signIn(page, extensionId, user) {
         .then(() => globalThis.firebase.apps[0].options.projectId), user);
     // The guard against ever testing on production data.
     if (projectId !== config.PROJECT_ID) throw new Error(`Refusing to run against Firebase project "${projectId}"`);
-    await page.waitForFunction(() => chrome.storage.local.get('authToken').then(stored => Boolean(stored.authToken)));
-    // Every journey then starts the way a returning user's does: from the
-    // Home cache, with the personal preview already known.
-    await page.waitForFunction(() => chrome.storage.local.get('home_discovery_cache_v14')
-        .then(stored => Boolean(stored.home_discovery_cache_v14)));
+    // Every journey then starts the way a returning user's does: from the Home
+    // cache, with the personal preview and the name already known. The last two
+    // come from Firestore, about 400 ms after the sign-in itself.
+    const returningUserKeys = ['authToken', 'home_discovery_cache_v14', `home_personal_preview_v2_${user.uid}`, 'userDisplayCache'];
+    for (const key of returningUserKeys) {
+        await expect.poll(() => stored(page, key), `${key} is saved`).toBeTruthy();
+    }
 }
 
 function watchForPageErrors(page) {
@@ -59,11 +64,16 @@ async function waitForStillness(page, quietMs = 400) {
     await page.evaluate(() => { delete globalThis.__e2eStillSince; });
 }
 
-async function setTheme(page, theme) {
+/** Takes effect on the next load, for specs where that load is the one being measured. */
+async function storeTheme(page, theme) {
     await page.evaluate(id => {
         localStorage.setItem('movieExtensionTheme', id);
         return chrome.storage.local.set({ theme: id });
     }, theme);
+}
+
+async function setTheme(page, theme) {
+    await storeTheme(page, theme);
     // Recording starts from this theme, not from a page painted in the previous one.
     await page.reload();
     await waitForStillness(page);
@@ -126,10 +136,13 @@ const test = base.extend({
         }
     },
 
-    page: async ({ extension }, use, testInfo) => {
+    /** False hands the spec a blank page of a guest; how and whether to sign in is up to it. */
+    startSignedIn: [true, { option: true }],
+
+    page: async ({ extension, startSignedIn }, use, testInfo) => {
         const page = await extension.context.newPage();
         const pageErrors = watchForPageErrors(page);
-        await signIn(page, extension.id, extension.user);
+        if (startSignedIn) await signIn(page, extension.id, extension.user);
         await use(page);
         await testInfo.attach('page-errors.json', { body: JSON.stringify(pageErrors, null, 2), contentType: 'application/json' });
         await page.close();
@@ -210,4 +223,4 @@ const test = base.extend({
     }
 });
 
-module.exports = { test, expect, emulator, setTheme, waitForStillness };
+module.exports = { test, expect, emulator, setTheme, storeTheme, stored, waitForStillness };

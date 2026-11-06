@@ -450,7 +450,7 @@ keeps npm-compatible three-component semver metadata.
 - The torrent picker is now a side panel. «Торрент» opens it next to the player and moves the player aside, so the video stays fully visible; pressing it again closes the panel and restores the width. Below 900px wide the panel sits under the player.
 - Release rows lead with what differs between releases: quality, voice-over, size, tracker and seeders, with the full release name on a muted line. All releases are in one scrolling list, the filters offer only the qualities that were found, and «Рекомендуем» marks a top release only when it has enough seeders.
 - Releases and saved downloads are two tabs of the panel, and the current download stays pinned above them. A paused or finished download is managed with compact icon actions.
-- `npm run test:e2e` adds a browser test rig: the built extension runs in real Chromium and a test clicks from Home to a film page and saves a rating, on Firebase emulators with the real security rules. It records per-frame motion, layout jumps and wrong-theme flashes, renders filmstrips, and compares screenshots in both themes. This pilot covers one journey and has not been added to `npm test` or CI.
+- `npm run test:e2e` adds a browser test rig: the built extension runs in real Chromium on Firebase emulators with the real security rules, and its tests click through Home, the film page, the rating dialogs, Settings and the old list-page links. It records per-frame motion, layout jumps and wrong-theme flashes, renders filmstrips, and compares screenshots in both themes. It has not been added to `npm test` or CI.
 
 ### Fixes
 
@@ -460,6 +460,7 @@ keeps npm-compatible three-component semver metadata.
 - Choosing a release no longer hides the list while it connects, so a slow swarm can be abandoned by choosing another release. Reopening the panel within 10 minutes keeps the results and filters instead of searching again.
 - Quality filters follow what a release name actually states: `UHD BDRip 1080p` is under 1080p rather than 4K, and sizes typed in Cyrillic or given as a frame size are recognized. Rips with no stated size (`BDRip`, `HDRip`, `DVDRip`) now appear under SD instead of under no filter. Finding 4K releases filed under TV categories needs the next MediaPlayer Suite.
 - Deleting a download closes this page's player for it first, and a failed deletion now says the file is busy instead of talking about pause and resume. Removing the conversion jobs that keep the file busy needs the next MediaPlayer Suite.
+- The browser rig's sign-in now waits for what it promised. Its waits returned at once, because `page.waitForFunction` takes a returned promise as a truthy answer, so journeys started before the personal preview and name were saved, about 400 ms later. Every signed-in journey now starts with the auth token, Home cache, preview and name saved, as a returning user's does. The one test that relied on the race is gone; a page opened with no saved name is still checked, without a race, by `nav-first-load.spec.cjs`.
 
 ### Refactor
 

@@ -102,8 +102,15 @@ have their own unit tests, and this rig does not exercise them:
 
 ## Adding a journey
 
-Use `test` from `lib/fixtures.cjs`: it provides a signed-in `page`, `extension`
-and `motion`. Wrap each interaction in `motion.record` or a navigation in
-`motion.pageLoad`, assert on the returned report, and add `toHaveScreenshot` at
-moments of rest. Invented data goes in `lib/catalog.cjs`. Screenshot only settled
-states, and check a new assertion by breaking the page once and seeing it fail.
+Use `test` from `lib/fixtures.cjs`: it provides `extension`, `motion` and a signed-in
+`page` that has already saved what a returning user has: auth token, Home cache,
+personal preview and name. `test.use({ startSignedIn: false })` starts from a blank
+page as a guest instead, as `specs/nav-first-load.spec.cjs` does. Wrap each
+interaction in `motion.record` or a navigation in `motion.pageLoad`, assert on the
+returned report, and add `toHaveScreenshot` at moments of rest. Invented data goes in
+`lib/catalog.cjs`. Screenshot only settled states, and check a new assertion by
+breaking the page once and seeing it fail.
+
+To wait for something in storage, poll `stored` with `expect.poll`.
+`page.waitForFunction` takes a returned promise as a truthy answer, whatever it
+resolves to, so it returns at once.
