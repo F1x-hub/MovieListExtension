@@ -385,6 +385,18 @@
     font-weight: 700;
 }
 
+/* IMDb yellow is 1.5:1 on the light card. The deep gold the film page uses for
+   IMDb stays recognisable and reads at 6:1 or more. */
+.light-theme .mc-rating-imdb {
+    color: #7e5400;
+}
+
+/* Kinopoisk orange is 2.9:1 on the light card; the film page's deep orange reads
+   at 6.1:1. Only the colour changes, so the text clip above still paints it. */
+.light-theme .mc-rating-kp {
+    background-color: #a03b02;
+}
+
 .mc-rating-avg {
     color: var(--ui-color-content);
 }
@@ -1151,9 +1163,11 @@ span.mc-user-name.mc-skeleton {
     font-size: 11px;
 }
 
+/* White on the orange is about 3.4:1 over a poster; near-black, as on the IMDb
+   badge, reads at 5:1 or more and the brand fill stays. */
 .mc-badge-kp {
     background: rgba(255, 90, 0, 0.9);
-    color: #ffffff;
+    color: #111111;
     border: 1px solid rgba(255, 120, 40, 0.5);
 }
 

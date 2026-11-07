@@ -1209,16 +1209,16 @@
     font-variant-numeric: tabular-nums;
 }
 
-.rating-item-large--loading {
-    opacity: 0.72;
-}
-
+/* While a rating loads only its placeholder is dimmed, so the provider's name keeps
+   its full colour. The ink channel is white on the dark page and near-black on the
+   light one, so the shimmer stays visible in both themes instead of white on white. */
 .rating-value--skeleton,
 .rating-votes--skeleton {
     display: block;
     border-radius: 4px;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.08) 25%, rgba(255, 255, 255, 0.18) 50%, rgba(255, 255, 255, 0.08) 75%);
+    background: linear-gradient(90deg, rgba(var(--theme-ink-rgb), 0.08) 25%, rgba(var(--theme-ink-rgb), 0.18) 50%, rgba(var(--theme-ink-rgb), 0.08) 75%);
     background-size: 200% 100%;
+    opacity: 0.72;
     animation: provider-rating-shimmer 1.2s ease-in-out infinite;
 }
 
@@ -1284,6 +1284,19 @@
 
 .light-theme .rating-item-large + .rating-item-large {
     border-left-color: rgba(9, 9, 11, 0.08);
+}
+
+/* The brand orange and yellow fall to 1.2-2.7:1 on the light tile, and the poster's
+   glow darkens the tile further. Deep shades of the same families stay recognisable
+   and read at 6.3:1 or more on a plain tile, 5.8:1 on hover and 4.7:1 under the glow. */
+.light-theme .rating-item-large.kp .rating-label,
+.light-theme .rating-item-large.kp .rating-value {
+    color: #a03b02;
+}
+
+.light-theme .rating-item-large.imdb .rating-label,
+.light-theme .rating-item-large.imdb .rating-value {
+    color: #7e5400;
 }
 
 @media (max-width: 480px) {

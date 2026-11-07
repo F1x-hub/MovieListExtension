@@ -43,6 +43,14 @@ Exceptions must remain local, documented, and visually subordinate to the
 neutral interface. Semantic states require a label, icon, shape, border style, or
 pattern in addition to color. Color must never be the only carrier of meaning.
 
+IMDb's yellow `#f5c518` and Kinopoisk's orange `#ff5500` fall to about 1.6:1 and
+2.9:1 on a light surface. Provider text that sits on a light surface in the light
+theme uses a deep shade of its own family, `#7e5400` for IMDb and `#a03b02` for
+Kinopoisk, so it reads at 4.5:1 or more and looks the same on every page: the film
+page's tiles, cards, Rated's rating dialog and Random. Badges with a yellow or
+orange fill keep the brand fill in both themes and carry near-black text: white
+on Kinopoisk's orange is only about 3.4:1.
+
 ## Seasonal decoration
 
 `SeasonalThemeService` owns holiday windows (inclusive local days), the

@@ -66,6 +66,9 @@ const neutralHex = new Set([
 const documentedExceptions = new Set([
     '#28a745', '#ffc107', '#dc3545', '#17a2b8',
     '#ef4444', '#dc2626', '#f43f5e', '#f5c518',
+    // IMDb and Kinopoisk text on light surfaces, where the brand colours fall
+    // below 3:1 (docs/design-system.md).
+    '#7e5400', '#a03b02',
 ]);
 
 const forbiddenDecorativeColors = [

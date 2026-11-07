@@ -184,10 +184,11 @@
     letter-spacing: 0.2px;
 }
 
+/* Near-black, as on the IMDb badge: white on this orange is about 3.5:1. */
 .featured-rating-badge--kp {
     background: rgba(255, 90, 0, 0.88);
     border-color: rgba(255, 140, 70, 0.55);
-    color: #ffffff;
+    color: #111111;
 }
 
 .featured-rating-badge--imdb {

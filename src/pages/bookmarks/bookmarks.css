@@ -576,6 +576,18 @@
     background: radial-gradient(circle at 50% 0%, rgba(9, 9, 11, 0.04) 0%, rgba(244, 244, 245, 0) 70%);
 }
 
+/* The dark glass card turned mid-grey on the light page and hid the year and the
+   rating labels. In the light theme it takes the standard card surface and
+   separator, as on Collection. */
+.light-theme .bookmarks-content .movie-card-component {
+    background: var(--gradient-card);
+    box-shadow: var(--elevation-2, var(--shadow-lg));
+}
+
+.light-theme .bookmarks-content .mc-ratings-row {
+    border-top-color: var(--theme-border);
+}
+
 .light-theme .bookmarks-sidebar {
     background: rgba(255, 255, 255, 0.85);
     border-color: rgba(9, 9, 11, 0.08);

@@ -333,6 +333,16 @@
     color: #f5c518;
 }
 
+/* IMDb yellow and this amber are 1.6:1 on a light surface. Deep shades of the
+   provider colours read at 6.6:1 (IMDb) and 6.7:1 (Kinopoisk) on white. */
+.light-theme .rating-badge.imdb {
+    color: #7e5400;
+}
+
+.light-theme .rating-badge.kp {
+    color: #a03b02;
+}
+
 /* Rating Components */
 .rating-stars {
     display: flex;

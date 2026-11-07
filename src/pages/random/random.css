@@ -900,6 +900,16 @@
     color: #fbbf24;
 }
 
+/* This yellow is 1.6:1 on the light tile; the film page's IMDb gold reads at 6.4:1. */
+.light-theme .cmc-rating-imdb .cmc-rating-value {
+    color: #7e5400;
+}
+
+/* This orange is 2.6:1 on the light tile; the film page's Kinopoisk orange reads at 6.2:1. */
+.light-theme .cmc-rating-kp .cmc-rating-value {
+    color: #a03b02;
+}
+
 .cmc-rating-votes {
     font-family: var(--font-data);
     font-size: 11px;

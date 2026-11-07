@@ -889,6 +889,19 @@
     border-top-color: rgba(9, 9, 11, 0.05);
 }
 
+/* IMDb yellow is 1.6:1 on the light card. The deep gold the film page uses for
+   IMDb stays recognisable and reads at 6.5:1. */
+.light-theme .movies-grid .mc-rating-imdb {
+    color: #7e5400;
+}
+
+/* The Kinopoisk gradient runs from 3.0:1 down to 2.3:1 on the light card; the film
+   page's deep orange reads at 6.6:1. The text clip above paints this colour. */
+.light-theme .movies-grid .mc-rating-kp {
+    background-image: none;
+    background-color: #a03b02;
+}
+
 .light-theme .movies-grid .mc-user-info {
     background: rgba(9, 9, 11, 0.03);
     border-color: rgba(9, 9, 11, 0.04);
