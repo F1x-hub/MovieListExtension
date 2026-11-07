@@ -174,6 +174,25 @@ tabs; Chrome loads it from the repository root, so a reload picks up source edit
 build. Turn the switch off again when finished: while it is on, Chrome lets local programs ask
 for control of the browser.
 
+Check the port before asking anyone to press Allow. Chrome leaves `DevToolsActivePort` behind
+after the switch goes off, and the run cannot tell a closed port from an unanswered question:
+it waits its three minutes and reports that Chrome did not allow the connection, though Chrome
+never asked. This prints a line when the switch is on, and nothing or an error when it is off:
+
+```powershell
+Get-NetTCPConnection -State Listen -LocalPort (Get-Content "$env:LOCALAPPDATA\Google\Chrome\User Data\DevToolsActivePort" -TotalCount 1)
+```
+
+The quickest order for a check:
+
+1. Ask the owner to turn the switch on, then check the port.
+2. Start the run only once the owner is at the screen: Allow must be pressed and the windows
+   must stay in view. Anything covering them produces `window hidden`, and that run is wasted.
+3. Use `--reload` to test the code in the repository, after closing any extension tab that
+   matters. Without it pages open from disk, but the service worker stays the one already loaded.
+4. Name only the titles the change affects. A title takes about two minutes.
+5. Ask the owner to turn the switch off when finished.
+
 Each title opens in its own muted window. The run presses «Смотреть» with a real click, then
 «Следующая» on a series, then every offered source, and a source counts as playing only when
 frames are decoded and time moves. It sets aside the title's last source, preference and
@@ -187,6 +206,18 @@ at them, because frames and time say that a video runs, not that it looks right.
 check the length against the film.
 
 The exit code is 1 when a title has no source that plays and 2 when Chrome cannot be reached.
+
+Reading the rows:
+
+- `no: nothing` on every row of a title usually means the player never opened, not that every
+  source failed: after a lost press the run cannot reach the source list. Look at
+  `<id>-watch.png`, then repeat that title alone before judging its sources.
+- `window hidden` says nothing about the source, even with exit code 1. Repeat with the
+  windows in view.
+- `unavailable` on VidSrc alone is expected on some networks. It is the one source offered
+  without an availability check.
+- A screenshot is taken within seconds of the start, so a black picture may be the video's own
+  opening. A later row or another title shows whether capture works at all.
 
 ## Rating dialogs outside the film page
 

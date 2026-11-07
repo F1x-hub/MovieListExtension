@@ -108,6 +108,9 @@ have been measured only in the rig so far.
 
 ## Rig reliability
 
+- **`npm run test:live:player` waits three minutes on a closed port.** It could test the port
+  first and report at once that the switch is off, instead of saying Chrome did not allow the
+  connection. Until then, `tests/e2e/README.md` gives the check to run by hand.
 - **`tests/sourceRefreshCoordinator.test.cjs` failed once in `npm test`** at line 45, with
   `cooldown` instead of `refreshed`, and stopped the rest of the chain. It then passed 6 of
   6 runs alone and every later full run. The cause has not been looked into.

@@ -444,6 +444,15 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Docs
+
+- [`tests/e2e/README.md`](tests/e2e/README.md) now gives the quickest order for checking the player in the owner's Chrome, a way to tell a closed debugging port from an unanswered question, and how to read `nothing`, `window hidden` and black screenshots.
+
+</details>
+
 <details>
 <summary><strong>1.5.0</strong> — The player's sources are back, torrents move beside the player, the New Year season arrives on 15 December</summary>
 
