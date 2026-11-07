@@ -5504,10 +5504,76 @@
     background: var(--torrent-panel-hover);
 }
 
-.torrent-file-picker__meta {
+/* The file starting or on screen reads like the current release card. */
+.torrent-file-picker__list button.is-current,
+.torrent-file-picker__list button.is-current:hover {
+    background: var(--ui-color-surface-muted);
+    border-bottom-color: transparent;
+    border-radius: 10px;
+    margin-bottom: 2px;
+}
+
+.torrent-file-picker__head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.torrent-file-picker__name {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.torrent-file-picker__badge {
+    flex: 0 0 auto;
+    padding: 1px 6px;
+    color: var(--ui-color-content-muted);
+    border: 1px solid var(--ui-color-border-hover);
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.torrent-file-picker__badge[hidden] {
+    display: none;
+}
+
+.torrent-file-picker__list button[data-state="starting"] .torrent-file-picker__badge,
+.torrent-file-picker__list button[data-state="playing"] .torrent-file-picker__badge {
+    color: var(--ui-color-content);
+    border-color: var(--ui-color-content-muted);
+}
+
+.torrent-file-picker__list button[data-state="starting"] .torrent-file-picker__badge {
+    animation: torrent-file-starting 1.4s ease-in-out infinite;
+}
+
+@keyframes torrent-file-starting {
+    50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .torrent-file-picker__list button[data-state="starting"] .torrent-file-picker__badge {
+        animation: none;
+    }
+}
+
+.torrent-file-picker__meta,
+.torrent-file-picker__tracks,
+.torrent-file-picker__folder {
     color: var(--ui-color-content-muted);
     font-size: 12px;
     font-weight: 400;
+}
+
+.torrent-file-picker__tracks {
+    line-height: 1.4;
+}
+
+.torrent-file-picker__folder {
+    color: var(--ui-color-content-subtle);
 }
 
 .torrent-panel-pane {

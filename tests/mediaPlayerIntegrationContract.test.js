@@ -643,4 +643,22 @@ await assert.rejects(
     (error) => error?.code === 'native_host_timeout'
 );
 
+// Disc clip details are optional: valid values pass, malformed ones are dropped, and an older
+// service that sends only name and size still yields a usable file.
+const discClip = service.normalizePlaybackFile({
+    fileId: 'clip', name: '00005.m2ts', sizeBytes: '41943040', path: 'Disc 1\\BDMV\\STREAM\\00005.m2ts',
+    durationSeconds: 7472.4, audioTracks: [{ language: 'RUS', codec: 'DTS' }, { language: 'und-x', codec: '' }, null],
+    subtitleLanguages: ['eng', 42, 'zz-top']
+});
+assert.equal(discClip.sizeBytes, 41943040);
+assert.equal(discClip.path, 'Disc 1/BDMV/STREAM/00005.m2ts');
+assert.equal(discClip.durationSeconds, 7472.4);
+assert.equal(JSON.stringify(discClip.audioTracks), JSON.stringify([{ language: 'rus', codec: 'dts' }, { language: null, codec: null }]));
+assert.equal(JSON.stringify(discClip.subtitleLanguages), '["eng"]');
+const olderClip = service.normalizePlaybackFile({ fileId: 'old', name: 'movie.mkv', sizeBytes: 5, durationSeconds: -1 });
+assert.equal(olderClip.path, null);
+assert.equal(olderClip.durationSeconds, null);
+assert.equal(olderClip.audioTracks.length, 0);
+assert.equal(olderClip.subtitleLanguages.length, 0);
+
 console.log('✅ MediaPlayer integration contract and client behavior passed');

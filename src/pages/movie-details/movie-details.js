@@ -759,9 +759,7 @@ class MovieDetailsManager {
                 const sourceId = sourceButton?.getAttribute('data-source-id');
                 if (sourceButton && sourceId) void this.startTorrentPlayback(sourceId);
                 const fileButton = event.target.closest('[data-torrent-file-id]');
-                if (fileButton && this.torrentPreparedSource) {
-                    void this.startTorrentPlayback(this.torrentPreparedSource.sourceId, fileButton.dataset.torrentFileId);
-                }
+                if (fileButton && this.torrentPreparedSource) void this.chooseTorrentFile(fileButton.dataset.torrentFileId);
                 if (event.target.closest('[data-torrent-files-cancel]')) this.clearTorrentFileSelection();
             });
         }

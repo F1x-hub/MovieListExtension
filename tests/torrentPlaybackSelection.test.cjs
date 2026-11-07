@@ -16,7 +16,7 @@ function fixture(files) {
         getTorrentMovieKey: () => 'tv:2', isTorrentRequestCurrent: () => true,
         setTorrentActiveContext: () => {}, cancelActiveTorrentSearch: () => {},
         setTorrentSourceStatus: message => calls.push(['status', message]),
-        showTorrentFileSelection: (_source, values) => calls.push(['files', values]),
+        showTorrentFileSelection: (_source, values, _identity, recommended) => calls.push(['files', values, recommended]),
         mountTorrentPlaybackSession: async session => { calls.push(['mount', session]); return true; },
         formatTorrentError: error => error.message,
         mediaPlayerService: {
@@ -278,6 +278,83 @@ function audioSwitchFixture(paused = false) {
         assert.ok(revoked.events.includes('revoke:revoked-replacement'));
         await revoked.manager.revokeTorrentPlaybackSession();
         assert.equal(revoked.events.filter(event => event === 'old:destroy').length, 1, 'Repeated revocation is harmless');
+    }
+
+    // The picker receives the service's suggested file, so it can lead the list.
+    const suggested = fixture([...files, { ...files[1], fileId: 'other' }]);
+    suggested.manager.mediaPlayerService.preparePlayback = async () => ({
+        files: [...files, { ...files[1], fileId: 'other' }], recommendedFileId: 'other'
+    });
+    assert.equal(await suggested.manager.startTorrentPlayback('source'), false);
+    assert.equal(suggested.calls.find(call => call[0] === 'files')[2], 'other');
+
+    // A pressed file is marked as starting until it plays or fails.
+    const chosen = fixture(files);
+    const created = deferred();
+    chosen.manager.torrentPreparedSource = { sourceId: 'source', files, identity: { mediaType: 'tv' } };
+    chosen.manager.mediaPlayerService.createPlaybackSession = () => created.promise;
+    const choosing = chosen.manager.chooseTorrentFile('first');
+    assert.equal(chosen.manager.torrentStartingFileId, 'first');
+    created.reject(new Error('swarm unavailable'));
+    assert.equal(await choosing, false);
+    assert.equal(chosen.manager.torrentStartingFileId, null, 'A failed start clears the starting mark');
+
+    // The file already on screen closes the list instead of restarting from zero.
+    const onScreen = fixture(files);
+    onScreen.manager.torrentPreparedSource = { sourceId: 'source', files, identity: { mediaType: 'tv' } };
+    onScreen.manager.torrentPlaybackSession = { sessionId: 'live' };
+    onScreen.manager.torrentPlaybackSourceArgs = { sourceId: 'source', fileId: 'second', sessionId: 'live' };
+    assert.equal(await onScreen.manager.chooseTorrentFile('second'), true);
+    assert.equal(onScreen.calls.some(call => call[0] === 'create'), false);
+    assert.equal(onScreen.manager.torrentPreparedSource, null);
+    // Arguments left from an earlier session do not count as the file on screen.
+    const earlier = fixture(files);
+    earlier.manager.torrentPreparedSource = { sourceId: 'source', files, identity: { mediaType: 'tv' } };
+    earlier.manager.torrentPlaybackSession = { sessionId: 'saved-download' };
+    earlier.manager.torrentPlaybackSourceArgs = { sourceId: 'source', fileId: 'second', sessionId: 'live' };
+    assert.equal(await earlier.manager.chooseTorrentFile('second'), true);
+    assert.equal(earlier.calls.find(call => call[0] === 'create')[1].fileId, 'second');
+
+    const labels = Object.create(Panel.prototype);
+    assert.equal(labels.getTorrentTrackLabel({ streamIndex: 2, language: 'rus', title: 'Дубляж', channels: 6, codec: 'ac3' }),
+        'Русский · Дубляж · 5.1 · AC3');
+    assert.equal(labels.getTorrentTrackLabel({ streamIndex: 3, language: 'jpn', title: null, channels: 2, codec: 'flac' }),
+        'Японский · стерео · FLAC');
+    assert.equal(labels.getTorrentTrackLabel({ streamIndex: 1, language: null, title: null, channels: 2, codec: 'pcm_bluray' }),
+        'Дорожка 2 · стерео · PCM');
+    assert.equal(labels.getTorrentTrackLabel({ streamIndex: 3, language: 'und', title: '', channels: 7, codec: 'dts' }),
+        'Дорожка 4 · 6.1 · DTS');
+    assert.equal(labels.getTorrentTrackLabel({ streamIndex: 5, language: 'eng', title: 'English' }), 'Английский');
+    assert.equal(labels.getTorrentTrackLabel({ streamIndex: 6, language: 'qaa', title: 'MVO' }), 'MVO');
+
+    // Disc clips are described by length, dubs and folder when MediaPlayer reads them.
+    assert.equal(labels.getTorrentFileKind({ durationSeconds: 7472 }), 'Фильм целиком');
+    assert.equal(labels.getTorrentFileKind({ durationSeconds: 600 }), 'Доп. материал');
+    assert.equal(labels.getTorrentFileKind({ durationSeconds: 40 }), 'Короткий ролик');
+    assert.equal(labels.getTorrentFileKind({}), '', 'An older service without lengths guesses nothing');
+    assert.equal(labels.formatTorrentFileDuration(7200), '2 ч');
+    assert.equal(labels.formatTorrentFileDuration(3260), '54 мин');
+    assert.equal(labels.getTorrentFileTracksText({ audioTracks: [{ language: null }, { language: null }, { language: null }] }),
+        'Озвучка: 3 дорожки, язык не указан');
+    assert.equal(labels.getTorrentFileTracksText({ audioTracks: [{ language: 'rus' }, { language: null }, { language: null }],
+        subtitleLanguages: ['eng'] }), 'Озвучка: русский, ещё 2 без языка · Субтитры: английский');
+    assert.equal(labels.getTorrentFileTracksText({ name: 'movie.mkv' }), '');
+    assert.equal(labels.getTorrentFileFolder({ path: 'Disc 2/BDMV/STREAM/00005.m2ts' }), 'Disc 2');
+    assert.equal(labels.getTorrentFileFolder({ path: 'BDMV/STREAM/00005.m2ts' }), '');
+    assert.equal(labels.getTorrentFileFolder({ path: 'Season 1/S01E01.mkv' }), 'Season 1');
+
+    // Numbered tracks without languages explain where to switch the dub.
+    for (const [audio, explained] of [
+        [[{ streamIndex: 1, codec: 'pcm_bluray' }, { streamIndex: 2, codec: 'dts' }], true],
+        [[{ streamIndex: 1, language: 'rus' }, { streamIndex: 2, language: 'jpn' }], false]
+    ]) {
+        const tracks = fixture(files);
+        tracks.manager.torrentPlaybackSession = { sessionId: 'tracks' };
+        tracks.manager.applyTorrentTrackSnapshot = () => {};
+        tracks.manager.mediaPlayerService.capabilities.playback.trackSelection = true;
+        tracks.manager.mediaPlayerService.getPlaybackTracks = async () => ({ audio, subtitles: [] });
+        await tracks.manager.refreshTorrentTracks();
+        assert.equal(tracks.calls.some(call => call[0] === 'status' && /не подписаны языки/.test(call[1])), explained);
     }
 
     const movieDetailsSource = fs.readFileSync(path.join(__dirname, '../src/pages/movie-details/movie-details.js'), 'utf8');

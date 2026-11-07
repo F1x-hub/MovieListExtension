@@ -615,9 +615,27 @@
             });
             const files = (Array.isArray(response?.files) ? response.files : [])
                 .filter(file => typeof file?.fileId === 'string' && file.fileId && typeof file.name === 'string')
-                .map(file => ({ ...file, sizeBytes: Number(file.sizeBytes) || 0 }));
+                .map(file => this.normalizePlaybackFile(file));
             if (!files.length) throw new MediaPlayerServiceError('torrent_no_video', 'В раздаче не найдено видео. Выберите другую раздачу.');
             return { files, recommendedFileId: typeof response.recommendedFileId === 'string' ? response.recommendedFileId : null };
+        }
+
+        // Disc clips can carry their length and dubs from the disc's clip information; older
+        // services send none of it, and anything malformed is dropped rather than shown.
+        normalizePlaybackFile(file) {
+            const language = value => (typeof value === 'string' && /^[a-z]{2,3}$/i.test(value) ? value.toLowerCase() : null);
+            const duration = Number(file.durationSeconds);
+            return {
+                ...file,
+                sizeBytes: Number(file.sizeBytes) || 0,
+                path: typeof file.path === 'string' && file.path.trim() ? file.path.replaceAll('\\', '/') : null,
+                durationSeconds: Number.isFinite(duration) && duration > 0 && duration <= 86_400 ? duration : null,
+                audioTracks: (Array.isArray(file.audioTracks) ? file.audioTracks : [])
+                    .filter(track => track && typeof track === 'object')
+                    .map(track => ({ language: language(track.language),
+                        codec: typeof track.codec === 'string' && track.codec.trim() ? track.codec.trim().toLowerCase() : null })),
+                subtitleLanguages: (Array.isArray(file.subtitleLanguages) ? file.subtitleLanguages : []).map(language).filter(Boolean)
+            };
         }
 
         async getPlaybackTracks(session, options = {}) {

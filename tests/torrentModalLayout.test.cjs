@@ -137,6 +137,79 @@ const captureDir = process.env.TORRENT_CAPTURE_DIR || os.tmpdir();
                 if (width === 1440) {
                     await page.locator('#torrentSourcePanel').screenshot({ path: path.join(captureDir, `torrent-files-${theme}.png`) });
                 }
+                // A Blu-ray copy: same-named .m2ts parts, the film on screen and another part starting.
+                const disc = await page.evaluate(() => {
+                    const panel = window.torrentLayoutPanel;
+                    const gb = 1024 ** 3;
+                    const read = () => ({
+                        files: [...document.querySelectorAll('#torrentFilePicker [data-torrent-file-id]')].map(button => {
+                            const badge = button.querySelector('.torrent-file-picker__badge');
+                            return { id: button.dataset.torrentFileId, badge: badge.hidden ? '' : badge.textContent,
+                                current: button.classList.contains('is-current'),
+                                overflow: button.scrollWidth > button.clientWidth + 1 };
+                        }),
+                        hint: document.querySelector('[data-torrent-files-hint]').textContent
+                    });
+                    panel.showTorrentFileSelection('disc', [
+                        { fileId: 'extras', name: '00004.m2ts', sizeBytes: 10 * gb },
+                        { fileId: 'menu', name: '00005.m2ts', sizeBytes: 2.5 * gb },
+                        { fileId: 'main', name: '00005.m2ts', sizeBytes: 39 * gb },
+                        { fileId: 'trailer', name: '00015.m2ts', sizeBytes: 2 * gb }
+                    ], { mediaType: 'movie' }, 'main');
+                    const initial = read();
+                    panel.torrentPlaybackSession = { sessionId: 'live' };
+                    panel.torrentPlaybackSourceArgs = { sourceId: 'disc', fileId: 'main', sessionId: 'live' };
+                    panel.torrentStartingFileId = 'extras';
+                    panel.syncTorrentFilePicker();
+                    const active = read();
+                    panel.torrentPlaybackSession = null;
+                    panel.torrentStartingFileId = null;
+                    return { initial, ...active };
+                });
+                const discContext = `${theme} ${width}x${height}: ${JSON.stringify(disc)}`;
+                assert.deepEqual(disc.initial.files.map(file => file.badge), ['Рекомендуем', '', '', ''], `the suggested file is marked ${discContext}`);
+                assert.match(disc.initial.hint, /Blu-ray/, `a disc release explains its parts ${discContext}`);
+                assert.deepEqual(disc.files.map(file => file.id), ['main', 'extras', 'menu', 'trailer'], `the film leads the list ${discContext}`);
+                assert.deepEqual(disc.files.map(file => file.badge), ['Сейчас играет', 'Запускаем…', '', ''], `file states are labelled ${discContext}`);
+                assert.deepEqual(disc.files.map(file => file.current), [true, true, false, false], `active files are highlighted ${discContext}`);
+                assert.ok(disc.files.every(file => !file.overflow), `a file row overflows ${discContext}`);
+                assert.match(disc.hint, /^Запускаем «00004\.m2ts»/, `the hint names the starting file ${discContext}`);
+                if (width === 1440 || width === 390) {
+                    await page.locator('#torrentSourcePanel').screenshot({ path: path.join(captureDir, `torrent-disc-files-${theme}-${width}.png`) });
+                }
+                // A newer MediaPlayer describes each clip from the disc: length, dubs, subtitles and folder.
+                const described = await page.evaluate(() => {
+                    const panel = window.torrentLayoutPanel;
+                    const gb = 1024 ** 3;
+                    const audio = languages => languages.map(language => ({ language, codec: 'dts' }));
+                    panel.showTorrentFileSelection('disc', [
+                        { fileId: 'extras', name: '00004.m2ts', path: 'Spirited Away Disc 2/BDMV/STREAM/00004.m2ts', sizeBytes: 10 * gb,
+                            durationSeconds: 3260, audioTracks: audio(['jpn', 'rus']), subtitleLanguages: ['rus'] },
+                        { fileId: 'logo', name: '00005.m2ts', path: 'Spirited Away Disc 2/BDMV/STREAM/00005.m2ts', sizeBytes: 0.04 * gb,
+                            durationSeconds: 40, audioTracks: audio([null]), subtitleLanguages: [] },
+                        { fileId: 'main', name: '00005.m2ts', path: 'Spirited Away Disc 1/BDMV/STREAM/00005.m2ts', sizeBytes: 39 * gb,
+                            durationSeconds: 7472, audioTracks: audio(['jpn', 'rus', 'rus', 'rus', 'eng', 'ukr']), subtitleLanguages: ['rus', 'rus', 'eng'] }
+                    ], { mediaType: 'movie' }, 'main');
+                    return [...document.querySelectorAll('#torrentFilePicker [data-torrent-file-id]')].map(button => ({
+                        id: button.dataset.torrentFileId,
+                        meta: button.querySelector('.torrent-file-picker__meta').textContent,
+                        tracks: button.querySelector('.torrent-file-picker__tracks')?.textContent || '',
+                        folder: button.querySelector('.torrent-file-picker__folder')?.textContent || '',
+                        overflow: button.scrollWidth > button.clientWidth + 1
+                    }));
+                });
+                const describedContext = `${theme} ${width}x${height}: ${JSON.stringify(described)}`;
+                assert.deepEqual(described.map(file => file.id), ['main', 'extras', 'logo'], `the film leads, then by length ${describedContext}`);
+                assert.equal(described[0].meta, 'Фильм целиком · 2 ч 4 мин · 39 ГБ', describedContext);
+                assert.equal(described[0].tracks, 'Озвучка: японский, русский ×3, английский, украинский · Субтитры: русский ×2, английский', describedContext);
+                assert.equal(described[0].folder, 'Папка: Spirited Away Disc 1', describedContext);
+                assert.equal(described[1].meta, 'Доп. материал · 54 мин · 10 ГБ', describedContext);
+                assert.equal(described[2].meta.startsWith('Короткий ролик · 40 с'), true, describedContext);
+                assert.equal(described[2].tracks, 'Озвучка: язык не указан', describedContext);
+                assert.ok(described.every(file => !file.overflow), `a described row overflows ${describedContext}`);
+                if (width === 1440 || width === 390) {
+                    await page.locator('#torrentSourcePanel').screenshot({ path: path.join(captureDir, `torrent-described-files-${theme}-${width}.png`) });
+                }
                 await page.evaluate(() => { document.querySelector('#torrentSourcePanel').hidden = true; });
                 await page.waitForTimeout(320);
                 const closed = await page.evaluate(() => ({

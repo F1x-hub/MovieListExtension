@@ -709,6 +709,7 @@ class MovieDetailsTorrentPanelMethods {
     clearTorrentFileSelection(restoreFocus = true) {
         this.torrentPlaybackGeneration = (this.torrentPlaybackGeneration || 0) + 1;
         this.torrentPreparedSource = null;
+        this.torrentStartingFileId = null;
         const picker = this.elements?.torrentSourcePanel?.querySelector('#torrentFilePicker');
         if (picker) picker.hidden = true;
         if (!this.torrentPlaybackSession && this.torrentSelectedSourceId) {
@@ -721,34 +722,192 @@ class MovieDetailsTorrentPanelMethods {
         }
     }
 
-    showTorrentFileSelection(sourceId, files = [], identity = this.getTorrentPlaybackIdentity()) {
+    showTorrentFileSelection(sourceId, files = [], identity = this.getTorrentPlaybackIdentity(), recommendedFileId = null) {
         const picker = this.elements?.torrentSourcePanel?.querySelector('#torrentFilePicker');
         if (!picker) return;
         picker.hidden = false;
-        picker.querySelector('[data-torrent-files-hint]').textContent = identity.mediaType === 'tv'
-            ? `Сезон ${identity.seasonNumber ?? '—'}, серия ${identity.episodeNumber ?? '—'}. Проверьте название файла перед запуском.`
-            : 'Выберите видео для просмотра.';
+        const isMovie = identity.mediaType !== 'tv';
+        const recommended = files.some(file => file.fileId === recommendedFileId) ? recommendedFileId : null;
+        // A disc release lists menus and extras beside the film: put the service's pick first,
+        // then the longest (or largest) files, so the film is never buried among numbered .m2ts parts.
+        const length = file => (Number(file.durationSeconds) > 0 ? Number(file.durationSeconds) : null);
+        const ordered = isMovie
+            ? files.slice().sort((first, second) => Number(second.fileId === recommended) - Number(first.fileId === recommended)
+                || (length(first) && length(second) ? length(second) - length(first) : 0)
+                || (Number(second.sizeBytes) || 0) - (Number(first.sizeBytes) || 0))
+            : files;
+        // Same-named clips of several discs differ only by their folder.
+        const folders = new Set(files.map(file => this.getTorrentFileFolder(file)));
+        const showFolders = folders.size > 1;
         const list = picker.querySelector('[data-torrent-files-list]');
         list.replaceChildren();
-        for (const file of files) {
+        for (const file of ordered) {
             const row = document.createElement('div');
             row.setAttribute('role', 'listitem');
             const button = document.createElement('button');
             button.type = 'button';
+            button.className = 'torrent-file-picker__file';
             button.dataset.torrentFileId = file.fileId;
+            if (file.fileId === recommended) button.dataset.recommended = 'true';
+            const head = document.createElement('span');
+            head.className = 'torrent-file-picker__head';
             const title = document.createElement('span');
+            title.className = 'torrent-file-picker__name';
             title.textContent = file.name;
+            const badge = document.createElement('span');
+            badge.className = 'torrent-file-picker__badge';
+            badge.hidden = true;
+            head.append(title, badge);
+            const kind = isMovie ? this.getTorrentFileKind(file) : '';
             const details = document.createElement('span');
             details.className = 'torrent-file-picker__meta';
             details.textContent = [file.seasonNumber != null && file.episodeNumber != null
                 ? `S${String(file.seasonNumber).padStart(2, '0')}E${String(file.episodeNumber).padStart(2, '0')}` : '',
-            this.formatTorrentBytes(file.sizeBytes)].filter(Boolean).join(' · ');
-            button.append(title, details);
+            kind, this.formatTorrentFileDuration(file.durationSeconds), this.formatTorrentBytes(file.sizeBytes),
+            isMovie && !kind && file.fileId === recommended ? 'самый большой файл — обычно это сам фильм' : '']
+                .filter(Boolean).join(' · ');
+            button.append(head, details);
+            const tracks = this.getTorrentFileTracksText(file);
+            if (tracks) {
+                const line = document.createElement('span');
+                line.className = 'torrent-file-picker__tracks';
+                line.textContent = tracks;
+                button.append(line);
+            }
+            const folder = showFolders ? this.getTorrentFileFolder(file) : '';
+            if (folder) {
+                const line = document.createElement('span');
+                line.className = 'torrent-file-picker__folder';
+                line.textContent = `Папка: ${folder}`;
+                button.append(line);
+            }
             row.append(button);
             list.append(row);
         }
-        this.torrentPreparedSource = { sourceId, files, identity };
+        this.torrentPreparedSource = { sourceId, files, identity, recommendedFileId: recommended };
+        this.torrentStartingFileId = null;
+        this.syncTorrentFilePicker();
         this.focusTorrentRegion(picker);
+    }
+
+    getTorrentFilePickerHint(prepared = this.torrentPreparedSource) {
+        const identity = prepared?.identity || {};
+        const files = prepared?.files || [];
+        const starting = files.find(file => file.fileId === this.torrentStartingFileId);
+        if (starting) {
+            return `Запускаем «${starting.name}», ${this.formatTorrentBytes(starting.sizeBytes)}. Пока идёт подключение, можно выбрать другой файл.`;
+        }
+        if (identity.mediaType === 'tv') {
+            return `Сезон ${identity.seasonNumber ?? '—'}, серия ${identity.episodeNumber ?? '—'}. Проверьте название файла перед запуском.`;
+        }
+        if (files.some(file => /\.m2ts$/i.test(file.name))) {
+            return files.some(file => file.durationSeconds > 0)
+                ? 'Это копия Blu-ray-диска: файлы пронумерованы, поэтому у каждого указаны длина и озвучки. Фильм — самый длинный.'
+                : 'Это копия Blu-ray-диска: фильм — самый большой файл, остальные обычно меню, трейлеры и доп. материалы.';
+        }
+        return prepared?.recommendedFileId
+            ? 'Выберите видео для просмотра. Первый в списке файл — скорее всего, сам фильм.'
+            : 'Выберите видео для просмотра.';
+    }
+
+    // What a film release's file is, judged by its length: the film, an extra or a menu-length clip.
+    getTorrentFileKind(file = {}) {
+        const seconds = Number(file.durationSeconds);
+        if (!(seconds > 0)) return '';
+        if (seconds >= 60 * 60) return 'Фильм целиком';
+        if (seconds >= 3 * 60) return 'Доп. материал';
+        return 'Короткий ролик';
+    }
+
+    formatTorrentFileDuration(value) {
+        const seconds = Math.round(Number(value));
+        if (!(seconds > 0)) return '';
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        if (hours) return minutes ? `${hours} ч ${minutes} мин` : `${hours} ч`;
+        if (minutes) return `${minutes} мин`;
+        return `${seconds} с`;
+    }
+
+    // "Озвучка: русский ×3, японский · Субтитры: русский" from the disc's own track list.
+    getTorrentFileTracksText(file = {}) {
+        const summarize = codes => {
+            const counts = new Map();
+            let unnamed = 0;
+            for (const code of codes) {
+                const name = this.getTorrentTrackLanguageName(code)?.toLocaleLowerCase('ru');
+                if (name) counts.set(name, (counts.get(name) || 0) + 1);
+                else unnamed += 1;
+            }
+            const parts = [...counts].map(([name, count]) => (count > 1 ? `${name} ×${count}` : name));
+            const tens = unnamed % 100;
+            const noun = unnamed % 10 === 1 && tens !== 11 ? 'дорожка'
+                : unnamed % 10 >= 2 && unnamed % 10 <= 4 && (tens < 12 || tens > 14) ? 'дорожки' : 'дорожек';
+            if (unnamed && counts.size) parts.push(`ещё ${unnamed} без языка`);
+            else if (unnamed) parts.push(unnamed === 1 ? 'язык не указан' : `${unnamed} ${noun}, язык не указан`);
+            return parts.join(', ');
+        };
+        const audio = summarize((Array.isArray(file.audioTracks) ? file.audioTracks : []).map(track => track?.language));
+        const subtitles = summarize(Array.isArray(file.subtitleLanguages) ? file.subtitleLanguages : []);
+        return [audio && `Озвучка: ${audio}`, subtitles && `Субтитры: ${subtitles}`].filter(Boolean).join(' · ');
+    }
+
+    // The folder a file sits in, without the disc's own BDMV/STREAM levels.
+    getTorrentFileFolder(file = {}) {
+        const parts = String(file.path || '').split('/').filter(Boolean).slice(0, -1);
+        if (parts.length >= 2 && /^stream$/i.test(parts.at(-1)) && /^bdmv$/i.test(parts.at(-2))) parts.splice(-2, 2);
+        return parts.at(-1) || '';
+    }
+
+    getTorrentPlayingFileId(sourceId = this.torrentPreparedSource?.sourceId) {
+        const args = this.torrentPlaybackSourceArgs;
+        const session = this.torrentPlaybackSession;
+        return session?.sessionId && args?.sessionId === session.sessionId && args.sourceId === sourceId
+            ? args.fileId || null : null;
+    }
+
+    // Marks what each file is doing: the one starting, the one on screen and the suggested one.
+    syncTorrentFilePicker() {
+        const picker = this.elements?.torrentSourcePanel?.querySelector('#torrentFilePicker');
+        const prepared = this.torrentPreparedSource;
+        if (!picker || !prepared) return;
+        const startingFileId = this.torrentStartingFileId || null;
+        const playingFileId = this.getTorrentPlayingFileId(prepared.sourceId);
+        const labels = { starting: 'Запускаем…', playing: 'Сейчас играет', recommended: 'Рекомендуем' };
+        picker.querySelectorAll('[data-torrent-file-id]').forEach(button => {
+            const fileId = button.dataset.torrentFileId;
+            const state = fileId === startingFileId ? 'starting'
+                : fileId === playingFileId ? 'playing'
+                    : button.dataset.recommended === 'true' ? 'recommended' : '';
+            if (state) button.dataset.state = state;
+            else delete button.dataset.state;
+            button.classList.toggle('is-current', state === 'starting' || state === 'playing');
+            if (state === 'playing') button.setAttribute('aria-current', 'true');
+            else button.removeAttribute('aria-current');
+            if (state === 'starting') button.setAttribute('aria-busy', 'true');
+            else button.removeAttribute('aria-busy');
+            const badge = button.querySelector('.torrent-file-picker__badge');
+            if (badge) {
+                badge.textContent = labels[state] || '';
+                badge.hidden = !state;
+            }
+        });
+        const hint = picker.querySelector('[data-torrent-files-hint]');
+        if (hint) hint.textContent = this.getTorrentFilePickerHint(prepared);
+    }
+
+    // The file already on screen is not restarted from the beginning: the choice just closes.
+    chooseTorrentFile(fileId) {
+        const prepared = this.torrentPreparedSource;
+        if (!prepared || !fileId) return Promise.resolve(false);
+        // Also cancels a start of another file that is still connecting.
+        if (fileId === this.getTorrentPlayingFileId(prepared.sourceId)) {
+            this.clearTorrentFileSelection(false);
+            this.setTorrentSourceStatus('');
+            this.focusTorrentRegion(this.elements?.videoContainer);
+            return Promise.resolve(true);
+        }
+        return this.startTorrentPlayback(prepared.sourceId, fileId);
     }
 
     getTorrentActiveDownload() {
@@ -1415,6 +1574,9 @@ class MovieDetailsTorrentPanelMethods {
         this.torrentSelectedSourceId = sourceId;
         this.renderTorrentSources(this.torrentSources);
         this.setTorrentSourceStatus('Подключаемся к раздаче…');
+        // The pressed file shows at once that it is starting; the list stays open meanwhile.
+        this.torrentStartingFileId = fileId && this.torrentPreparedSource?.sourceId === sourceId ? fileId : null;
+        this.syncTorrentFilePicker();
 
         try {
             if (this.mediaPlayerService.capabilities?.playback?.fileSelection === true) {
@@ -1435,7 +1597,7 @@ class MovieDetailsTorrentPanelMethods {
                         ? prepared.files[0].fileId : exact.length === 1 ? exact[0].fileId : null;
                 }
                 if (!fileId) {
-                    this.showTorrentFileSelection(sourceId, prepared.files, identity);
+                    this.showTorrentFileSelection(sourceId, prepared.files, identity, prepared.recommendedFileId);
                     this.setTorrentSourceStatus('Выберите видео из раздачи.');
                     return false;
                 }
@@ -1455,11 +1617,13 @@ class MovieDetailsTorrentPanelMethods {
                 void this.mediaPlayerService.revokePlaybackSession(session.sessionId).catch(() => undefined);
                 return false;
             }
-            this.torrentPlaybackSourceArgs = { sourceId, fileId, ...identity };
+            this.torrentPlaybackSourceArgs = { sourceId, fileId, ...identity, sessionId: session.sessionId };
             this.torrentPlaybackResume = options.resume || null;
             return await this.mountTorrentPlaybackSession(session, requestId, movie, generation);
         } catch (error) {
             if (!isCurrent()) return false;
+            this.torrentStartingFileId = null;
+            this.syncTorrentFilePicker();
             this.torrentSelectedSourceId = null;
             this.renderTorrentSources(this.torrentSources);
             this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
@@ -1487,6 +1651,7 @@ class MovieDetailsTorrentPanelMethods {
         }
         const picker = this.elements?.torrentSourcePanel?.querySelector('#torrentFilePicker');
         if (picker) picker.hidden = true;
+        this.torrentStartingFileId = null;
         this.beginSourceSwitchRequest();
         this.disposeTorrentPlaybackVideo();
         this.unmountActivePlayer();
@@ -1899,9 +2064,52 @@ class MovieDetailsTorrentPanelMethods {
         video?.load?.();
     }
 
+    // "rus"/"jpn" from the file become "Русский"/"Японский"; unknown or placeholder codes give null.
+    getTorrentTrackLanguageName(code) {
+        const value = String(code || '').trim().toLowerCase();
+        if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(value) || /^(?:und|zxx|mis|mul|q[a-t][a-z])$/.test(value)) return null;
+        try {
+            const name = new Intl.DisplayNames(['ru'], { type: 'language', fallback: 'none' }).of(value);
+            return name ? name.charAt(0).toLocaleUpperCase('ru') + name.slice(1) : null;
+        } catch {
+            return null;
+        }
+    }
+
+    formatTorrentTrackChannels(channels) {
+        const count = Number(channels);
+        if (!Number.isSafeInteger(count) || count <= 0) return '';
+        return { 1: 'моно', 2: 'стерео', 6: '5.1', 7: '6.1', 8: '7.1' }[count] || `${count} кан.`;
+    }
+
+    formatTorrentTrackCodec(codec) {
+        const value = String(codec || '').trim().toLowerCase();
+        if (!value) return '';
+        const known = { pcm_bluray: 'PCM', pcm_s16le: 'PCM', pcm_s24le: 'PCM', truehd: 'TrueHD', eac3: 'E-AC3',
+            opus: 'Opus', vorbis: 'Vorbis', subrip: 'SRT', hdmv_pgs_subtitle: 'PGS', dvd_subtitle: 'VobSub',
+            webvtt: 'VTT', mov_text: 'Текст' };
+        return known[value] || (value.startsWith('pcm_') ? 'PCM' : value.toUpperCase());
+    }
+
+    // A title that only repeats the language ("English", "rus") adds nothing to the label.
+    isTorrentTrackTitleLanguage(title, code) {
+        const value = String(title || '').trim().toLowerCase();
+        if (!value || !code) return false;
+        const names = [String(code).toLowerCase(), this.getTorrentTrackLanguageName(code)];
+        try {
+            names.push(new Intl.DisplayNames(['en'], { type: 'language', fallback: 'none' }).of(String(code).toLowerCase()));
+        } catch { /* An invalid code has no English name. */ }
+        return names.some(name => name && name.toLowerCase() === value);
+    }
+
     getTorrentTrackLabel(track) {
-        return [track.title || track.language || `Дорожка ${track.streamIndex + 1}`,
-            track.channels ? `${track.channels} ch` : '', track.codec || ''].filter(Boolean).join(' · ');
+        const language = this.getTorrentTrackLanguageName(track.language);
+        const title = String(track.title || '').trim();
+        // The language leads: it is what decides the dub. A title adds the studio or "Дубляж".
+        const lead = language || (title ? '' : `Дорожка ${track.streamIndex + 1}`);
+        return [lead, title && !(language && this.isTorrentTrackTitleLanguage(title, track.language)) ? title : '',
+            this.formatTorrentTrackChannels(track.channels), this.formatTorrentTrackCodec(track.codec)]
+            .filter(Boolean).join(' · ');
     }
 
     clearTorrentSubtitleResources() {
@@ -2044,6 +2252,12 @@ class MovieDetailsTorrentPanelMethods {
             if (this.torrentPlaybackSession !== session) return;
             this.torrentTracksSnapshot = tracks;
             this.applyTorrentTrackSnapshot();
+            // Blu-ray .m2ts files keep track languages outside the video file, so the menu can only number them.
+            const unnamed = tracks.audio.length > 1 && tracks.audio.every(track =>
+                !this.getTorrentTrackLanguageName(track.language) && !String(track.title || '').trim());
+            if (unnamed) {
+                this.setTorrentSourceStatus('В этом файле не подписаны языки озвучки, поэтому дорожки только пронумерованы. Сменить озвучку: настройки плеера → «Озвучка».');
+            }
         } catch {
             if (this.torrentPlaybackSession !== session) return;
             if (this.latestTorrentPlaybackProgress?.playback?.isReady) {
