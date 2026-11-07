@@ -1,5 +1,15 @@
 export const whatsNew = [
     {
+        id: '1.5.1', version: '1.5.1', date: '2026-11-08',
+        highlights: [
+            { id: 'ratings-steady', title: { ru: 'Рейтинги КП и IMDb без ожидания', en: 'KP and IMDb ratings without the wait' }, text: { ru: 'На главной, на странице фильма и в «Оценках» рейтинги появляются быстро и не пропадают, а фильмы с одинаковым названием больше не путаются.', en: 'On Home, the film page and Rated, ratings arrive quickly and stay, and films with the same name are no longer mixed up.' } },
+            { id: 'light-theme-ratings', title: { ru: 'Светлая тема читается', en: 'A readable light theme' }, text: { ru: 'Рейтинги Кинопоиска и IMDb и карточки закладок хорошо видны в светлой теме.', en: 'Kinopoisk and IMDb ratings and Bookmarks cards are easy to read in the light theme.' } },
+            { id: 'not-on-kinopoisk', title: { ru: 'Если фильма нет на Кинопоиске', en: 'When a film is not on Kinopoisk' }, text: { ru: 'Страница так и говорит и предлагает вернуться назад, а не повторять поиск, который не поможет.', en: 'The page says so and offers to go back instead of repeating a search that cannot help.' } },
+            { id: 'torrent-file-choice', title: { ru: 'Понятный выбор файла', en: 'A clear choice of file' }, text: { ru: 'В списке файлов раздачи видно, какой файл запускается и какой играет, а у копий Blu-ray — длина, озвучки и субтитры каждого файла.', en: 'The release file list shows which file is starting and which is playing, and Blu-ray copies show each file’s length, dubs and subtitles.' } },
+            { id: 'bluray-russian-dub', title: { ru: 'Русская озвучка на Blu-ray', en: 'Russian dub on Blu-ray' }, text: { ru: 'Медиаплеер сам включает русскую дорожку диска Blu-ray, если она есть, и подписывает языки дорожек.', en: 'The media player plays a Blu-ray disc’s Russian track when it has one and names the languages of its tracks.' } }
+        ]
+    },
+    {
         id: '1.5.0', version: '1.5.0', date: '2026-11-07',
         highlights: [
             { id: 'sources-back', title: { ru: 'Источники снова работают', en: 'Sources work again' }, text: { ru: 'KinoGo, Ex-FS, HDRezka и AnimeGo снова запускаются в плеере.', en: 'KinoGo, Ex-FS, HDRezka and AnimeGo play in the player again.' } },

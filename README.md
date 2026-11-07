@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.5.0-69b500?style=flat-square" alt="Version 1.5.0">
+  <img src="https://img.shields.io/badge/VERSION-1.5.1-69b500?style=flat-square" alt="Version 1.5.1">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -447,6 +447,11 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+</details>
+
+<details>
+<summary><strong>1.5.1</strong> — Steady KP and IMDb ratings, a readable light theme and clear torrent files, with MediaPlayer Suite 0.1.5</summary>
+
 ### Fixes
 
 - KP and IMDb ratings arrive steadily on Home, the film page and Rated. On all three, measured in the owner's Chrome, the slow parts turned out to be separate faults:
@@ -467,6 +472,10 @@ keeps npm-compatible three-component semver metadata.
 - While a rating loads on the film page, only its placeholder is dimmed. The whole tile used to fade to 72%, which took the provider's name down to 2.9–3.6:1 in the light theme; the name now keeps its full colour in both themes.
 - IMDb and Kinopoisk ratings can be read in the light theme outside the film page too: on the cards of Rated, Collection and Bookmarks, in Rated's rating dialog and on the Random result. IMDb's yellow stood at 1.5–1.6:1 there, Kinopoisk's orange at 2.3–3.0:1 and the dialog's amber Kinopoisk badge at 1.6:1. They now take the film page's deep shades, gold for IMDb and burnt orange for Kinopoisk, at 6.0:1 or more in the browser rig; the dark theme keeps the brand colours. The orange Kinopoisk badges on posters keep their fill and now carry near-black text in both themes, as IMDb's yellow ones do: white stood at 3.4–3.7:1, near-black reads at 5.2–5.6:1.
 - Bookmarks cards are light in the light theme. They kept the dark theme's glass, which turned mid-grey on the light page and hid the year and the «Кинопоиск» and «IMDb» labels (1.0:1). They now take the standard card surface, shadow and line above the ratings, as on Collection; the year and labels read at 7.0:1 and 5.2:1.
+- The torrent file list shows what is happening. Pressing a file gave no sign in the list: it still read «Выберите файл» while the release connected. The pressed file is now marked «Запускаем…», the line above names it with its size, and the file on screen reads «Сейчас играет»; choosing that file again goes back to it instead of starting it from zero. In a film release the file MediaPlayer suggests comes first with «Рекомендуем» and «самый большой файл — обычно это сам фильм», and the rest follow by size. A Blu-ray copy, a list of numbered `.m2ts` parts such as two `00005.m2ts`, says that the film is the largest file and the others are usually menus, trailers and extras.
+- Numbered Blu-ray files can be told apart without starting each one: MediaPlayer Suite 0.1.5 reports what the disc says about them (optional `path`, `durationSeconds`, `audioTracks` and `subtitleLanguages` per file in the prepare answer). Each file then reads, for example, «Фильм целиком · 2 ч 4 мин · 39 ГБ», «Озвучка: японский, русский ×3, английский · Субтитры: русский ×2, английский», with «Доп. материал» for parts from 3 to 60 minutes and «Короткий ролик» for menus and logos; the film list follows length, and same-named files of several discs show their folder. With an older MediaPlayer the list stays as described above.
+- Torrent audio tracks name their language: «Русский · Дубляж · 5.1 · AC3» instead of `rus`, «Японский» instead of `jpn`, with `pcm_bluray` shown as PCM and 7 channels as 6.1. A Blu-ray `.m2ts` file keeps its track languages outside the video file, in the disc's clip information; MediaPlayer Suite 0.1.5 reads them there, names the tracks and plays a Russian track by default when the disc declares one. When the languages cannot be read, the tracks are numbered and the panel says the languages are not marked and where to switch the dub.
+- MediaPlayer Suite 0.1.5 ships with this release. Besides the Blu-ray changes above, a download can be deleted while a conversion still reads it, release quality follows what the title states (`UHD BDRip 1080p` is 1080p, not 4K), and 4K films that trackers file under the TV section are found.
 
 ### Docs
 
