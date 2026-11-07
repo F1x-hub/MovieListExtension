@@ -2582,7 +2582,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof M
         const duration = 650;
         const step = (now) => {
             if (!element.isConnected) return;
-            const progress = Math.min(1, (now - start) / duration);
+            // A frame's time can precede `start` when a long task ran in between; a
+            // negative progress would roll the number below zero.
+            const progress = Math.min(1, Math.max(0, (now - start) / duration));
             const eased = 1 - Math.pow(1 - progress, 3);
             element.textContent = progress < 1 ? (target * eased).toFixed(decimals) : raw;
             if (progress < 1) requestAnimationFrame(step);

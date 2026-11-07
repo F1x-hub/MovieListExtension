@@ -97,6 +97,35 @@ assert.match(unavailableOverlay.innerHTML, /mc-badge-unavailable/);
 assert.match(unavailableOverlay.innerHTML, />КП<\/span><span>—<\/span>/);
 assert.match(unavailableOverlay.innerHTML, />IMDb<\/span><span>—<\/span>/);
 
+// A person's score is never shown as the Kinopoisk rating.
+const ratedWithoutProviders = createSearchCard({ kinopoiskId: 400, name: 'Rated title' });
+assert.doesNotMatch(ratedWithoutProviders.innerHTML, /mc-badge-kp/);
+const standardRatedCard = MovieCard.create({
+    rating: 2,
+    averageRating: 2,
+    ratingsCount: 1,
+    movie: { kinopoiskId: 401, name: 'Rated title', rating: { kp: 0, imdb: 0 } }
+});
+assert.match(standardRatedCard.innerHTML, /mc-rating-kp mc-rating-none">—</, 'A rater\'s 2 stays out of the Kinopoisk cell');
+assert.equal(standardRatedCard.dataset.kpRating, undefined);
+
+// Provider ratings read one way everywhere.
+const wholeNumbers = createSearchCard({ kinopoiskId: 402, name: 'Whole numbers', kpRating: 6, imdbRating: 7 });
+assert.match(wholeNumbers.innerHTML, />КП<\/span><span>6\.0<\/span>/);
+assert.match(wholeNumbers.innerHTML, />IMDb<\/span><span>7\.0<\/span>/);
+
+// Each provider keeps its place whatever its state.
+const order = html => [...html.matchAll(/(?:mc-badge-source|mc-rating-skeleton-label)">(КП|IMDb)</g)].map(match => match[1]);
+for (const ratings of [
+    { kpRating: 0, kpUnavailable: true, imdbRating: 6.7 },
+    { kpRating: 7.2, imdbRating: 0, imdbUnavailable: true },
+    { kpRating: 0, kpPending: true, imdbRating: 6.7 },
+    { kpRating: 0, kpUnavailable: true, imdbRating: 0, imdbPending: true }
+]) {
+    assert.deepEqual(order(MovieCard.renderCompactRatingBadges(ratings)), ['КП', 'IMDb'], JSON.stringify(ratings));
+}
+assert.equal(order(MovieCard.renderCompactRatingBadges({ showSkeleton: true, kpUnavailable: true })).length, 2, 'One badge per provider');
+
 console.log('✅ Movie card KP/IMDb labels and TMDB suppression passed');
 
 // Keep compact renderer regressions in the existing shared MovieCard test gate.

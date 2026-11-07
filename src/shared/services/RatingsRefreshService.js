@@ -129,10 +129,43 @@ class RatingsRefreshService {
             ? this.refreshFirestoreRatings(movieRef, kinopoiskId, imdbId, onRefreshStart, sharedCardRecord)
             : this.refreshLocalRatings(kinopoiskId, imdbId, onRefreshStart, sharedCardRecord);
 
-        return this.mergeRatingSources(await result, sharedCardRecord);
+        return this.fillMissingImdbRating(this.mergeRatingSources(await result, sharedCardRecord), imdbId);
     }
 
-    async persistCardRatingPatch(kinopoiskId, ratings) {
+    /**
+     * Ratings are parsed at most once a week, and that parse may have run while the IMDb
+     * proxy was down. A title still missing its IMDb rating asks the proxy again.
+     */
+    async fillMissingImdbRating(result, imdbId) {
+        const id = RatingsRefreshService.normalizeImdbId(imdbId) || RatingsRefreshService.normalizeImdbId(result?.imdbId);
+        if (!id || Number(result?.imdbRating) > 0) return result;
+        const parser = new ImdbParsingService();
+        if (typeof parser.getImdbRatingsBatch !== 'function') return result;
+        const answer = (await parser.getImdbRatingsBatch([id]))?.get(id);
+        if (!answer) return result;
+        return {
+            ...result,
+            imdbId: id,
+            imdbRating: Number(answer.rating) || 0,
+            votes: { ...(result?.votes || {}), ...(Number(answer.votes) > 0 ? { imdb: Number(answer.votes) } : {}) },
+            imdbCheckedAt: Date.now(),
+            imdbChecked: true
+        };
+    }
+
+    /** One writer at a time, across pages: each write replaces the whole card cache. */
+    withCardCacheLock(callback) {
+        const locks = globalThis.navigator?.locks;
+        return locks?.request
+            ? locks.request(`movie-ratings-cache:${this.getCardRatingsCacheKey()}`, callback)
+            : callback();
+    }
+
+    persistCardRatingPatch(kinopoiskId, ratings) {
+        return this.withCardCacheLock(() => this.writeCardRatingPatch(kinopoiskId, ratings));
+    }
+
+    async writeCardRatingPatch(kinopoiskId, ratings) {
         if (typeof chrome === 'undefined' || !chrome.storage?.local || !kinopoiskId) return;
 
         const key = this.getCardRatingsCacheKey();
@@ -243,20 +276,54 @@ class RatingsRefreshService {
         }
     }
 
+    /**
+     * Kinopoisk's own API answers for both ratings in one quick request. Without it the
+     * Kinopoisk page is parsed, which fails for a title that has too few votes for a rating.
+     * @returns {Promise<Object|null>}
+     */
+    async readGraphqlRatings(kinopoiskId) {
+        if (typeof KinopoiskGraphqlService !== 'function') return null;
+        try {
+            return await new KinopoiskGraphqlService().getMovieRatings(kinopoiskId);
+        } catch (error) {
+            console.warn('[RatingsRefresh] Kinopoisk GraphQL failed:', error?.message || error);
+            return null;
+        }
+    }
+
     async parseRatings(kinopoiskId, imdbId, onRefreshStart, useLocalTimestamp = false, sharedCardRecord = null) {
         const hasSharedKpRating = Number(sharedCardRecord?.kpRating) > 0;
         const hasSharedImdbRating = Number(sharedCardRecord?.imdbRating) > 0;
+        if (typeof onRefreshStart === 'function' && (!hasSharedKpRating || (imdbId && !hasSharedImdbRating))) onRefreshStart();
+
+        const graphql = await this.readGraphqlRatings(kinopoiskId);
+        const updates = {};
+        let hasValidResult = false;
+        if (graphql) {
+            if (this.isValidRatingResult({ rating: graphql.kpRating, votes: graphql.kpVotes })) {
+                updates.kpRating = graphql.kpRating;
+                updates.votes = { kp: graphql.kpVotes };
+                hasValidResult = true;
+            }
+            if (this.isValidRatingResult({ rating: graphql.imdbRating, votes: graphql.imdbVotes })) {
+                updates.imdbRating = graphql.imdbRating;
+                updates.votes = { ...(updates.votes || {}), imdb: graphql.imdbVotes };
+                hasValidResult = true;
+            }
+        }
+        const needsKinopoiskPage = !graphql && !hasSharedKpRating;
+        const needsImdbSource = imdbId && !hasSharedImdbRating && updates.imdbRating === undefined;
 
         const kinopoiskParser = new KinopoiskRatingParsingService();
         const imdbParser = new ImdbParsingService();
         const ratingRequests = [];
-        if (!hasSharedKpRating) {
+        if (needsKinopoiskPage) {
             ratingRequests.push({
                 provider: 'kp',
                 promise: kinopoiskParser.getKinopoiskRating(kinopoiskId)
             });
         }
-        if (imdbId && !hasSharedImdbRating) {
+        if (needsImdbSource) {
             ratingRequests.push({
                 provider: 'imdb',
                 promise: imdbParser.getImdbRatingPreferProxy
@@ -264,8 +331,6 @@ class RatingsRefreshService {
                     : imdbParser.getImdbRating(imdbId)
             });
         }
-        if (ratingRequests.length === 0) return {};
-        if (typeof onRefreshStart === 'function') onRefreshStart();
         const settledResults = await Promise.allSettled(ratingRequests.map(request => request.promise));
         const resultsByProvider = new Map(
             settledResults.map((result, index) => [ratingRequests[index].provider, result])
@@ -273,21 +338,19 @@ class RatingsRefreshService {
         const kinopoiskResult = resultsByProvider.get('kp');
         const imdbResult = resultsByProvider.get('imdb');
 
-        const updates = {};
-        let hasValidResult = false;
-        if (!hasSharedKpRating && kinopoiskResult.status === 'fulfilled' && this.isValidRatingResult(kinopoiskResult.value)) {
+        if (kinopoiskResult?.status === 'fulfilled' && this.isValidRatingResult(kinopoiskResult.value)) {
             updates.kpRating = kinopoiskResult.value.rating;
             updates.votes = { kp: kinopoiskResult.value.votes };
             hasValidResult = true;
-        } else if (!hasSharedKpRating && kinopoiskResult.status === 'rejected') {
+        } else if (kinopoiskResult?.status === 'rejected') {
             console.warn('[RatingsRefresh] Kinopoisk refresh failed:', kinopoiskResult.reason);
         }
 
-        if (!hasSharedImdbRating && imdbResult?.status === 'fulfilled' && this.isValidRatingResult(imdbResult.value)) {
+        if (imdbResult?.status === 'fulfilled' && this.isValidRatingResult(imdbResult.value)) {
             updates.imdbRating = imdbResult.value.rating;
             updates.votes = { ...(updates.votes || {}), imdb: imdbResult.value.votes };
             hasValidResult = true;
-        } else if (!hasSharedImdbRating && imdbResult?.status === 'rejected') {
+        } else if (imdbResult?.status === 'rejected') {
             console.warn('[RatingsRefresh] IMDb refresh failed:', imdbResult.reason);
         }
 

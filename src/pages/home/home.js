@@ -51,6 +51,8 @@ class HomePage {
                 trace: HomePage.isRatingsTraceEnabled()
             })
             : null;
+        // Read now, so the first rendered cards already show the ratings it holds.
+        void this.ratingEnricher?.readCache();
         this.renderer = new HomeRenderer({
             resolveMovie: (item) => this.dataController.resolveHomeMovie(item),
             ratingEnricher: this.ratingEnricher,
@@ -118,6 +120,9 @@ class HomePage {
             globalThis.chrome?.storage?.onChanged?.removeListener(this.personalStorageListener);
             this.ratedObserver?.disconnect();
             clearTimeout(this.ratedMarkTimer);
+            // Hidden Kinopoisk pages queued for these cards must not hold the slots
+            // against the film page the user is opening.
+            this.ratingEnricher?.dispose();
         });
     }
 
@@ -269,8 +274,10 @@ class HomePage {
     }
 
     renderDiscovery(discovery) {
-        this.renderer.renderFeaturedSlider(discovery.featured, this.featuredSlider);
-        this.sliderController.init(discovery.featured);
+        // An unchanged hero stays on the page the user is looking at.
+        if (this.renderer.renderFeaturedSlider(discovery.featured, this.featuredSlider) !== false) {
+            this.sliderController.init(discovery.featured);
+        }
         this.renderer.renderCategoryGrids(discovery, this.categoryElements, () => this.loadDiscovery());
         this.markRatedCards(this.personalUid);
     }

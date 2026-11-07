@@ -175,6 +175,11 @@ class CatalogPage {
     }
 
     bindEvents() {
+        // Hidden Kinopoisk pages queued for these cards must not outlive the page.
+        window.addEventListener('pagehide', event => {
+            if (!event.persisted) this.ratingEnricher?.dispose();
+        });
+
         const reloadFromControls = () => {
             this.state.sort = this.elements.sort.value;
             this.state.yearFrom = this.elements.yearFrom.value.trim();

@@ -498,6 +498,30 @@
         return false;
     }
 
+    /**
+     * Kinopoisk's "nothing found" page. A title that is not on the site is an answer, and
+     * without recognizing it the frame holds its slot until the whole timeout runs out.
+     * @param {Document} doc
+     * @returns {boolean}
+     */
+    function isEmptySearchPage(doc = document) {
+        if (doc.querySelector?.('[data-testid="empty-search-results"], .empty-search, [class*="styles_empty__"]')) return true;
+        return Array.from(doc.querySelectorAll?.('h1, h2') || [])
+            .some(heading => /ничего не найдено/i.test(heading.textContent || ''));
+    }
+
+    /**
+     * The request ID the worker put after "#agy_req_". Kinopoisk's own scripts add to the hash
+     * of a signed-in user's page ("#agy_req_1_ab?socialAlias=..."), so the ID ends at the first
+     * character that cannot belong to it. A result sent under any other ID is ignored by the
+     * worker, and the request then waits out its whole timeout.
+     * @param {string} hash
+     * @returns {string} The ID, or an empty string when this frame carries no request
+     */
+    function parseRequestHash(hash) {
+        return /^#agy_req_(\w+)/.exec(String(hash || ''))?.[1] || '';
+    }
+
     // Export helpers for test suites if running in node/module environment
     if (typeof module !== 'undefined' && module.exports) {
         module.exports = {
@@ -507,7 +531,9 @@
             isChallengeOrCaptchaPage,
             parseSearchNumber,
             parseSearchInteger,
-            extractMoviePageRatingsFromDOM
+            extractMoviePageRatingsFromDOM,
+            parseRequestHash,
+            isEmptySearchPage
         };
         return;
     }
@@ -516,6 +542,12 @@
     if (typeof window === 'undefined' || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
         return;
     }
+
+    // Only the frames the worker opens carry a request. A Kinopoisk tab the owner opened, or a
+    // frame inside one of its pages, has nothing to answer and must not report to the worker.
+    const startRequestId = parseRequestHash(window.location?.hash);
+    if (!startRequestId) return;
+    const startRequireRating = String(window.location?.hash || '').includes('agy_rating_1');
 
     let isCompleted = false;
     const pageStartedAt = Date.now();
@@ -590,18 +622,14 @@
 
     function getRequestMetadata() {
         let query = '';
-        let requestId = '';
         try {
             if (typeof window !== 'undefined' && window.location?.href) {
                 const urlObj = new URL(window.location.href);
                 query = urlObj.searchParams.get('text') || '';
-                if (urlObj.hash && urlObj.hash.startsWith('#agy_req_')) {
-                    requestId = urlObj.hash.replace('#agy_req_', '').split('&')[0];
-                }
                 return {
                     query,
-                    requestId,
-                    requireRating: urlObj.hash.includes('agy_rating_1'),
+                    requestId: startRequestId,
+                    requireRating: startRequireRating,
                     isSimilarPage: /\/(?:film|series)\/\d+\/like\/?$/i.test(urlObj.pathname),
                     isMoviePage: /\/(?:film|series)\/\d+\//i.test(urlObj.pathname)
                 };
@@ -609,7 +637,7 @@
         } catch {
             // Ignore URL parse error
         }
-        return { query, requestId, requireRating: false, isSimilarPage: false, isMoviePage: false };
+        return { query, requestId: startRequestId, requireRating: startRequireRating, isSimilarPage: false, isMoviePage: false };
     }
 
     function sendResult(type, payload = {}) {
@@ -733,8 +761,7 @@
         }
 
         // Check if explicit empty state is rendered
-        const emptyState = document.querySelector('[data-testid="empty-search-results"], .empty-search, .styles_empty__');
-        if (emptyState) {
+        if (isEmptySearchPage(document)) {
             sendResult('SCRAPE_RESULT_SUCCESS', { items: [] });
         }
     }

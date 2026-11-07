@@ -102,6 +102,49 @@ async function run() {
     const unmappedRecord = (await unmapped.readCache())['tmdb:movie:789'];
     assert.equal(unmappedRecord.kpRating, 7.6);
     assert.equal(unmappedRecord.imdbId, 'tt1234567');
+
+    // Cached ratings are on the card the moment it is observed, before it scrolls into view.
+    {
+        const paintStorage = makeStorage({
+            'kp:900': {
+                kpId: 900, status: 'resolved', kpRating: 7.4, imdbRating: 7.2, kpState: 'available', imdbState: 'available',
+                updatedAt: Date.now(), expiresAt: Date.now() + 60_000
+            },
+            'kp:901': {
+                kpId: 901, status: 'resolved', kpRating: 5.4, imdbRating: 0, kpState: 'available', imdbState: 'unavailable',
+                updatedAt: Date.now(), expiresAt: Date.now() + 60_000, imdbRetryAfter: Date.now() - 1
+            }
+        });
+        const painting = createService({ storage: paintStorage });
+        await painting.readCache();
+        const root = document.createElement('div');
+        document.body.appendChild(root);
+        const complete = makeCard({ kinopoiskId: 900, kpRating: 0, imdbRating: 0, imdbId: null });
+        const partly = makeCard({ kinopoiskId: 901, kpRating: 0, imdbRating: 0, imdbId: null });
+        const unknown = makeCard({ kinopoiskId: 902, kpRating: 0, imdbRating: 0, imdbId: null });
+        root.append(complete, partly, unknown);
+        painting.observe(root);
+        assert.equal(complete.dataset.ratingsState, 'ready', 'a usable record needs no network pass');
+        assertBadges(complete, 7.4, 7.2);
+        assert.equal(painting.trackedCards.has(complete), false);
+        assert.ok(partly.querySelector('.mc-badge-kp'), 'a partly usable record paints what it has');
+        assert.ok(partly.querySelector('.mc-badge-loading'), 'and shows what it is still looking for');
+        assert.equal(partly.dataset.ratingsState || '', '', 'and the card still takes the network pass');
+        assert.equal(unknown.querySelector('.mc-badge-kp'), null);
+        painting.dispose();
+
+        // The cache has not been read yet: the cards are painted as soon as it arrives.
+        const late = createService({ storage: paintStorage });
+        const lateRoot = document.createElement('div');
+        document.body.appendChild(lateRoot);
+        const lateCard = makeCard({ kinopoiskId: 900, kpRating: 0, imdbRating: 0, imdbId: null });
+        lateRoot.append(lateCard);
+        late.observe(lateRoot);
+        await late.readCache();
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(lateCard.dataset.ratingsState, 'ready');
+        late.dispose();
+    }
     dom.window.close();
     console.log('Home seeded KP/IMDb ratings survive cold/negative/partial cache and provider failures');
 }

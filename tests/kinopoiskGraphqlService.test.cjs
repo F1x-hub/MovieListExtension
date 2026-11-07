@@ -90,9 +90,30 @@ function fetchReturning(data, calls) {
             const fast = await host.scrapeMoviePageRatingsOffscreen(326);
             assert.equal(fast.source, 'graphql');
             assert.equal(pageLoads, 0, 'no hidden page when GraphQL has both ratings');
-            const fallback = await host.scrapeMoviePageRatingsOffscreen(6601550);
+            const partials = [];
+            const fallback = await host.scrapeMoviePageRatingsOffscreen(6601550, { onPartial: ratings => partials.push(ratings) });
             assert.equal(fallback.imdbRating, 5.7);
             assert.equal(pageLoads, 1, 'the hidden page still supplies IMDb for new titles');
+            assert.equal(fallback.kpVotes, 764, 'GraphQL votes survive a page without them');
+            assert.equal(fallback.imdbAnswered, true, 'a page that answered counts as an IMDb answer');
+            assert.equal(partials[0].kpRating, 5.9, 'Kinopoisk rating is reported while the page loads');
+
+            // A hidden page that fails or times out must not lose what GraphQL said.
+            global.chrome.runtime.sendMessage = async () => ({ success: false, reason: 'BACKGROUND_TIMEOUT' });
+            const failedPage = await host.scrapeMoviePageRatingsOffscreen(6601550);
+            assert.equal(failedPage.kpRating, 5.9);
+            assert.equal(failedPage.kpVotes, 764);
+            assert.equal(failedPage.imdbAnswered, false, 'IMDb stays unknown, not absent');
+            global.chrome.runtime.sendMessage = async () => { throw new Error('worker gone'); };
+            assert.equal((await host.scrapeMoviePageRatingsOffscreen(6601550)).kpRating, 5.9);
+
+            // An answer the caller already has is not asked for again.
+            let graphqlCalls = 0;
+            host.graphqlService = { getMovieRatings: async () => { graphqlCalls += 1; return null; } };
+            global.chrome.runtime.sendMessage = async () => ({ success: true, ratings: { kpRating: 7, imdbRating: 0 } });
+            const given = await host.scrapeMoviePageRatingsOffscreen(1, { graphqlRatings: null });
+            assert.equal(graphqlCalls, 0);
+            assert.equal(given.kpRating, 7);
             delete global.chrome;
         }
 

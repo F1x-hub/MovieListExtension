@@ -506,8 +506,11 @@ class KinopoiskService {
      * hidden browser-context scraper. This avoids IMDb's service-worker 202
      * challenge and does not open a visible tab.
      * @param {number|string} kinopoiskId
-     * @param {Object} options - { timeoutMs }
-     * @returns {Promise<{kpRating:number, imdbRating:number, imdbId:string|null}|null>}
+     * @param {Object} options - { timeoutMs, onPartial, graphqlRatings }
+     *   onPartial(ratings) receives GraphQL's answer while the hidden page is still
+     *   loading; graphqlRatings passes an answer the caller already has (null: none).
+     * @returns {Promise<{kpRating:number, imdbRating:number, imdbId:string|null, imdbAnswered:boolean}|null>}
+     *   imdbAnswered is false when neither source could read IMDb data.
      */
     async scrapeMoviePageRatingsOffscreen(kinopoiskId, options = {}) {
         const numericId = Number(kinopoiskId);
@@ -516,14 +519,24 @@ class KinopoiskService {
         // Fast path: Kinopoisk's GraphQL returns both ratings with vote counts.
         // The hidden movie page is loaded only when Kinopoisk has no IMDb block
         // for the title yet (new releases show IMDb on the page earlier).
-        const graphqlRatings = await this.movieRatingsViaGraphql(numericId);
-        if (graphqlRatings?.imdbAnswered || (graphqlRatings && options.kpOnly === true)) {
-            const ratings = { ...graphqlRatings, imdbId: null, source: 'graphql' };
-            return options.returnDiagnostics === true ? { ratings, failureReason: null, metrics: { source: 'graphql' } } : ratings;
+        const graphqlRatings = options.graphqlRatings === undefined
+            ? await this.movieRatingsViaGraphql(numericId)
+            : options.graphqlRatings;
+        // GraphQL's answer stays valid whatever happens to the page below.
+        const known = graphqlRatings ? { ...graphqlRatings, imdbId: null, source: 'graphql' } : null;
+        if (known?.imdbAnswered || (known && options.kpOnly === true)) {
+            return options.returnDiagnostics === true ? { ratings: known, failureReason: null, metrics: { source: 'graphql' } } : known;
+        }
+        if (known) {
+            try {
+                options.onPartial?.(known);
+            } catch (error) {
+                console.warn('[KinopoiskRatingsTrace] partial result handler failed:', error.message);
+            }
         }
 
         if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
-            return null;
+            return known;
         }
 
         try {
@@ -545,9 +558,19 @@ class KinopoiskService {
                     kinopoiskId: numericId,
                     ratings: response.ratings
                 });
+                const page = response.ratings;
+                const ratings = {
+                    ...page,
+                    kpRating: Number(page.kpRating) > 0 ? page.kpRating : (known?.kpRating || 0),
+                    kpVotes: Number(page.kpVotes) > 0 ? page.kpVotes : (known?.kpVotes || 0),
+                    imdbRating: Number(page.imdbRating) > 0 ? page.imdbRating : (known?.imdbRating || 0),
+                    imdbVotes: Number(page.imdbVotes) > 0 ? page.imdbVotes : (known?.imdbVotes || 0),
+                    imdbAnswered: true,
+                    source: 'page'
+                };
                 return options.returnDiagnostics === true
-                    ? { ratings: response.ratings, failureReason: null, metrics: response.metrics || null }
-                    : response.ratings;
+                    ? { ratings, failureReason: null, metrics: response.metrics || null }
+                    : ratings;
             }
 
             console.info('[KinopoiskRatingsTrace] movie-page-empty', {
@@ -555,17 +578,17 @@ class KinopoiskService {
                 reason: response?.reason || 'NO_RATINGS'
             });
             return options.returnDiagnostics === true
-                ? { ratings: null, failureReason: response?.reason || 'OFFSCREEN_UNKNOWN_FAILURE', metrics: response?.metrics || null }
-                : null;
+                ? { ratings: known, failureReason: response?.reason || 'OFFSCREEN_UNKNOWN_FAILURE', metrics: response?.metrics || null }
+                : known;
         } catch (error) {
             console.warn('[KinopoiskRatingsTrace] movie-page-error', {
                 kinopoiskId: numericId,
                 message: error.message
             });
             if (options.returnDiagnostics === true) {
-                return { ratings: null, failureReason: 'OFFSCREEN_MESSAGE_FAILED', error: error.message };
+                return { ratings: known, failureReason: 'OFFSCREEN_MESSAGE_FAILED', error: error.message };
             }
-            return null;
+            return known;
         }
     }
 

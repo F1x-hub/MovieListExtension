@@ -12,6 +12,11 @@ class MovieCard {
         return Number.parseFloat(Number(value).toFixed(1));
     }
 
+    /** Provider ratings read the way the sites print them: 7.0, not 7. */
+    static formatProviderRating(value) {
+        return Number(value).toFixed(1);
+    }
+
     static renderCompactRatingBadges({
         kpRating = 0,
         imdbRating = 0,
@@ -26,40 +31,35 @@ class MovieCard {
         const kp = this.normalizeRating(kpRating);
         const imdb = this.normalizeRating(imdbRating);
         const user = this.normalizeRating(userRating);
+        // Each provider keeps its place whatever its state, so a badge never moves when
+        // the other provider's rating arrives.
+        const providerBadge = (label, value, className, siteName, isLoading, isMissing) => {
+            if (value > 0) {
+                return `
+                <span class="mc-badge ${className}" title="Оценка ${siteName}">
+                    <span class="mc-badge-source">${label}</span><span>${this.formatProviderRating(value)}</span>
+                </span>`;
+            }
+            if (isLoading) {
+                return `
+                <span class="mc-badge mc-badge-loading" aria-label="Загрузка рейтинга ${label}">
+                    <span class="mc-rating-skeleton-label">${label}</span><span class="mc-rating-skeleton-value"></span>
+                </span>`;
+            }
+            if (isMissing) {
+                return `
+                <span class="mc-badge mc-badge-unavailable" title="Оценка ${siteName} не найдена">
+                    <span class="mc-badge-source">${label}</span><span>—</span>
+                </span>`;
+            }
+            return '';
+        };
         return `
-            ${kp > 0 ? `
-                <span class="mc-badge mc-badge-kp" title="Оценка Кинопоиска">
-                    <span class="mc-badge-source">КП</span><span>${this.formatRating(kp)}</span>
-                </span>
-            ` : ''}
-            ${imdb > 0 ? `
-                <span class="mc-badge mc-badge-imdb" title="Оценка IMDb">
-                    <span class="mc-badge-source">IMDb</span><span>${this.formatRating(imdb)}</span>
-                </span>
-            ` : ''}
+            ${providerBadge('КП', kp, 'mc-badge-kp', 'Кинопоиска', showSkeleton || kpPending, kpUnavailable || showUnavailable)}
+            ${providerBadge('IMDb', imdb, 'mc-badge-imdb', 'IMDb', showSkeleton || imdbPending, imdbUnavailable || showUnavailable)}
             ${user > 0 ? `
                 <span class="mc-badge mc-badge-user" title="${window.i18n?.get('movie_card.my_rating') || 'Моя оценка'}: ${this.formatRating(user)}">
                     <span class="mc-badge-star"><svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span> ${this.formatRating(user)}
-                </span>
-            ` : ''}
-            ${(showSkeleton || kpPending) && kp <= 0 ? `
-                <span class="mc-badge mc-badge-loading" aria-label="Загрузка рейтинга КП">
-                    <span class="mc-rating-skeleton-label">КП</span><span class="mc-rating-skeleton-value"></span>
-                </span>
-            ` : ''}
-            ${(showSkeleton || imdbPending) && imdb <= 0 ? `
-                <span class="mc-badge mc-badge-loading" aria-label="Загрузка рейтинга IMDb">
-                    <span class="mc-rating-skeleton-label">IMDb</span><span class="mc-rating-skeleton-value"></span>
-                </span>
-            ` : ''}
-            ${(kpUnavailable || (showUnavailable && !kpPending)) && kp <= 0 && !kpPending ? `
-                <span class="mc-badge mc-badge-unavailable" title="Оценка Кинопоиска не найдена">
-                    <span class="mc-badge-source">КП</span><span>—</span>
-                </span>
-            ` : ''}
-            ${(imdbUnavailable || (showUnavailable && !imdbPending)) && imdb <= 0 && !imdbPending ? `
-                <span class="mc-badge mc-badge-unavailable" title="Оценка IMDb не найдена">
-                    <span class="mc-badge-source">IMDb</span><span>—</span>
                 </span>
             ` : ''}
         `;
@@ -187,9 +187,10 @@ class MovieCard {
         const kinopoiskRating = this.normalizeRating(movie.kpRating || movie.ratingKp || movie.ratingKinopoisk 
             || (typeof movie.rating === 'object' ? movie.rating?.kp : null)
             || (typeof movie.rating === 'number' ? movie.rating : null)
-            || data.kpRating || data.ratingKp 
-            || (typeof data.rating === 'object' ? data.rating?.kp : null)
-            || (typeof data.rating === 'number' ? data.rating : null) || 0);
+            || data.kpRating || data.ratingKp
+            // A number in data.rating is a person's score (displayedUserRating above),
+            // never a Kinopoisk rating.
+            || (typeof data.rating === 'object' ? data.rating?.kp : null) || 0);
 
         const imdbRating = this.normalizeRating(movie.imdbRating || movie.ratingImdb 
             || (typeof movie.rating === 'object' ? movie.rating?.imdb : null)
@@ -615,13 +616,13 @@ class MovieCard {
                         ${kinopoiskRating > 0 ? `
                             <div class="mc-rating-block">
                                 <span class="mc-rating-block-label">КИНОПОИСК</span>
-                                <span class="mc-rating-block-value kp">${this.formatRating(kinopoiskRating)}</span>
+                                <span class="mc-rating-block-value kp">${this.formatProviderRating(kinopoiskRating)}</span>
                             </div>
                         ` : ''}
                         ${imdbRating > 0 ? `
                             <div class="mc-rating-block">
                                 <span class="mc-rating-block-label">IMDb</span>
-                                <span class="mc-rating-block-value imdb">${this.formatRating(imdbRating)}</span>
+                                <span class="mc-rating-block-value imdb">${this.formatProviderRating(imdbRating)}</span>
                             </div>
                         ` : ''}
                     </div>
@@ -629,11 +630,11 @@ class MovieCard {
                 <div class="mc-ratings-row">
                     <div class="mc-rating-item">
                         <div class="mc-rating-label">${window.i18n?.get('movie_card.kinopoisk') || 'Кинопоиск'}</div>
-                        <div class="mc-rating-value mc-rating-kp ${kinopoiskRating > 0 ? '' : 'mc-rating-none'}">${kinopoiskRating > 0 ? this.formatRating(kinopoiskRating) : '—'}</div>
+                        <div class="mc-rating-value mc-rating-kp ${kinopoiskRating > 0 ? '' : 'mc-rating-none'}">${kinopoiskRating > 0 ? this.formatProviderRating(kinopoiskRating) : '—'}</div>
                     </div>
                     <div class="mc-rating-item">
                         <div class="mc-rating-label">IMDb</div>
-                        <div class="mc-rating-value mc-rating-imdb ${imdbRating > 0 ? '' : 'mc-rating-none'}">${imdbRating > 0 ? parseFloat(imdbRating.toFixed(1)) : '—'}</div>
+                        <div class="mc-rating-value mc-rating-imdb ${imdbRating > 0 ? '' : 'mc-rating-none'}">${imdbRating > 0 ? this.formatProviderRating(imdbRating) : '—'}</div>
                     </div>
                     ${showAverageRating ? `
                     <div class="mc-rating-item">
@@ -1057,14 +1058,14 @@ class MovieCard {
                         ${kpRating > 0 ? `
                             <div class="cmc-rating-badge cmc-rating-kp">
                                 <span class="cmc-rating-label">Кинопоиск</span>
-                                <span class="cmc-rating-value">${parseFloat(kpRating.toFixed(1))}</span>
+                                <span class="cmc-rating-value">${this.formatProviderRating(kpRating)}</span>
                                 ${votes > 0 ? `<span class="cmc-rating-votes">${formatVotes(votes)} оценок</span>` : ''}
                             </div>
                         ` : ''}
                         ${imdbRating > 0 ? `
                             <div class="cmc-rating-badge cmc-rating-imdb">
                                 <span class="cmc-rating-label">IMDb</span>
-                                <span class="cmc-rating-value">${parseFloat(imdbRating.toFixed(1))}</span>
+                                <span class="cmc-rating-value">${this.formatProviderRating(imdbRating)}</span>
                                 ${imdbVotes > 0 ? `<span class="cmc-rating-votes">${formatVotes(imdbVotes)} оценок</span>` : ''}
                             </div>
                         ` : ''}

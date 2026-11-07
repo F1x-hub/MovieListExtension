@@ -655,5 +655,92 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
     assert.equal(page.setDropdownOptions('yearFilter', select, 'All', [...items, { value: '1999', label: '1999' }]), true);
 }
 
+// Provider ratings: a value found at any moment reaches its card, and a person's score never stands in for it.
+{
+    const { createRequire } = await import('node:module');
+    const require = createRequire(import.meta.url);
+    globalThis.ProviderRatingsBackfill = require('../src/shared/services/ProviderRatingsBackfill.js');
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const previousGetService = globalThis.firebaseManager.getKinopoiskService;
+    const film = (id, name = `Film ${id}`) => ({ kinopoiskId: id, name });
+
+    // Quick answers are on the cards at their first paint.
+    {
+        globalThis.firebaseManager.getKinopoiskService = () => ({
+            scrapeMoviePageRatingsOffscreen: async id => ({ kpRating: 8.4, kpVotes: 10, imdbRating: 7.8, imdbVotes: 20, imdbAnswered: true, id })
+        });
+        const page = createPage();
+        const startedAt = Date.now();
+        const merged = await page.mergeProviderRatingsForPage([film(2950)]);
+        assert.ok(Date.now() - startedAt < RatingsPageManager.PROVIDER_RATINGS_PAINT_WAIT_MS, 'Nothing waits once the answer is in');
+        assert.equal(merged[0].kpRating, 8.4);
+        assert.equal(merged[0].imdbRating, 7.8);
+    }
+
+    // A slow answer does not hold the cards back, and still reaches them after they are in the list.
+    {
+        let release;
+        globalThis.firebaseManager.getKinopoiskService = () => ({
+            scrapeMoviePageRatingsOffscreen: (id, options) => {
+                options.onPartial?.({ kpRating: 5.4, kpVotes: 621, imdbRating: 0, imdbVotes: 0, imdbAnswered: false });
+                return new Promise(resolve => { release = resolve; });
+            }
+        });
+        const page = createPage();
+        let renders = 0;
+        page.applyFilters = () => { renders += 1; };
+        const merged = await page.mergeProviderRatingsForPage([film(9147477)]);
+        assert.equal(merged[0].kpRating, 5.4, 'The Kinopoisk rating does not wait for the hidden page');
+        assert.equal(renders, 0, 'A film that is not in the list yet has nothing to redraw');
+        page.movies = merged.map(movie => ({ movieId: movie.kinopoiskId, movie }));
+        release({ kpRating: 5.4, kpVotes: 621, imdbRating: 5.1, imdbVotes: 2007, imdbAnswered: true });
+        await sleep(RatingsPageManager.PROVIDER_RATINGS_PAINT_WAIT_MS);
+        assert.ok(renders > 0, 'A late answer redraws the list');
+        assert.equal(page.foundProviderRatings['kp:9147477'].imdbRating, 5.1);
+    }
+
+    // The answer came before the batch: the next render still applies it.
+    {
+        const page = createPage();
+        page.publishProviderRatings(2950, { kpRating: 8.4, imdbRating: 7.8, votes: {} });
+        page.movies = [{ movieId: 2950, movie: film(2950, 'Пробуждение') }];
+        page.sortMovies = () => {};
+        page.renderMovies = () => {};
+        page.updateResultsInfo = () => {};
+        page.renderActiveTags = () => {};
+        page.saveFiltersToStorage = () => {};
+        page.parseMyRatingRange = () => null;
+        page.applyFilters();
+        assert.equal(page.movies[0].movie.kpRating, 8.4);
+        assert.equal(page.movies[0].movie.imdbRating, 7.8);
+        assert.equal(page.filteredMovies[0].movie.imdbRating, 7.8);
+    }
+
+    // A failed hidden page does not record IMDb as checked.
+    {
+        const persisted = [];
+        globalThis.RatingsRefreshService = class { async persistCardRatingPatch(id, record) { persisted.push(record); } };
+        globalThis.firebaseManager.getKinopoiskService = () => ({
+            scrapeMoviePageRatingsOffscreen: async () => ({ kpRating: 7, kpVotes: 1, imdbRating: 0, imdbVotes: 0, imdbAnswered: false })
+        });
+        const page = createPage();
+        await page.backfillProviderRatings([film(1)]);
+        assert.equal(persisted[0].imdbChecked, false);
+        delete globalThis.RatingsRefreshService;
+    }
+
+    // A bulk page for a client-side sort is not painted yet, so it does not wait.
+    {
+        globalThis.firebaseManager.getKinopoiskService = () => ({
+            scrapeMoviePageRatingsOffscreen: () => new Promise(() => {})
+        });
+        const page = createPage();
+        const startedAt = Date.now();
+        await page.mergeProviderRatingsForPage([film(3)], { waitForRatings: false });
+        assert.ok(Date.now() - startedAt < RatingsPageManager.PROVIDER_RATINGS_PAINT_WAIT_MS);
+    }
+    globalThis.firebaseManager.getKinopoiskService = previousGetService;
+}
+
 console.log('Ratings page state tests passed');
 process.exit(0);

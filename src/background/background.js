@@ -469,6 +469,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
         sendResponse({ success: cancelled });
         return false;
+    } else if (message.type === 'KINOPOISK_OFFSCREEN_CANCEL_SESSION') {
+        sendResponse({ success: true, cancelled: cancelSearchSession(message.sessionId) });
+        return false;
     } else if (message.target === 'kinopoisk-search-coordinator') {
         // Message from content script running inside the scraper iframe
         const activeRequest = findActiveSearchRequest(message.requestId);
@@ -772,6 +775,18 @@ function cancelSearchRequest({ requestKey = null, requestId = null } = {}) {
         }
     });
     return true;
+}
+
+/**
+ * A page that went away no longer waits for its frames, and they must not hold the two slots
+ * against the page the user opened next. A frame another page also waits for keeps running.
+ */
+function cancelSearchSession(sessionId) {
+    if (!sessionId) return 0;
+    const entries = [..._searchQueue, ..._activeSearchRequests.values()]
+        .filter(entry => entry.sessionId === sessionId);
+    entries.forEach(entry => cancelSearchRequest({ requestKey: entry.requestKey }));
+    return entries.length;
 }
 
 function processSearchQueue() {

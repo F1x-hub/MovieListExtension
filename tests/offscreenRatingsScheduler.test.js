@@ -163,6 +163,21 @@ async function run() {
     finishLoad(/busy-a/);
     finishLoad(/busy-b/);
     await Promise.all([busyA, busyB]);
+    await tick(80);
+
+    // A closed page takes everything it still waits for with it; another page's work stays.
+    const otherPage = search('other-page', 'visible-identity', { sessionId: 'page-2' });
+    const closedActive = search('closed-active', 'visible-identity', { sessionId: 'page-1' });
+    await tick();
+    const closedQueued = search('closed-queued', 'visible-identity', { sessionId: 'page-1' });
+    const closing = await request({ type: 'KINOPOISK_OFFSCREEN_CANCEL_SESSION', sessionId: 'page-1' });
+    assert.equal(closing.cancelled, 2);
+    assert.equal((await closedActive).reason, 'REQUEST_CANCELLED');
+    assert.equal((await closedQueued).reason, 'REQUEST_CANCELLED');
+    assert.equal(loads.some(load => /closed-queued/.test(load.searchUrl)), false, 'queued work of a closed page never loads');
+    assert.equal((await request({ type: 'KINOPOISK_OFFSCREEN_CANCEL_SESSION' })).cancelled, 0);
+    finishLoad(/other-page/);
+    assert.equal((await otherPage).success, true);
 
     console.log('✅ Offscreen ratings scheduler runs two frame slots, prioritizes, deduplicates, cancels, and expires queued work');
 }

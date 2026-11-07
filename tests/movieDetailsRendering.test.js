@@ -326,8 +326,10 @@ const movieIsolationCheck = {
     votes: { kp: 0, imdb: 0, tmdb: 500 }
 };
 const htmlIsolationCheck = manager.createDetailedMovieCard(movieIsolationCheck);
-assert(!htmlIsolationCheck.includes('rating-item-large imdb'), 'TMDB rating must NEVER populate IMDb rating card');
-assert(!htmlIsolationCheck.includes('rating-item-large kp'), 'TMDB rating must NEVER populate KP rating card');
+const isolationRail = htmlIsolationCheck.slice(htmlIsolationCheck.indexOf('movie-detail-ratings-container'), htmlIsolationCheck.indexOf('movie-actions-container'));
+assert(isolationRail.includes('rating-item-large imdb rating-item-large--loading'), 'An unknown IMDb rating waits behind a skeleton');
+assert(isolationRail.includes('rating-item-large kp rating-item-large--loading'), 'An unknown KP rating waits behind a skeleton');
+assert(!isolationRail.includes('8.1'), 'TMDB rating must NEVER populate a provider rating card');
 assert(!htmlIsolationCheck.includes('rating-item-large tmdb'), 'TMDB not in left rail');
 assert(htmlIsolationCheck.includes('meta-item--tmdb'), 'TMDB rendered in About tab');
 assert(htmlIsolationCheck.includes('8.1'), 'TMDB rating 8.1 rendered');
@@ -553,8 +555,8 @@ assert(!htmlBackrooms.includes('onerror='), 'Backrooms backdrop must not have in
 assert(!htmlBackrooms.includes('rating-item-large tmdb'), 'Backrooms must NOT render TMDB in left rail');
 assert(htmlBackrooms.includes('meta-item--tmdb'), 'Backrooms must render TMDB in About tab');
 assert(htmlBackrooms.includes('7.9'), 'Backrooms must render TMDB rating 7.9');
-assert(!htmlBackrooms.includes('rating-item-large kp'), 'Backrooms must NOT render KP rating card (was 0)');
-assert(!htmlBackrooms.includes('rating-item-large imdb'), 'Backrooms must NOT render IMDb rating card (was 0)');
+assert(htmlBackrooms.includes('rating-item-large kp rating-item-large--loading'), 'Backrooms KP tile waits behind a skeleton (was 0)');
+assert(htmlBackrooms.includes('rating-item-large imdb rating-item-large--loading'), 'Backrooms IMDb tile waits behind a skeleton (was 0)');
 
 // Short description & title check
 assert(htmlBackrooms.includes('class="movie-detail-short-description"'), 'Backrooms must render short description');

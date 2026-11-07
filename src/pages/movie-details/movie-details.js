@@ -56,6 +56,8 @@ class MovieDetailsManager {
         this.speculativeCacheResolved = false;
         this.postRenderEnrichmentMovieId = null;
         this.renderEnrichmentSnapshot = null;
+        // Provider ratings other pages already found, read once at page start.
+        this.cardRatingsSnapshot = null;
         this.currentRating = 0;
         this.originalRating = 0;
         this.isReviewVisible = false;
@@ -1476,6 +1478,7 @@ class MovieDetailsManager {
             window.history.replaceState({}, document.title, cleanUrl.toString());
         }
 
+        this.loadCardRatingsSnapshot();
         const authPromise = firebaseManager.waitForAuthReady(15000);
         const canSpeculate = !firebaseManager.isAuthReady || firebaseManager.isAuthenticated();
         const cachePromise = movieId && canSpeculate
@@ -3098,11 +3101,52 @@ class MovieDetailsManager {
         }
     }
 
+    /**
+     * Ratings the card pages already found for this title, so the tiles have them from the
+     * first paint instead of waiting for the movie request.
+     */
+    loadCardRatingsSnapshot() {
+        const storage = typeof chrome !== 'undefined' ? chrome.storage?.local : null;
+        if (!storage?.get) return;
+        Promise.resolve(storage.get('movie_card_ratings_v4')).then(stored => {
+            this.cardRatingsSnapshot = stored?.movie_card_ratings_v4 || {};
+            const container = this.elements?.movieDetailsContainer?.querySelector?.('.movie-detail-ratings-container');
+            if (this.selectedMovie && container?.querySelector('.rating-item-large--loading')) {
+                this.updateProviderRatingsUI(this.selectedMovie);
+            }
+        }).catch(error => {
+            console.warn('[MovieDetails] Card ratings cache could not be read:', error?.message || error);
+        });
+    }
+
+    /** An unexpired card-cache record for this title, or null. */
+    getCardRatingRecord(kinopoiskId) {
+        const record = this.cardRatingsSnapshot?.[`kp:${kinopoiskId}`];
+        return record && Number(record.expiresAt) > Date.now() ? record : null;
+    }
+
+    /**
+     * What the tiles can show right now: the movie's own values first, then the card cache.
+     * Vote counts only grow, so the larger known count is the newer one.
+     */
+    getKnownProviderRatings(movie) {
+        const record = this.getCardRatingRecord(movie?.kinopoiskId);
+        return {
+            kp: Number(movie?.rating?.kp || movie?.kpRating || record?.kpRating || 0) || 0,
+            imdb: Number(movie?.rating?.imdb || movie?.imdbRating || record?.imdbRating || 0) || 0,
+            kpVotes: Math.max(Number(movie?.votes?.kp) || 0, Number(record?.votes?.kp) || 0),
+            imdbVotes: Math.max(Number(movie?.votes?.imdb) || 0, Number(record?.votes?.imdb) || 0)
+        };
+    }
+
     async loadProviderRatingsInBackground(movie, pageContext = this.capturePageContext(movie)) {
         if (!this.authVerified || !this.isPageContextCurrent(pageContext)) return;
 
         const kinopoiskId = Number(movie?.kinopoiskId);
-        if (!Number.isInteger(kinopoiskId) || kinopoiskId <= 0) return;
+        if (!Number.isInteger(kinopoiskId) || kinopoiskId <= 0) {
+            this.settleProviderRatingsUI(movie, pageContext);
+            return;
+        }
 
         const kpRating = Number(movie?.rating?.kp || movie?.kpRating || 0);
         const imdbRating = Number(movie?.rating?.imdb || movie?.imdbRating || 0);
@@ -3156,8 +3200,18 @@ class MovieDetailsManager {
             const kinopoiskService = needsVoteRepair
                 ? firebaseManager?.getKinopoiskService?.()
                 : null;
+            const repairAvailable = typeof kinopoiskService?.scrapeMoviePageRatingsOffscreen === 'function';
 
-            if (needsVoteRepair && typeof kinopoiskService?.scrapeMoviePageRatingsOffscreen === 'function') {
+            // What is known goes on the tiles now. Only a provider still being looked
+            // for keeps its skeleton, and it does not hold the other one back.
+            this.showProviderRatings(movie, result, { pending: repairAvailable });
+            if (result?.refreshed || result?.imdbChecked) {
+                void refreshService.persistCardRatingPatch(kinopoiskId, result).catch(error => {
+                    console.warn('[MovieDetails] Provider ratings could not be stored:', error?.message || error);
+                });
+            }
+
+            if (repairAvailable) {
                 try {
                     // The first scrape on a cold start (new offscreen document, slow
                     // page) often returns ratings without vote counts, or nothing.
@@ -3167,7 +3221,12 @@ class MovieDetailsManager {
                         mediaType: movie?.mediaType || movie?.type || null,
                         requestKey,
                         timeoutMs,
-                        priority: 'visible-ratings'
+                        priority: 'visible-ratings',
+                        // GraphQL answers while the hidden page is still loading.
+                        onPartial: partial => {
+                            if (!this.isPageContextCurrent(pageContext)) return;
+                            this.showProviderRatings(movie, MovieDetailsManager.withPageRatings(result, partial), { pending: true });
+                        }
                     });
                     let pageRatings = await scrape(`movie-details-votes:${kinopoiskId}`, 8000);
                     if (!this.isPageContextCurrent(pageContext)) return;
@@ -3182,63 +3241,102 @@ class MovieDetailsManager {
                         if (retried) pageRatings = { ...(pageRatings || {}), ...Object.fromEntries(Object.entries(retried).filter(([, value]) => value !== null && value !== undefined && value !== 0)) };
                     }
 
-                    if (Number(pageRatings?.kpVotes) > 0) cachedVotes.kp = Number(pageRatings.kpVotes);
-                    if (Number(pageRatings?.imdbVotes) > 0) cachedVotes.imdb = Number(pageRatings.imdbVotes);
                     result = {
-                        ...result,
+                        ...MovieDetailsManager.withPageRatings(result, pageRatings),
                         // The Kinopoisk page links to the IMDb title; keep the ID.
                         imdbId: result?.imdbId || pageRatings?.imdbId || null,
-                        imdbChecked: true,
-                        kpRating: Number(pageRatings?.kpRating) > 0 ? Number(pageRatings.kpRating) : result?.kpRating,
-                        imdbRating: Number(pageRatings?.imdbRating) > 0 ? Number(pageRatings.imdbRating) : result?.imdbRating,
-                        votes: cachedVotes
+                        imdbChecked: Boolean(pageRatings) && pageRatings.imdbAnswered !== false
                     };
                     await refreshService.persistCardRatingPatch(kinopoiskId, result);
                 } catch (error) {
                     console.warn('[MovieDetails] Provider vote count repair failed:', error.message);
                 }
+                if (!this.isPageContextCurrent(pageContext)) return;
             }
 
-            const nextKpRating = Number(result?.kpRating) > 0 ? Number(result.kpRating) : kpRating;
-            const nextImdbRating = Number(result?.imdbRating) > 0 ? Number(result.imdbRating) : imdbRating;
-            const nextVotes = {
-                ...(movie.votes || {}),
-                ...(result?.votes || {})
-            };
-
-            if (nextKpRating <= 0 && nextImdbRating <= 0) {
+            const shown = this.showProviderRatings(movie, result, { pending: false });
+            if (!shown.kpRating && !shown.imdbRating) {
                 console.info('[MovieDetails] Provider ratings unavailable', { kinopoiskId });
-                this.settleProviderRatingsUI(movie, pageContext);
-                return;
+            } else {
+                console.info('[MovieDetails] Provider ratings updated', {
+                    kinopoiskId,
+                    kpRating: shown.kpRating,
+                    imdbRating: shown.imdbRating,
+                    kpVotes: shown.votes.kp || 0,
+                    imdbVotes: shown.votes.imdb || 0,
+                    refreshed: Boolean(result?.refreshed),
+                    cacheHit: Boolean(result?.cacheHit)
+                });
             }
+            this.settleProviderRatingsUI(this.selectedMovie || movie, pageContext);
+        } catch (error) {
+            console.warn('[MovieDetails] Provider ratings refresh failed:', error);
+            this.settleProviderRatingsUI(movie, pageContext);
+        }
+    }
 
-            // An IMDb ID found while refreshing (Kinopoisk page or card cache)
-            // makes the IMDb tile a link when the details had none.
-            const validImdbId = value => (/^tt\d{7,10}$/i.test(String(value || '').trim()) ? String(value).trim() : null);
-            const knownImdbId = validImdbId(movie?.identity?.imdbId)
-                || validImdbId(movie?.imdbId)
-                || validImdbId(movie?.externalId?.imdb)
-                || validImdbId(result?.imdbId);
-            const updatedMovie = {
-                ...movie,
-                rating: {
-                    ...(movie.rating || {}),
-                    kp: nextKpRating || null,
-                    imdb: nextImdbRating || null
-                },
-                votes: nextVotes,
-                kpRating: nextKpRating,
-                imdbRating: nextImdbRating,
-                ...(knownImdbId ? {
-                    imdbId: knownImdbId,
-                    identity: { ...(movie.identity || {}), imdbId: knownImdbId },
-                    externalId: { ...(movie.externalId || {}), imdb: knownImdbId }
-                } : {})
-            };
+    /** A hidden-page or GraphQL answer laid over what the page already had. */
+    static withPageRatings(result, page) {
+        if (!page) return result;
+        return {
+            ...result,
+            kpRating: Number(page.kpRating) > 0 ? Number(page.kpRating) : result?.kpRating,
+            imdbRating: Number(page.imdbRating) > 0 ? Number(page.imdbRating) : result?.imdbRating,
+            votes: {
+                ...(result?.votes || {}),
+                ...(Number(page.kpVotes) > 0 ? { kp: Number(page.kpVotes) } : {}),
+                ...(Number(page.imdbVotes) > 0 ? { imdb: Number(page.imdbVotes) } : {})
+            }
+        };
+    }
 
+    /**
+     * Puts provider ratings on the page and into the state a re-render restores from.
+     * @param {Object} source - The movie the request was made for
+     * @param {Object} result - Ratings found so far
+     * @param {{pending: boolean}} options - pending: a provider is still being looked for
+     * @returns {{kpRating:number, imdbRating:number, votes:Object}}
+     */
+    showProviderRatings(source, result, { pending = false } = {}) {
+        // The full movie may have arrived while the request was running.
+        const movie = String(this.selectedMovie?.kinopoiskId) === String(source?.kinopoiskId) ? this.selectedMovie : source;
+        const nextKpRating = Number(result?.kpRating) > 0 ? Number(result.kpRating) : (Number(movie?.rating?.kp || movie?.kpRating) || 0);
+        const nextImdbRating = Number(result?.imdbRating) > 0 ? Number(result.imdbRating) : (Number(movie?.rating?.imdb || movie?.imdbRating) || 0);
+        // Vote counts only grow, so an older cache must not replace a newer count.
+        const nextVotes = {
+            ...(movie?.votes || {}),
+            kp: Math.max(Number(movie?.votes?.kp) || 0, Number(result?.votes?.kp) || 0),
+            imdb: Math.max(Number(movie?.votes?.imdb) || 0, Number(result?.votes?.imdb) || 0)
+        };
+
+        // An IMDb ID found while refreshing (Kinopoisk page or card cache)
+        // makes the IMDb tile a link when the details had none.
+        const validImdbId = value => (/^tt\d{7,10}$/i.test(String(value || '').trim()) ? String(value).trim() : null);
+        const knownImdbId = validImdbId(movie?.identity?.imdbId)
+            || validImdbId(movie?.imdbId)
+            || validImdbId(movie?.externalId?.imdb)
+            || validImdbId(result?.imdbId);
+        const updatedMovie = {
+            ...movie,
+            rating: {
+                ...(movie.rating || {}),
+                kp: nextKpRating || null,
+                imdb: nextImdbRating || null
+            },
+            votes: nextVotes,
+            kpRating: nextKpRating,
+            imdbRating: nextImdbRating,
+            ...(knownImdbId ? {
+                imdbId: knownImdbId,
+                identity: { ...(movie.identity || {}), imdbId: knownImdbId },
+                externalId: { ...(movie.externalId || {}), imdb: knownImdbId }
+            } : {})
+        };
+
+        const snapshot = this.getRenderEnrichmentSnapshot(movie?.kinopoiskId);
+        if (snapshot) snapshot.providerRatingsPending = pending;
+        if (nextKpRating > 0 || nextImdbRating > 0 || nextVotes.kp > 0 || nextVotes.imdb > 0) {
             this.selectedMovie = updatedMovie;
-            this.updateProviderRatingsUI(updatedMovie);
-            const snapshot = this.getRenderEnrichmentSnapshot(kinopoiskId);
             if (snapshot) {
                 snapshot.providerRatings = {
                     rating: updatedMovie.rating,
@@ -3247,19 +3345,9 @@ class MovieDetailsManager {
                     imdbRating: nextImdbRating
                 };
             }
-            console.info('[MovieDetails] Provider ratings updated', {
-                kinopoiskId,
-                kpRating: nextKpRating,
-                imdbRating: nextImdbRating,
-                kpVotes: nextVotes.kp || 0,
-                imdbVotes: nextVotes.imdb || 0,
-                refreshed: Boolean(result?.refreshed),
-                cacheHit: Boolean(result?.cacheHit)
-            });
-        } catch (error) {
-            console.warn('[MovieDetails] Provider ratings refresh failed:', error);
-            this.settleProviderRatingsUI(movie, pageContext);
         }
+        this.updateProviderRatingsUI(updatedMovie);
+        return { kpRating: nextKpRating, imdbRating: nextImdbRating, votes: nextVotes };
     }
 
     /**
@@ -3279,25 +3367,47 @@ class MovieDetailsManager {
     settleProviderRatingsUI(movie, pageContext = this.capturePageContext(movie)) {
         if (!this.isPageContextCurrent(pageContext)) return;
         const snapshot = this.getRenderEnrichmentSnapshot(movie?.kinopoiskId);
-        if (snapshot) snapshot.providerRatingsSettled = true;
+        if (snapshot) {
+            snapshot.providerRatingsSettled = true;
+            snapshot.providerRatingsPending = false;
+        }
         const container = this.elements.movieDetailsContainer?.querySelector('.movie-detail-ratings-container');
         if (!container?.querySelector('.rating-item-large--loading')) return;
         this.updateProviderRatingsUI(this.selectedMovie || movie);
     }
 
+    /**
+     * Skeletons last until the title's ratings have settled. This holds from the first
+     * paint: a request may still be on its way, or may not have been able to start yet.
+     */
+    isProviderRatingPending(movie) {
+        const snapshot = this.getRenderEnrichmentSnapshot?.(movie?.kinopoiskId);
+        if (!snapshot) return true;
+        return snapshot.providerRatingsPending === true || !snapshot.providerRatingsSettled;
+    }
+
+    /** Everything the rating tiles show. */
+    providerRatingsRenderKey(movie, known, pending) {
+        return JSON.stringify([
+            known, pending,
+            this.getProviderRatingUrl('kp', movie),
+            this.getProviderRatingUrl('imdb', movie)
+        ]);
+    }
+
+    /** Redraws the tiles only when what they show changed, so nothing restarts or blinks. */
     updateProviderRatingsUI(movie) {
         const container = this.elements.movieDetailsContainer?.querySelector('.movie-detail-ratings-container');
         if (!container) return;
 
+        const known = this.getKnownProviderRatings(movie);
+        const pending = this.isProviderRatingPending(movie);
+        const key = this.providerRatingsRenderKey(movie, known, pending);
+        if (container.dataset.renderedRatings === key) return;
+        container.dataset.renderedRatings = key;
         container.innerHTML = [
-            this.renderProviderRatingTile('kp', movie, {
-                rating: Number(movie?.rating?.kp || movie?.kpRating || 0),
-                votes: Number(movie?.votes?.kp || 0)
-            }),
-            this.renderProviderRatingTile('imdb', movie, {
-                rating: Number(movie?.rating?.imdb || movie?.imdbRating || 0),
-                votes: Number(movie?.votes?.imdb || 0)
-            })
+            this.renderProviderRatingTile('kp', movie, { rating: known.kp, votes: known.kpVotes, loading: known.kp <= 0 && pending }),
+            this.renderProviderRatingTile('imdb', movie, { rating: known.imdb, votes: known.imdbVotes, loading: known.imdb <= 0 && pending })
         ].join('');
     }
 
@@ -3332,10 +3442,15 @@ class MovieDetailsManager {
                 <span class="rating-value rating-value--skeleton" aria-hidden="true"></span>
                 <span class="rating-votes rating-votes--skeleton" aria-hidden="true"></span>`;
         } else {
-            const valueText = rating > 0 ? String(parseFloat(rating.toFixed(1))) : '—';
+            const valueText = rating > 0 ? rating.toFixed(1) : '—';
+            // The number rolls up once per title. A later redraw of the same tile shows it as is.
+            this.providerTilesCounted ||= new Set();
+            const countKey = `${movie?.kinopoiskId}:${provider}`;
+            const countUp = rating > 0 && !this.providerTilesCounted.has(countKey) ? ` data-count-to="${valueText}"` : '';
+            if (rating > 0) this.providerTilesCounted.add(countKey);
             body = `<span class="rating-label">${label}</span>
                 ${rating > 0
-                    ? `<span class="rating-value" data-count-to="${valueText}">${valueText}</span>`
+                    ? `<span class="rating-value"${countUp}>${valueText}</span>`
                     : '<span class="rating-value rating-value--unavailable">—</span>'}
                 ${votes > 0
                     ? `<span class="rating-votes">${i18n.get('movie_details.votes_count').replace('{count}', this.formatVotes(votes))}</span>`
@@ -3344,7 +3459,7 @@ class MovieDetailsManager {
 
         if (!url) return `<div class="${classes}">${body}</div>`;
 
-        const valueForLabel = !loading && rating > 0 ? `: ${parseFloat(rating.toFixed(1))}` : '';
+        const valueForLabel = !loading && rating > 0 ? `: ${rating.toFixed(1)}` : '';
         const ariaLabel = `${label}${valueForLabel}. Открыть на ${siteName} в новой вкладке`;
         return `<a class="${classes}" href="${this.escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="Открыть на ${siteName}" aria-label="${this.escapeHtml(ariaLabel)}">${body}</a>`;
     }
@@ -3403,18 +3518,6 @@ class MovieDetailsManager {
         const posterUrl = movie.posterUrl || '/src/shared/assets/icons/app/icon48.png';
         const year = movie.year || '';
 
-        const kpRating = (movie.rating?.kp !== undefined && movie.rating?.kp !== null && !isNaN(Number(movie.rating.kp)) && Number(movie.rating.kp) > 0)
-            ? Number(movie.rating.kp)
-            : (movie.kpRating !== undefined && movie.kpRating !== null && !isNaN(Number(movie.kpRating)) && Number(movie.kpRating) > 0)
-                ? Number(movie.kpRating)
-                : 0;
-
-        const imdbRating = (movie.rating?.imdb !== undefined && movie.rating?.imdb !== null && !isNaN(Number(movie.rating.imdb)) && Number(movie.rating.imdb) > 0)
-            ? Number(movie.rating.imdb)
-            : (movie.imdbRating !== undefined && movie.imdbRating !== null && !isNaN(Number(movie.imdbRating)) && Number(movie.imdbRating) > 0)
-                ? Number(movie.imdbRating)
-                : 0;
-
         const tmdbRating = (movie.rating?.tmdb !== undefined && movie.rating?.tmdb !== null && !isNaN(Number(movie.rating.tmdb)) && Number(movie.rating.tmdb) > 0)
             ? Number(movie.rating.tmdb)
             : (movie.ratingTmdb !== undefined && movie.ratingTmdb !== null && !isNaN(Number(movie.ratingTmdb)) && Number(movie.ratingTmdb) > 0)
@@ -3424,20 +3527,15 @@ class MovieDetailsManager {
         const duration = movie.duration || movie.movieLength || 0;
         const description = movie.description || i18n.get('movie_details.no_description') || 'Описание отсутствует';
         
-        const votes = (movie.votes?.kp !== undefined && movie.votes?.kp !== null && !isNaN(Number(movie.votes.kp)) && Number(movie.votes.kp) > 0)
-            ? Number(movie.votes.kp)
-            : 0;
-
-        const imdbVotes = (movie.votes?.imdb !== undefined && movie.votes?.imdb !== null && !isNaN(Number(movie.votes.imdb)) && Number(movie.votes.imdb) > 0)
-            ? Number(movie.votes.imdb)
-            : 0;
-
-        const hasProviderRatingData = kpRating > 0 || imdbRating > 0;
-        const providerRatingsReady = kpRating > 0 && imdbRating > 0;
-        const initialProviderRatingsMarkup = hasProviderRatingData
-            ? this.renderProviderRatingTile('kp', movie, { rating: kpRating, votes, loading: !providerRatingsReady })
-                + this.renderProviderRatingTile('imdb', movie, { rating: imdbRating, votes: imdbVotes, loading: !providerRatingsReady })
-            : '';
+        // Both tiles hold their place from the first paint. Each shows its value as soon as
+        // it is known; only a provider still being looked for waits behind a skeleton.
+        const knownRatings = this.getKnownProviderRatings(movie);
+        const ratingsPending = this.isProviderRatingPending(movie);
+        const initialProviderRatingsMarkup = this.renderProviderRatingTile('kp', movie, {
+            rating: knownRatings.kp, votes: knownRatings.kpVotes, loading: knownRatings.kp <= 0 && ratingsPending
+        }) + this.renderProviderRatingTile('imdb', movie, {
+            rating: knownRatings.imdb, votes: knownRatings.imdbVotes, loading: knownRatings.imdb <= 0 && ratingsPending
+        });
 
         const tmdbVotes = (movie.votes?.tmdb !== undefined && movie.votes?.tmdb !== null && !isNaN(Number(movie.votes.tmdb)) && Number(movie.votes.tmdb) > 0)
             ? Number(movie.votes.tmdb)
@@ -3599,7 +3697,7 @@ class MovieDetailsManager {
                         <div class="movie-poster-placeholder" style="display: none;"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg></div>
                         
 
-                        <div class="movie-detail-ratings-container">
+                        <div class="movie-detail-ratings-container" data-rendered-ratings="${this.escapeHtml(this.providerRatingsRenderKey(movie, knownRatings, ratingsPending))}">
                             ${initialProviderRatingsMarkup}
                         </div>
                         

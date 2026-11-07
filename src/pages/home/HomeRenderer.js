@@ -136,18 +136,72 @@ class HomeRenderer {
      * @param {HTMLElement} container
      */
     renderFeaturedSlider(items = [], container) {
-        if (!container) return;
+        if (!container) return false;
         container.removeAttribute('aria-busy');
         if (!Array.isArray(items) || items.length === 0) {
             container.innerHTML = '';
-            return;
+            return true;
         }
 
-        container.innerHTML = items.map((item, index) => this.renderFeaturedSlide(item, index, items.length)).join('');
+        const signatures = items.map(item => this.discoverySignature(item));
+        const current = Array.from(container.children).map(node => node.dataset?.discoverySignature || '');
+        if (signatures.length === current.length && signatures.every((signature, index) => signature === current[index])) {
+            return false;
+        }
+
+        const reusable = this.takeDiscoveryCards(container);
+        const template = document.createElement('template');
+        const fragment = document.createDocumentFragment();
+        items.forEach((item, index) => {
+            let node = reusable.get(signatures[index]);
+            if (node) {
+                reusable.delete(signatures[index]);
+                node.classList.remove('home-hero-animate');
+                node.style.removeProperty('animation-delay');
+                node.dataset.slideIndex = String(index);
+                node.setAttribute('aria-label', this.t('slider.slide_of', '{index} из {total}: {title}', {
+                    index: index + 1, total: items.length, title: item.name || item.title || ''
+                }));
+            } else {
+                template.innerHTML = this.renderFeaturedSlide(item, index, items.length);
+                node = template.content.firstElementChild;
+                node.dataset.discoverySignature = signatures[index];
+            }
+            fragment.appendChild(node);
+        });
+        container.replaceChildren(fragment);
         if (typeof Utils !== 'undefined') Utils.bindImageReveal?.(container, 'img.featured-poster');
 
         this.bindMovieCardNavigation(container);
         this.ratingEnricher?.observe?.(container);
+        return true;
+    }
+
+    /**
+     * What a discovery card shows. A refresh keeps a card whose signature did not change,
+     * with its poster and ratings, instead of drawing it again.
+     * @param {Object} item
+     * @returns {string}
+     */
+    discoverySignature(item) {
+        return JSON.stringify([
+            window.i18n?.currentLocale || '',
+            item?.tmdbId || null,
+            item?.kinopoiskId || item?.movieId || null,
+            item?.name || item?.movieTitle || item?.title || '',
+            item?.posterUrl || item?.posterPath || item?.poster || '',
+            item?.year || '',
+            item?.mediaType || item?.type || '',
+            item?.airingStatus || '',
+            item?.seasonNumber || ''
+        ]);
+    }
+
+    /** @returns {Map<string, HTMLElement>} This container's discovery cards by signature */
+    takeDiscoveryCards(container) {
+        return new Map(Array.from(container.children)
+            .filter(node => node.dataset?.discoverySignature)
+            .map(node => [node.dataset.discoverySignature, node]));
     }
 
     /**
@@ -297,18 +351,12 @@ class HomeRenderer {
         const providerBadges = [];
         const kpRating = Number(item.kpRating) || 0;
         const imdbRating = Number(item.imdbRating) || 0;
-        if (kpRating > 0) {
-            providerBadges.push(`<span class="featured-rating-badge featured-rating-badge--kp" title="${this.escapeHtml(this.t('rating_kp', 'Оценка Кинопоиска'))}">КП ${kpRating.toFixed(1)}</span>`);
-        }
-        if (imdbRating > 0) {
-            providerBadges.push(`<span class="featured-rating-badge featured-rating-badge--imdb" title="${this.escapeHtml(this.t('rating_imdb', 'Оценка IMDb'))}">IMDb ${imdbRating.toFixed(1)}</span>`);
-        }
-        if (kpRating <= 0) {
-            providerBadges.push(`<span class="featured-rating-badge featured-rating-badge--loading" aria-label="${this.escapeHtml(this.t('rating_kp_loading', 'Загрузка рейтинга КП'))}"><span>КП</span><i></i></span>`);
-        }
-        if (imdbRating <= 0) {
-            providerBadges.push(`<span class="featured-rating-badge featured-rating-badge--loading" aria-label="${this.escapeHtml(this.t('rating_imdb_loading', 'Загрузка рейтинга IMDb'))}"><span>IMDb</span><i></i></span>`);
-        }
+        providerBadges.push(kpRating > 0
+            ? `<span class="featured-rating-badge featured-rating-badge--kp" title="${this.escapeHtml(this.t('rating_kp', 'Оценка Кинопоиска'))}">КП ${kpRating.toFixed(1)}</span>`
+            : `<span class="featured-rating-badge featured-rating-badge--loading" aria-label="${this.escapeHtml(this.t('rating_kp_loading', 'Загрузка рейтинга КП'))}"><span>КП</span><i></i></span>`);
+        providerBadges.push(imdbRating > 0
+            ? `<span class="featured-rating-badge featured-rating-badge--imdb" title="${this.escapeHtml(this.t('rating_imdb', 'Оценка IMDb'))}">IMDb ${imdbRating.toFixed(1)}</span>`
+            : `<span class="featured-rating-badge featured-rating-badge--loading" aria-label="${this.escapeHtml(this.t('rating_imdb_loading', 'Загрузка рейтинга IMDb'))}"><span>IMDb</span><i></i></span>`);
         const ratingBadge = `<div class="featured-badge-overlay">${providerBadges.join('')}</div>`;
         const delay = Math.min(index * 40, 400);
         const isEager = index < HOME_FEATURED_EAGER_COUNT;
@@ -343,6 +391,8 @@ class HomeRenderer {
     renderCategoryGrid(items = [], container, options = {}) {
         if (!container) return;
 
+        // Removed and put back in one task, so nothing is painted in between.
+        const reusable = this.takeDiscoveryCards(container);
         container.innerHTML = '';
         container.removeAttribute('aria-busy');
 
@@ -362,11 +412,20 @@ class HomeRenderer {
 
         const fragment = document.createDocumentFragment();
         items.forEach(item => {
-            const cardEl = this.createMovieCard(item, options);
+            const signature = this.discoverySignature(item);
+            let cardEl = reusable.get(signature);
             if (cardEl) {
-                cardEl.classList.remove('fade-in');
-                fragment.appendChild(cardEl);
+                reusable.delete(signature);
+                cardEl.classList.remove('home-card-animate');
+                cardEl.style.removeProperty('animation-delay');
+            } else {
+                cardEl = this.createMovieCard(item, options);
+                if (cardEl) {
+                    cardEl.classList.remove('fade-in');
+                    cardEl.dataset.discoverySignature = signature;
+                }
             }
+            if (cardEl) fragment.appendChild(cardEl);
         });
 
         container.appendChild(fragment);
@@ -389,7 +448,8 @@ class HomeRenderer {
         items.forEach((item, index) => {
             if (!item?.airingStatus) return;
             const poster = cards[index]?.querySelector('.mc-poster-container');
-            if (!poster) return;
+            // A card kept through a refresh already has its badge.
+            if (!poster || poster.querySelector('.home-airing-badge')) return;
             const label = item.airingStatus === 'new'
                 ? this.t('badges.new', 'Новинка')
                 : (item.seasonNumber

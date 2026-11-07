@@ -8,6 +8,10 @@ import { buildProviderRatingCache, mergeProviderRatingsIntoMovies } from '../../
  */
 class RatingsPageManager {
     static CACHE_KEY_PREFIX = 'ratings_cache_';
+    // Kinopoisk's GraphQL answers a page of films in about this long, so most cards
+    // can paint once, with their real values.
+    static PROVIDER_RATINGS_PAINT_WAIT_MS = 400;
+    static PROVIDER_RATINGS_CONCURRENCY = 6;
 
     constructor() {
         this.filters = {
@@ -586,15 +590,30 @@ class RatingsPageManager {
         }
     }
 
-    async mergeProviderRatingsForPage(items) {
+    async mergeProviderRatingsForPage(items, { waitForRatings = true } = {}) {
         const previousRatings = buildProviderRatingCache(this.movies);
         const withPreviousRatings = mergeProviderRatingsIntoMovies(items, previousRatings);
         const sharedRatings = await this.loadSharedProviderRatings();
         const merged = mergeProviderRatingsIntoMovies(withPreviousRatings, sharedRatings);
-        // The shared card cache only has titles some page already enriched; the
-        // rest showed "IMDb —" for good. Fetch what is missing after rendering.
-        setTimeout(() => void this.backfillProviderRatings(merged), 0);
-        return merged;
+        // The shared card cache only has titles some page already enriched; the rest are
+        // read now. A short wait lets most cards paint with their real values at once;
+        // whatever takes longer reaches them through foundProviderRatings.
+        const backfill = this.backfillProviderRatings(merged).catch(error => {
+            console.warn('[RatingsPage] Provider rating backfill failed:', error?.message);
+        });
+        if (waitForRatings) {
+            await Promise.race([backfill, new Promise(resolve => setTimeout(resolve, RatingsPageManager.PROVIDER_RATINGS_PAINT_WAIT_MS))]);
+        }
+        return mergeProviderRatingsIntoMovies(merged, this.foundProviderRatings || {});
+    }
+
+    /** Puts a found rating on the page, however far the film's batch has got. */
+    publishProviderRatings(kinopoiskId, record) {
+        this.foundProviderRatings ||= {};
+        this.foundProviderRatings[`kp:${kinopoiskId}`] = { ...record, expiresAt: Number.MAX_SAFE_INTEGER };
+        if (!(this.movies || []).some(item => Number(item?.movie?.kinopoiskId || item?.movieId) === Number(kinopoiskId))) return;
+        clearTimeout(this.providerRatingsRenderTimer);
+        this.providerRatingsRenderTimer = setTimeout(() => this.applyFilters(), 40);
     }
 
     /**
@@ -623,7 +642,13 @@ class RatingsPageManager {
         const refreshService = typeof RatingsRefreshService === 'function' && typeof firebaseManager !== 'undefined'
             ? new RatingsRefreshService(firebaseManager)
             : null;
-        const found = new Map();
+        const toRecord = ratings => ({
+            kpRating: Number(ratings.kpRating) || 0,
+            imdbRating: Number(ratings.imdbRating) || 0,
+            imdbId: ratings.imdbId || null,
+            votes: { kp: Number(ratings.kpVotes) || 0, imdb: Number(ratings.imdbVotes) || 0 },
+            imdbChecked: ratings.imdbAnswered !== false
+        });
         const queue = [...pending];
         const worker = async () => {
             while (queue.length > 0) {
@@ -632,28 +657,20 @@ class RatingsPageManager {
                     const ratings = await kinopoiskService.scrapeMoviePageRatingsOffscreen(kinopoiskId, {
                         mediaType,
                         requestKey: `ratings-page:${kinopoiskId}`,
-                        priority: 'below-viewport'
+                        priority: 'below-viewport',
+                        // Kinopoisk's own rating shows while the hidden page looks for IMDb.
+                        onPartial: partial => this.publishProviderRatings(kinopoiskId, toRecord(partial))
                     });
                     if (!ratings) continue;
-                    const record = {
-                        kpRating: Number(ratings.kpRating) || 0,
-                        imdbRating: Number(ratings.imdbRating) || 0,
-                        imdbId: ratings.imdbId || null,
-                        votes: { kp: Number(ratings.kpVotes) || 0, imdb: Number(ratings.imdbVotes) || 0 },
-                        imdbChecked: true,
-                        expiresAt: Number.MAX_SAFE_INTEGER
-                    };
-                    found.set(`kp:${kinopoiskId}`, record);
+                    const record = toRecord(ratings);
+                    this.publishProviderRatings(kinopoiskId, record);
                     await refreshService?.persistCardRatingPatch(kinopoiskId, record);
                 } catch (error) {
                     console.warn('[RatingsPage] Provider rating backfill failed:', kinopoiskId, error?.message);
                 }
             }
         };
-        await Promise.all([worker(), worker(), worker()]);
-        if (found.size === 0) return;
-        this.movies = mergeProviderRatingsIntoMovies(this.movies, Object.fromEntries(found));
-        this.applyFilters();
+        await Promise.all(Array.from({ length: RatingsPageManager.PROVIDER_RATINGS_CONCURRENCY }, worker));
     }
 
     mergeCachedMovieMetadata(items, movieCacheService) {
@@ -969,7 +986,8 @@ class RatingsPageManager {
             this.hasMore = pagedResult.hasMore;
 
             if (pagedMovies.length > 0) {
-                const enrichedBatch = await this.enrichMoviePage(pagedMovies, ratingService);
+                // A batch loaded in bulk for a client-side sort is not painted yet.
+                const enrichedBatch = await this.enrichMoviePage(pagedMovies, ratingService, { waitForRatings: render });
 
                 if (this.currentRequestId !== requestId) {
                     this.loadingMore = false;
@@ -998,7 +1016,7 @@ class RatingsPageManager {
      * community ratings (one batched query set), bookmarks and rater profiles are
      * loaded in parallel; profiles start as soon as the rater list is known.
      */
-    async enrichMoviePage(pagedMovies, ratingService, { refreshProfiles = false } = {}) {
+    async enrichMoviePage(pagedMovies, ratingService, { refreshProfiles = false, waitForRatings = true } = {}) {
         const movieIds = pagedMovies.map(m => parseInt(m.kinopoiskId || m.id)).filter(Boolean);
 
         const ratingsPromise = ratingService.getMovieRatingsBatch(movieIds, 50);
@@ -1006,7 +1024,7 @@ class RatingsPageManager {
             this.loadUserProfiles([...ratersByMovie.values()].flat(), { refresh: refreshProfiles }));
 
         const [moviesWithProviderRatings, { averages, ratersByMovie }, bookmarksMap] = await Promise.all([
-            this.mergeProviderRatingsForPage(pagedMovies),
+            this.mergeProviderRatingsForPage(pagedMovies, { waitForRatings }),
             ratingsPromise,
             this.fetchBookmarksMap(movieIds),
             profilesPromise
@@ -1768,8 +1786,13 @@ class RatingsPageManager {
     }
 
     applyFilters() {
+        // Ratings found while a film's batch was still loading are not lost to the order
+        // in which the requests finished.
+        if (this.foundProviderRatings) {
+            this.movies = mergeProviderRatingsIntoMovies(this.movies, this.foundProviderRatings);
+        }
         let filtered = [...this.movies];
-        
+
         // Search filter
         if (this.filters.search) {
             const searchTerm = this.filters.search.toLowerCase();
@@ -2161,17 +2184,12 @@ class RatingsPageManager {
                         }
                     }
 
-                    // Update KP and IMDb ratings
-                    const kpEl = card.querySelector('.mc-rating-kp');
-                    const newKpEl = newCardHTML.querySelector('.mc-rating-kp');
-                    if (kpEl && newKpEl && kpEl.textContent.trim() !== newKpEl.textContent.trim()) {
-                        kpEl.textContent = newKpEl.textContent;
-                    }
-
-                    const imdbEl = card.querySelector('.mc-rating-imdb');
-                    const newImdbEl = newCardHTML.querySelector('.mc-rating-imdb');
-                    if (imdbEl && newImdbEl && imdbEl.textContent.trim() !== newImdbEl.textContent.trim()) {
-                        imdbEl.textContent = newImdbEl.textContent;
+                    // Update the ratings row as a whole: a value that arrives also changes the
+                    // cell's look, and a card without any rating has a different row.
+                    const ratingsRow = card.querySelector('.mc-ratings-row');
+                    const newRatingsRow = newCardHTML.querySelector('.mc-ratings-row');
+                    if (ratingsRow && newRatingsRow && ratingsRow.outerHTML !== newRatingsRow.outerHTML) {
+                        ratingsRow.replaceWith(newRatingsRow);
                     }
 
                     // Update movie description
@@ -2212,15 +2230,6 @@ class RatingsPageManager {
                         }
                     } else if (oldUserInfo && !newUserInfo) {
                         oldUserInfo.remove();
-                    }
-
-                    // Update average rating if data has changed (e.g. cache → enriched data)
-                    const avgRatingEl = card.querySelector('.mc-rating-avg');
-                    const newAvgRatingEl = newCardHTML.querySelector('.mc-rating-avg');
-                    if (avgRatingEl && newAvgRatingEl) {
-                        if (avgRatingEl.textContent.trim() !== newAvgRatingEl.textContent.trim()) {
-                            avgRatingEl.textContent = newAvgRatingEl.textContent;
-                        }
                     }
                 }
             }
@@ -2773,7 +2782,7 @@ class RatingsPageManager {
         // Show movie info in rating modal
         const formatScore = value => {
             const score = Number(value);
-            return Number.isFinite(score) && score > 0 ? String(parseFloat(score.toFixed(1))) : '';
+            return Number.isFinite(score) && score > 0 ? score.toFixed(1) : '';
         };
         const kpScore = formatScore(movie.kpRating);
         const imdbScore = formatScore(movie.imdbRating);

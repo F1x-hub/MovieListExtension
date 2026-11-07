@@ -645,6 +645,338 @@ console.log('✅ TMDB external_ids feed the batched IMDb request without a KP pa
     console.log('✅ Card IMDb results merge kp:<id> data and failed scrapes retry soon');
 }
 
+const memoryStorage = records => ({
+    values: { movie_card_ratings_v4: records },
+    get(keys, callback) { callback({ movie_card_ratings_v4: this.values.movie_card_ratings_v4 }); },
+    set(values, callback) { Object.assign(this.values, values); callback?.(); }
+});
+const nextTicks = async (count = 12) => { for (let index = 0; index < count; index += 1) await new Promise(resolve => setImmediate(resolve)); };
+
+// One title that needs the slow hidden page holds nothing back for the others.
+{
+    let releasePage;
+    const slowPage = new Promise(resolve => { releasePage = resolve; });
+    const svc = new MovieRatingsEnrichmentService({
+        storage: memoryStorage({}),
+        trace: false,
+        enableDetailFallback: true,
+        navigationService: { async resolve(item) { return { kinopoiskId: Number(item.tmdbId) + 1000 }; } },
+        imdbParser: null,
+        kinopoiskService: {
+            async movieRatingsViaGraphql(id) {
+                return id === 1001
+                    ? { kpRating: 8.2, kpVotes: 5, imdbRating: 8.1, imdbVotes: 6, imdbAnswered: true }
+                    : { kpRating: 5.4, kpVotes: 7, imdbRating: 0, imdbVotes: 0, imdbAnswered: false };
+            },
+            async scrapeMoviePageRatingsOffscreen(id, options) {
+                assert.equal(id, 1002, 'only the title GraphQL could not answer goes to the page');
+                assert.equal(options.graphqlRatings.kpRating, 5.4, 'the page does not repeat GraphQL');
+                return slowPage;
+            }
+        }
+    });
+    const fast = createCard(1);
+    const slow = createCard(2);
+    svc.pendingCards.add(fast);
+    svc.pendingCards.add(slow);
+    await svc.flushPendingCards();
+    await nextTicks();
+    assert.equal(fast.dataset.ratingsState, 'ready', 'the fast title is done while its neighbour waits');
+    assert.equal(fast.appliedRatings.imdbRating, 8.1);
+    assert.equal(slow.dataset.ratingsState, 'partial');
+    assert.equal(slow.appliedRatings.kpRating, 5.4, 'the KP rating shows while IMDb is looked for');
+    assert.equal(slow.appliedRatings.imdbState, 'pending');
+    releasePage({ kpRating: 5.4, imdbRating: 0, imdbAnswered: true });
+    await svc.lastBackgroundEnrichment;
+    assert.equal(slow.dataset.ratingsState, 'ready');
+    assert.equal(slow.appliedRatings.imdbState, 'unavailable');
+}
+
+// A slow search for one card does not delay a card whose identity is known.
+{
+    let releaseSearch;
+    const svc = new MovieRatingsEnrichmentService({
+        storage: memoryStorage({}),
+        trace: false,
+        imdbParser: null,
+        navigationService: { resolve: () => new Promise(resolve => { releaseSearch = resolve; }) }
+    });
+    const known = createCard(11);
+    known.dataset.movieId = '777';
+    known.dataset.kpRating = '7.1';
+    known.dataset.imdbRating = '7.2';
+    const searching = createCard(12);
+    svc.pendingCards.add(known);
+    svc.pendingCards.add(searching);
+    const flush = svc.flushPendingCards();
+    await nextTicks();
+    assert.equal(known.dataset.ratingsState, 'ready');
+    assert.equal(searching.dataset.ratingsState, 'loading');
+    releaseSearch({ kinopoiskId: 778, kpRating: 6.1, imdbRating: 6.2 });
+    await flush;
+    assert.equal(searching.dataset.ratingsState, 'ready');
+}
+
+// An answer that arrives after its card left the screen is kept, not thrown away.
+{
+    let releaseGraphql;
+    const storage = memoryStorage({});
+    const svc = new MovieRatingsEnrichmentService({
+        storage,
+        trace: false,
+        enableDetailFallback: true,
+        navigationService: { async resolve() { return { kinopoiskId: 10355286 }; } },
+        imdbParser: null,
+        kinopoiskService: {
+            movieRatingsViaGraphql: () => new Promise(resolve => { releaseGraphql = resolve; }),
+            async scrapeMoviePageRatingsOffscreen() { throw new Error('nothing is left for the page to do'); }
+        }
+    });
+    const card = createCard(21);
+    svc.pendingCards.add(card);
+    await svc.flushPendingCards();
+    await nextTicks();
+    svc.cancelCard(card, { notify: false });
+    assert.equal(card.dataset.ratingsState, '');
+    releaseGraphql({ kpRating: 6.9, kpVotes: 1, imdbRating: 8.1, imdbVotes: 2, imdbAnswered: true });
+    await svc.lastBackgroundEnrichment;
+    const stored = storage.values.movie_card_ratings_v4;
+    assert.equal(stored['kp:10355286'].imdbRating, 8.1, 'stored for the next visit');
+    assert.equal(stored['tmdb:movie:21'].kpRating, 6.9);
+    assert.equal(card.dataset.ratingsState, 'ready', 'and the card has it when the user comes back');
+}
+
+// A card off screen does not spend a hidden page; it asks again when it returns.
+{
+    let releaseGraphql;
+    let pageLoads = 0;
+    const storage = memoryStorage({});
+    const svc = new MovieRatingsEnrichmentService({
+        storage,
+        trace: false,
+        enableDetailFallback: true,
+        navigationService: { async resolve() { return { kinopoiskId: 14861516 }; } },
+        imdbParser: null,
+        kinopoiskService: {
+            movieRatingsViaGraphql: () => new Promise(resolve => { releaseGraphql = resolve; }),
+            async scrapeMoviePageRatingsOffscreen() { pageLoads += 1; return { kpRating: 6.9, imdbRating: 0 }; }
+        }
+    });
+    const card = createCard(31);
+    svc.pendingCards.add(card);
+    await svc.flushPendingCards();
+    await nextTicks();
+    svc.cancelCard(card, { notify: false });
+    releaseGraphql({ kpRating: 6.955, kpVotes: 662, imdbRating: 0, imdbVotes: 0, imdbAnswered: false });
+    await svc.lastBackgroundEnrichment;
+    assert.equal(pageLoads, 0);
+    assert.equal(card.appliedRatings.kpRating, 6.955, 'the Kinopoisk rating is kept');
+    assert.equal(card.dataset.ratingsState, '', 'the card can be queued again');
+    const record = storage.values.movie_card_ratings_v4['kp:14861516'];
+    assert.equal(record.imdbState, 'pending', 'IMDb is unknown, not absent');
+    assert.equal(record.imdbCheckVersion, undefined, 'and nobody recorded it as checked');
+}
+
+// A record found earlier keeps its verified identity, so a TMDB-only card accepts it.
+{
+    const verified = {
+        status: 'partial', kpId: 11921460, tmdbId: 1422041, name: 'Чёрный шар', year: 2026, mediaType: 'movie',
+        identityVerified: true, kpRating: 0, imdbRating: 0, kpState: 'pending', imdbState: 'pending',
+        votes: {}, updatedAt: Date.now() - 1000, expiresAt: Date.now() + 60_000, kpRetryAfter: Date.now() - 1
+    };
+    const storage = memoryStorage({ 'tmdb:movie:1422041': verified, 'kp:11921460': verified });
+    const svc = new MovieRatingsEnrichmentService({
+        storage,
+        trace: false,
+        enableDetailFallback: true,
+        navigationService: { async resolve() { throw new Error('a known identity needs no search'); } },
+        imdbParser: null,
+        kinopoiskService: {
+            async movieRatingsViaGraphql() { return { kpRating: 8.2, kpVotes: 1, imdbRating: 8.1, imdbVotes: 1, imdbAnswered: true }; }
+        }
+    });
+    const card = createCard(1422041);
+    Object.assign(card.dataset, { isTmdbOnly: 'true', movieTitle: 'Чёрный шар', movieYear: '2026' });
+    svc.pendingCards.add(card);
+    await flushAndWaitForProviders(svc);
+    assert.equal(card.appliedRatings.kpRating, 8.2);
+    assert.equal(card.dataset.ratingsState, 'ready');
+    assert.equal(storage.values.movie_card_ratings_v4['tmdb:movie:1422041'].identityVerified, true, 'the next visit can trust it too');
+}
+
+// A title in two sections: each card gets a record with its own identity.
+{
+    let pageLoads = 0;
+    let releasePage;
+    const svc = new MovieRatingsEnrichmentService({
+        storage: memoryStorage({}),
+        trace: false,
+        enableDetailFallback: true,
+        imdbParser: null,
+        navigationService: { async resolve() { return { verified: true, kinopoiskId: 5158783, tmdbId: 213375, name: 'Квест Вижна', year: 2026, mediaType: 'movie' }; } },
+        kinopoiskService: {
+            async movieRatingsViaGraphql() { return { kpRating: 7.1, kpVotes: 3656, imdbRating: 0, imdbVotes: 0, imdbAnswered: false }; },
+            scrapeMoviePageRatingsOffscreen() { pageLoads += 1; return new Promise(resolve => { releasePage = resolve; }); }
+        }
+    });
+    const fromList = createCard(9);
+    fromList.dataset.movieId = '5158783';
+    fromList.dataset.movieTitle = 'Квест Вижна';
+    const fromDiscovery = createCard(213375);
+    Object.assign(fromDiscovery.dataset, { isTmdbOnly: 'true', movieTitle: 'Квест Вижна', movieYear: '2026' });
+    svc.pendingCards.add(fromList);
+    svc.pendingCards.add(fromDiscovery);
+    await svc.flushPendingCards();
+    while (typeof releasePage !== 'function') await nextTicks(2);
+    releasePage({ kpRating: 7.1, imdbRating: 0, imdbAnswered: true });
+    await svc.lastBackgroundEnrichment;
+    assert.equal(pageLoads, 1, 'one hidden page for one title');
+    assert.equal(fromList.dataset.ratingsState, 'ready');
+    assert.equal(fromDiscovery.dataset.ratingsState, 'ready', 'the record built for this card passes its identity check');
+}
+
+// The record Movie Details updated is newer than the one a card list keeps for the same title.
+{
+    const svc = new MovieRatingsEnrichmentService({ storage: memoryStorage({}), trace: false });
+    const old = {
+        status: 'resolved', kpId: 5158783, tmdbId: 213375, name: 'Квест Вижна', year: 2026, mediaType: 'tv', identityVerified: true,
+        kpRating: 7.9, imdbRating: 0, imdbState: 'unavailable', votes: { kp: 0 }, updatedAt: 1000, expiresAt: Date.now() + 1000
+    };
+    const fresh = {
+        status: 'resolved', kpId: 5158783, kpRating: 7.158, imdbRating: 0, imdbState: 'unavailable', imdbCheckVersion: 2,
+        imdbRetryAfter: Date.now() + 60_000, votes: { kp: 3452 }, updatedAt: 2000, expiresAt: Date.now() + 60_000
+    };
+    const merged = svc.mergeKinopoiskRecord(old, { 'kp:5158783': fresh });
+    assert.equal(merged.kpRating, 7.158, 'the newer rating wins');
+    assert.equal(merged.votes.kp, 3452);
+    assert.equal(merged.tmdbId, 213375, 'the card keeps its identity');
+    assert.equal(merged.imdbCheckVersion, 2, 'and learns that IMDb was already checked');
+    assert.equal(svc.mergeKinopoiskRecord(merged, { 'kp:5158783': fresh }), merged, 'nothing new keeps the record');
+
+    // And an older copy found on the way never overwrites it.
+    const candidate = { kpId: 5158783, kpRating: 7.9 };
+    svc.seedFromKinopoiskRecord(candidate, { 'kp:5158783': fresh });
+    assert.equal(candidate.kpRating, 7.158);
+}
+
+// A pending record is not an answer: other pages must still look for IMDb.
+{
+    const svc = new MovieRatingsEnrichmentService({ storage: memoryStorage({}), trace: false });
+    const record = svc.createProgressRecord({ item: { tmdbId: 1 }, kpId: 1, kpRating: 7 });
+    assert.equal(record.imdbState, 'pending');
+    assert.equal(record.imdbCheckVersion, undefined);
+    assert.equal(svc.isFullyUsableCache(record), false);
+}
+
+// Each provider's answer lasts its own time: a title without a Kinopoisk rating is read
+// again soon, but does not spend a hidden page on IMDb, already checked for 12 hours.
+{
+    let pageLoads = 0;
+    const imdbRetryAfter = Date.now() + 5 * 60 * 60 * 1000;
+    const storage = memoryStorage({
+        'kp:13516697': {
+            status: 'no-ratings', kpId: 13516697, kpRating: 0, imdbRating: 0, kpState: 'unavailable', imdbState: 'unavailable',
+            imdbCheckVersion: 2, imdbRetryAfter, kpRetryAfter: Date.now() - 1, retryAfter: Date.now() - 1, votes: {},
+            updatedAt: Date.now() - 1000, expiresAt: Date.now() + 60_000
+        }
+    });
+    const svc = new MovieRatingsEnrichmentService({
+        storage,
+        trace: false,
+        enableDetailFallback: true,
+        imdbParser: null,
+        kinopoiskService: {
+            async movieRatingsViaGraphql() { return { kpRating: 6.1, kpVotes: 222, imdbRating: 0, imdbVotes: 0, imdbAnswered: false }; },
+            async scrapeMoviePageRatingsOffscreen() { pageLoads += 1; return {}; }
+        }
+    });
+    const card = createCard(70);
+    card.dataset.movieId = '13516697';
+    svc.pendingCards.add(card);
+    await flushAndWaitForProviders(svc);
+    assert.equal(pageLoads, 0, 'IMDb was answered recently');
+    assert.equal(card.appliedRatings.kpRating, 6.1);
+    assert.equal(card.dataset.ratingsState, 'ready');
+    assert.equal(storage.values.movie_card_ratings_v4['kp:13516697'].imdbRetryAfter, imdbRetryAfter, 'and viewing the card does not postpone the next check');
+}
+
+// A title Kinopoisk cannot identify still gets its IMDb rating through TMDB's exact IMDb ID.
+{
+    const storage = memoryStorage({});
+    const svc = new MovieRatingsEnrichmentService({
+        storage,
+        trace: false,
+        navigationService: { async resolve() { return null; } },
+        tmdbService: { async getExternalIds() { return { imdb_id: 'tt7654321' }; } },
+        imdbParser: { async getImdbRatingsBatch(ids) { return new Map([[ids[0], { rating: 8.7, votes: 900 }]]); } }
+    });
+    const card = createCard(94954);
+    Object.assign(card.dataset, { isTmdbOnly: 'true', movieTitle: 'Отель Хазбин', movieYear: '2024', mediaType: 'tv' });
+    svc.pendingCards.add(card);
+    await flushAndWaitForProviders(svc);
+    assert.equal(card.appliedRatings.imdbRating, 8.7);
+    assert.equal(card.dataset.ratingsState, 'ready');
+    const record = storage.values.movie_card_ratings_v4['tmdb:tv:94954'];
+    assert.equal(record.status, 'not-found', 'Kinopoisk is still asked again after the usual wait');
+    assert.equal(record.imdbRating, 8.7);
+    assert.equal(record.imdbId, 'tt7654321');
+    assert.ok(record.retryAfter > Date.now());
+}
+
+// Kinopoisk saying it has no rating of its own is an answer too.
+{
+    const svc = new MovieRatingsEnrichmentService({ storage: memoryStorage({}), trace: false });
+    assert.equal(svc.hasPendingProvider({ kpRating: 0, imdbRating: 8.1 }), true);
+    assert.equal(svc.hasPendingProvider({ kpRating: 0, kpChecked: true, imdbRating: 8.1 }), false);
+}
+
+// An expired record is shown while it is read again, and not extended as it is.
+{
+    let graphqlCalls = 0;
+    const storage = memoryStorage({
+        'kp:555': {
+            status: 'resolved', kpId: 555, kpRating: 7.0, imdbRating: 7.5, kpState: 'available', imdbState: 'available',
+            votes: {}, updatedAt: 1, expiresAt: Date.now() - 1
+        }
+    });
+    const svc = new MovieRatingsEnrichmentService({
+        storage,
+        trace: false,
+        enableDetailFallback: true,
+        imdbParser: null,
+        kinopoiskService: {
+            async movieRatingsViaGraphql() { graphqlCalls += 1; return { kpRating: 7.2, kpVotes: 9, imdbRating: 7.6, imdbVotes: 9, imdbAnswered: true }; }
+        }
+    });
+    const card = createCard(50);
+    card.dataset.movieId = '555';
+    svc.pendingCards.add(card);
+    await flushAndWaitForProviders(svc);
+    assert.equal(graphqlCalls, 1);
+    assert.equal(card.appliedRatings.kpRating, 7.2, 'the fresh value replaces the expired one');
+    assert.equal(storage.values.movie_card_ratings_v4['kp:555'].imdbRating, 7.6);
+}
+
+// Cards that never started send nothing, and a closing page cancels its work in one message.
+{
+    const messages = [];
+    const previous = global.chrome;
+    global.chrome = { runtime: { sendMessage(message) { messages.push(message); return Promise.resolve({}); } } };
+    const svc = new MovieRatingsEnrichmentService({ storage: memoryStorage({}), trace: false });
+    const untouched = createCard(60);
+    svc.cancelCard(untouched);
+    assert.equal(messages.length, 0, 'an off-screen card that never started has nothing to cancel');
+    assert.equal(svc.cancelledCardKeys.size, 0);
+    const started = createCard(61);
+    started.dataset.ratingsState = 'loading';
+    svc.trackedCards.add(started);
+    svc.dispose();
+    assert.deepEqual(messages.map(message => message.type), ['KINOPOISK_OFFSCREEN_CANCEL_SESSION']);
+    assert.equal(messages[0].sessionId, svc.enrichmentSessionId);
+    global.chrome = previous;
+}
+console.log('✅ Each card takes its own answer, answers outlive scrolling, and identities and fresher records survive');
+
 }
 
 run().then(() => require('./homeSeededRatings.test.cjs').run()).catch(error => {

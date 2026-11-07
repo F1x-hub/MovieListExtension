@@ -73,7 +73,7 @@ async function run() {
 
     // Movie Details: the page ID reaches the tile; checked titles are not re-scraped.
     const details = read('src/pages/movie-details/movie-details.js');
-    assert.match(details, /imdbId: result\?\.imdbId \|\| pageRatings\?\.imdbId \|\| null,\s*imdbChecked: true,/);
+    assert.match(details, /imdbId: result\?\.imdbId \|\| pageRatings\?\.imdbId \|\| null,\s*imdbChecked: Boolean\(pageRatings\) && pageRatings\.imdbAnswered !== false/);
     assert.match(details, /identity: \{ \.\.\.\(movie\.identity \|\| \{\}\), imdbId: knownImdbId \}/);
     assert.match(details, /\(\(resultImdbRating <= 0 \|\| !hasImdbId\) && !imdbRecentlyChecked\)/);
     assert.match(details, /const imdbId = String\(movie\?\.identity\?\.imdbId \|\| movie\?\.imdbId \|\| movie\?\.externalId\?\.imdb/);

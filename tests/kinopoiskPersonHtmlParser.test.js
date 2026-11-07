@@ -236,6 +236,21 @@ const ssrSearchHtml = `<script>window.Ya.__ssr_initial_data = ${JSON.stringify({
     assert.equal(await ambiguousIdentity.findMovieByTitle(['Warehouse 13'], 2009, { mediaType: 'tv' }), null,
         'Multiple exact candidates must remain unresolved');
 
+    // Two series are called «Укрытие» in Russian, a year apart. The original name tells them
+    // apart; the shared name alone, or the closer year, decides nothing.
+    const sharedLocalName = new KinopoiskPersonHtmlService({
+        kinopoiskService: { async scrapeSearchResultsOffscreen() {
+            return [
+                { type: 'series', id: 4541515, title: 'Укрытие', originalTitle: 'Silo', year: 2023 },
+                { type: 'series', id: 5398133, title: 'Укрытие', originalTitle: 'Haideu', year: 2024 }
+            ];
+        } }
+    });
+    const withTolerance = { mediaType: 'tv', allowYearTolerance: true };
+    assert.equal((await sharedLocalName.findMovieByTitle(['Укрытие', 'Silo'], 2023, withTolerance))?.kinopoiskId, 4541515);
+    assert.equal((await sharedLocalName.findMovieByTitle(['Укрытие', 'Haideu'], 2024, withTolerance))?.kinopoiskId, 5398133);
+    assert.equal(await sharedLocalName.findMovieByTitle(['Укрытие'], 2023, withTolerance), null);
+
     console.log('  ✅ Movie lookup uses browser-context scraping and selects the requested title/year over sequels');
 }
 

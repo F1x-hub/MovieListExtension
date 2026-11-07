@@ -447,6 +447,22 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+### Fixes
+
+- KP and IMDb ratings arrive steadily on Home, the film page and Rated. On all three, measured in the owner's Chrome, the slow parts turned out to be separate faults:
+  - Every hidden Kinopoisk page answered and was then ignored. For a signed-in user the site adds `?socialAlias=...` to the address's hash, which became part of the request ID, so the worker waited out its 8-second timeout (0 answers of 22 film pages and 10 searches measured). The ratings were there after 1.5 to 4.5 seconds and now arrive. The scraper also no longer acts in Kinopoisk tabs the owner opens.
+  - The `imdbRatings` function was never deployed and answered 404. It is live now, so titles Kinopoisk has no IMDb rating for get one (Мангуст 5.0, Квест Вижна 7.8).
+  - A title with no IMDb block on Kinopoisk lost its Kinopoisk rating too when the hidden page failed. The rating and vote count from Kinopoisk's API now stay.
+  - A search for a title Kinopoisk does not have held its hidden page for the whole 8-second timeout. The «ничего не найдено» page now answers as soon as it loads (about 4 seconds in the owner's Chrome) and frees the page for the next card.
+- Home cards no longer wait for each other or for scrolling. Cached ratings are on a card when it appears instead of after a skeleton, a slow title no longer holds back the other cards in its group, and an answer that arrives after a card left the screen is kept instead of being fetched again on the next visit. Cards that stayed on a skeleton for the whole visit because their saved record lost its verified identity now take it. The next row is read before it scrolls into view.
+- Two titles that share a Russian name no longer both stay without ratings. The one whose Russian and original names both match is taken (Укрытие, Silo: КП 7.8, IMDb 8.1, where Haideu is also «Укрытие»); a shared name or a nearer year alone still decides nothing, and two cards with the same name and year no longer share one answer. A title Kinopoisk cannot identify at all now shows its IMDb rating, read through TMDB's exact IMDb ID (Отель Хазбин 7.6, Надежда 6.6), and Kinopoisk is still asked again later.
+- Home's background refresh, about once in four hours, no longer rebuilds every card. Cards that did not change keep their poster and ratings, and an unchanged hero stays on its page.
+- The same title shows the same rating across sections. An older copy kept for one section no longer overwrites the newer rating (Квест Вижна showed 7.2, then 7.9, while Kinopoisk had 7.1).
+- The film page shows ratings as soon as they are known. Both tiles hold their place from the first paint, so the buttons below no longer jump. A rating already found on another page is there at once, and Kinopoisk's no longer waits behind a skeleton while IMDb is looked for (Мангуст showed two skeletons for over 26 seconds). The number no longer rolls up twice or starts below zero (after a busy moment its first frame showed −4.3), and an older cache no longer lowers the vote count.
+- Rated no longer shows a person's score as the Kinopoisk rating. A film with no saved rating showed the rater's score under «Кинопоиск» until the real rating came (Ведьма из Блэр: 2, then 6.5). A rating that arrived before its card was in the list is no longer lost (Пробуждение stayed at 8 and «—» for the whole visit), an IMDb value no longer stays grey like a missing one, and parallel saves no longer lose each other's titles, which made a film load again on every visit.
+- Leaving Home or the catalogue frees the hidden Kinopoisk pages queued for its cards, so the film page opened next is not behind them.
+- KP and IMDb badges keep their order whatever their state, and provider ratings always print one decimal: 7.0, not 7.
+
 ### Docs
 
 - [`tests/e2e/README.md`](tests/e2e/README.md) now gives the quickest order for checking the player in the owner's Chrome, a way to tell a closed debugging port from an unanswered question, and how to read `nothing`, `window hidden` and black screenshots.

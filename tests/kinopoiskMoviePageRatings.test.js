@@ -1,6 +1,22 @@
 const assert = require('node:assert/strict');
 const { JSDOM } = require('jsdom');
-const { extractMoviePageRatingsFromDOM } = require('../content-scripts/kinopoisk-search-scraper.js');
+const { extractMoviePageRatingsFromDOM, parseRequestHash, isEmptySearchPage } = require('../content-scripts/kinopoisk-search-scraper.js');
+
+// A title that is not on Kinopoisk is an answer: the frame does not wait out its timeout.
+assert.equal(isEmptySearchPage(new JSDOM('<h2 class="styles_title__MFWNV">К сожалению, по вашему запросу ничего не найдено...</h2><h3>Билеты в кино</h3>').window.document), true);
+assert.equal(isEmptySearchPage(new JSDOM('<h2>Результаты поиска</h2><h3>Билеты в кино</h3>').window.document), false);
+assert.equal(isEmptySearchPage(new JSDOM('<div class="styles_empty__abc"></div>').window.document), true);
+
+// Kinopoisk adds to the hash of a signed-in user's page. The worker ignores a result sent
+// under any ID but its own, so the ID must survive whatever follows it.
+assert.equal(parseRequestHash('#agy_req_1794018145388_ulkfaq'), '1794018145388_ulkfaq');
+assert.equal(parseRequestHash('#agy_req_1794018145388_ulkfaq?socialAlias=MTIz'), '1794018145388_ulkfaq');
+assert.equal(parseRequestHash('#agy_req_1794018145388_ulkfaq&agy_rating_1'), '1794018145388_ulkfaq');
+assert.equal(parseRequestHash('#agy_req_1794018145388_ulkfaq&agy_rating_1?socialAlias=MTIz'), '1794018145388_ulkfaq');
+// A page the owner opened carries no request: nothing there may answer the worker.
+assert.equal(parseRequestHash(''), '');
+assert.equal(parseRequestHash('#reviews'), '');
+assert.equal(parseRequestHash(undefined), '');
 
 const directMarkup = `
   <main>

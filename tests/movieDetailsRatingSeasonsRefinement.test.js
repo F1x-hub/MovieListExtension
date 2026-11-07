@@ -219,10 +219,13 @@ const htmlPendingProvider = manager.createDetailedMovieCard({
     rating: { kp: 5.9, imdb: 0 },
     votes: { kp: 3663, imdb: 0 }
 });
-assert(htmlPendingProvider.includes('rating-item-large kp rating-item-large--loading'), '0. KP waits in the shared provider loading state');
-assert(htmlPendingProvider.includes('rating-item-large imdb rating-item-large--loading'), '0. IMDb uses the same shared provider loading state');
-assert.equal((htmlPendingProvider.match(/rating-value--skeleton/g) || []).length, 2, '0. Both provider values use synchronized skeletons');
-console.log('  ✅ 0. KP and IMDb render as one synchronized provider rail while IMDb is pending');
+assert(!htmlPendingProvider.includes('rating-item-large kp rating-item-large--loading'), '0. A known KP rating does not wait for IMDb');
+assert(htmlPendingProvider.includes('>5.9</span>'), '0. The known KP rating is on the tile');
+assert(htmlPendingProvider.includes('rating-item-large imdb rating-item-large--loading'), '0. IMDb alone waits behind a skeleton');
+assert.equal((htmlPendingProvider.match(/rating-value--skeleton/g) || []).length, 1, '0. Only the provider still being looked for has a skeleton');
+const htmlNoProviderData = manager.createDetailedMovieCard({ kinopoiskId: 401513, name: 'Nothing known yet' });
+assert.equal((htmlNoProviderData.match(/rating-value--skeleton/g) || []).length, 2, '0. Both tiles hold their place before anything is known');
+console.log('  ✅ 0. Each provider tile shows its value as soon as it is known; the rail keeps its height');
 
 const htmlProviderLinks = manager.createDetailedMovieCard({
     kinopoiskId: 662551,
@@ -243,6 +246,97 @@ const htmlNoImdbId = manager.createDetailedMovieCard({
 assert(htmlNoImdbId.includes('<div class="rating-item-large imdb">'), '0b. IMDb tile stays a plain block without a valid tt ID');
 assert(!htmlNoImdbId.includes('javascript:'), '0b. Invalid IMDb IDs never reach an href');
 console.log('  ✅ 0b. Rating tiles open Kinopoisk / IMDb only for valid provider IDs');
+
+{
+    const page = new JSDOM('<div id="page"><div class="movie-detail-ratings-container"></div></div>').window.document;
+    const rail = page.querySelector('.movie-detail-ratings-container');
+    const details = Object.create(MovieDetailsManager.prototype);
+    details.escapeHtml = escapeHtmlHelper;
+    details.isAdmin = false;
+    details.authVerified = true;
+    details.isPageContextCurrent = () => true;
+    details.elements = { movieDetailsContainer: page.getElementById('page') };
+    details.renderEnrichmentSnapshot = { movieId: 9147477 };
+    const movie = { kinopoiskId: 9147477, name: 'Мангуст', votes: { kp: 900 } };
+    details.selectedMovie = movie;
+    const tile = provider => rail.querySelector(`.rating-item-large.${provider}`);
+
+    // What other pages found is on the tile from the first paint.
+    details.cardRatingsSnapshot = { 'kp:9147477': { kpRating: 5.4, votes: { kp: 621 }, expiresAt: Date.now() + 60_000 } };
+    details.updateProviderRatingsUI(movie);
+    assert.equal(tile('kp').querySelector('.rating-value').textContent, '5.4', '0c. A cached rating shows at once');
+    assert.ok(tile('imdb').classList.contains('rating-item-large--loading'), '0c. Only the missing provider waits');
+    assert.match(tile('kp').textContent, /900/, '0c. An older cache does not lower the vote count');
+    assert.ok(tile('kp').querySelector('[data-count-to]'), '0c. The number rolls up the first time');
+
+    // An expired record is not a known rating.
+    assert.equal(details.getKnownProviderRatings({ kinopoiskId: 1 }).kp, 0);
+    details.cardRatingsSnapshot['kp:1'] = { kpRating: 7, expiresAt: Date.now() - 1 };
+    assert.equal(details.getKnownProviderRatings({ kinopoiskId: 1 }).kp, 0);
+
+    // Redrawing the same values leaves the tiles alone.
+    const sameNode = tile('kp');
+    details.updateProviderRatingsUI(movie);
+    assert.equal(tile('kp'), sameNode, '0c. Identical values are not redrawn');
+
+    // Progress keeps the known value and the skeleton for the other provider.
+    const progress = details.showProviderRatings(movie, { kpRating: 5.4, votes: { kp: 621 } }, { pending: true });
+    assert.equal(progress.votes.kp, 900);
+    assert.ok(tile('imdb').classList.contains('rating-item-large--loading'));
+    assert.equal(details.selectedMovie.kpRating, 5.4);
+
+    // The search ended: an unknown provider says so.
+    details.settleProviderRatingsUI(details.selectedMovie, {});
+    assert.equal(rail.querySelector('.rating-item-large--loading'), null, '0c. No skeleton outlives the search');
+    assert.equal(tile('imdb').querySelector('.rating-value').textContent, '—');
+
+    // A later IMDb rating rolls up; the KP number on screen does not start over.
+    details.showProviderRatings(details.selectedMovie, { imdbRating: 5, votes: { imdb: 2007 } }, { pending: false });
+    assert.equal(tile('imdb').querySelector('.rating-value').textContent, '5.0', '0c. Ratings read one way');
+    assert.ok(tile('imdb').querySelector('[data-count-to]'));
+    assert.equal(tile('kp').querySelector('[data-count-to]'), null, '0c. A number rolls up once per title');
+
+    // The full movie arriving meanwhile is not replaced by the older one the request began with.
+    details.selectedMovie = { kinopoiskId: 9147477, name: 'Мангуст', persons: ['full'], votes: {} };
+    details.showProviderRatings(movie, { kpRating: 5.4 }, { pending: false });
+    assert.deepEqual(details.selectedMovie.persons, ['full']);
+
+    // The whole flow: KP is on the tile while the hidden page is still looking for IMDb.
+    let releasePage;
+    let scrapeOptions = null;
+    const persisted = [];
+    context.RatingsRefreshService = class {
+        async checkAndRefreshRatings() { return { kpRating: 5.4, imdbRating: 0, votes: { kp: 621 }, refreshed: true }; }
+        async persistCardRatingPatch(id, ratings) { persisted.push(ratings); }
+    };
+    context.firebaseManager = {
+        getKinopoiskService: () => ({
+            scrapeMoviePageRatingsOffscreen: (id, options) => {
+                scrapeOptions = options;
+                return new Promise(resolve => { releasePage = resolve; });
+            }
+        })
+    };
+    rail.innerHTML = '';
+    delete rail.dataset.renderedRatings;
+    details.cardRatingsSnapshot = {};
+    details.renderEnrichmentSnapshot = { movieId: 7001 };
+    const fresh = { kinopoiskId: 7001, name: 'Новый фильм', externalId: { imdb: 'tt1234567' } };
+    details.selectedMovie = fresh;
+    const flow = details.loadProviderRatingsInBackground(fresh, {});
+    while (typeof releasePage !== 'function') await new Promise(resolve => setImmediate(resolve));
+    assert.equal(tile('kp').querySelector('.rating-value').textContent, '5.4', '0d. KP does not wait for the hidden page');
+    assert.ok(tile('imdb').classList.contains('rating-item-large--loading'), '0d. IMDb waits for it');
+    assert.equal(typeof scrapeOptions.onPartial, 'function', '0d. GraphQL can report before the page answers');
+    assert.equal(persisted.length, 1, '0d. Found ratings reach the card cache at once');
+    releasePage({ kpRating: 5.4, kpVotes: 621, imdbRating: 0, imdbVotes: 0, imdbAnswered: false });
+    await flow;
+    assert.equal(rail.querySelector('.rating-item-large--loading'), null, '0d. The tile settles when the page answers');
+    assert.equal(persisted.at(-1).imdbChecked, false, '0d. A page that could not read IMDb is not a check');
+    delete context.RatingsRefreshService;
+    delete context.firebaseManager;
+}
+console.log('  ✅ 0c-0d. Rating tiles show what is known, redraw only on change and settle');
 
 // 1. TMDB large left card absent
 assert(!htmlFull.includes('rating-item-large tmdb'), '1. TMDB rating card must be absent from left rating rail');
@@ -302,8 +396,10 @@ const movieTmdbOnly = {
     votes: { kp: 0, imdb: 0, tmdb: 5000 }
 };
 const htmlTmdbOnly = manager.createDetailedMovieCard(movieTmdbOnly);
-assert(!htmlTmdbOnly.includes('rating-item-large kp'), '8. KP card omitted when 0');
-assert(!htmlTmdbOnly.includes('rating-item-large imdb'), '8. IMDb card omitted when 0');
+const tmdbOnlyRail = htmlTmdbOnly.slice(htmlTmdbOnly.indexOf('movie-detail-ratings-container'), htmlTmdbOnly.indexOf('movie-actions-container'));
+assert(tmdbOnlyRail.includes('rating-item-large kp rating-item-large--loading'), '8. KP waits behind a skeleton when 0');
+assert(tmdbOnlyRail.includes('rating-item-large imdb rating-item-large--loading'), '8. IMDb waits behind a skeleton when 0');
+assert(!tmdbOnlyRail.includes('8.5'), '8. The TMDB rating never fills a provider tile');
 assert(!htmlTmdbOnly.includes('rating-item-large tmdb'), '8. TMDB not in left rail');
 assert(htmlTmdbOnly.includes('meta-item--tmdb'), '8. TMDB in About tab only');
 assert(htmlTmdbOnly.includes('8.5'), '8. TMDB rating 8.5 rendered');
@@ -748,5 +844,36 @@ assert.equal(markCalls, marksBeforeFuture);
 assert.equal(manager.currentSeriesEpisodeRatings.episodes['1:1'].r, 6);
 control.dataset.released = 'true';
 console.log('  ✅ Independent title ratings, personal badges and inline episode rating controls passed');
+
+// The rating count-up never shows a number below zero. Chrome can hand the first frame a
+// time from before the animation was set up when a long task ran in between.
+{
+    const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only' });
+    const { window } = dom;
+    const frames = [];
+    let clock = 1000;
+    window.requestAnimationFrame = callback => frames.push(callback);
+    window.performance.now = () => clock;
+    // Only the count-up block: the rest of the file starts the whole navigation.
+    const navigationSource = fs.readFileSync(new URL('../src/shared/components/Navigation.js', import.meta.url), 'utf8');
+    const countUpSource = navigationSource.slice(
+        navigationSource.indexOf('// Count-up:'),
+        navigationSource.lastIndexOf("if (typeof module !== 'undefined'")
+    );
+    assert.ok(countUpSource.includes('data-count-to'), 'the count-up block is found');
+    window.eval(countUpSource);
+    window.document.body.innerHTML = '<span class="value" data-count-to="7.4">7.4</span>';
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const value = window.document.querySelector('.value');
+    const shown = [];
+    for (const frameTime of [clock - 107, clock + 100, clock + 400, clock + 700]) {
+        frames.shift()?.(frameTime);
+        shown.push(value.textContent);
+    }
+    assert.ok(shown.every(text => Number(text) >= 0), `count-up showed ${shown.join(', ')}`);
+    assert.equal(shown[0], '0.0');
+    assert.equal(shown[shown.length - 1], '7.4');
+    console.log('  ✅ The rating count-up starts at zero, never below it');
+}
 
 console.log('\n🎉 MovieDetails Rating + Seasons Refinement Tests Passed Successfully!\n');

@@ -43,16 +43,22 @@ class MovieRatingsEnrichmentService {
         this.imdbRetryMs = 12 * 60 * 60 * 1000;
         // A failed (not "not found") Kinopoisk search is retried soon.
         this.searchFailureRetryMs = 2 * 60 * 1000;
-        this.maxCacheEntries = 400;
+        this.maxCacheEntries = 1000;
         this.maxCardsPerFlush = options.maxCardsPerFlush || 6;
-        this.batchDelayMs = options.batchDelayMs ?? 350;
+        // Cached ratings paint together with the card, so this delay only spaces
+        // out network work while a list scrolls past.
+        this.batchDelayMs = options.batchDelayMs ?? 120;
         this.enableDetailFallback = options.enableDetailFallback === true;
-        this.rootMargin = options.rootMargin || '40px 0px';
+        // Rows about to scroll into view are read ahead and arrive with their ratings.
+        this.rootMargin = options.rootMargin || '300px 0px';
         this.pendingCards = new Set();
         this.flushTimer = null;
         this.observer = null;
         this.cachePromise = null;
+        this.cacheSnapshot = null;
+        this.cacheWriteTimer = null;
         this.identityInFlight = new Map();
+        this.graphqlInFlight = new Map();
         this.ratingsInFlight = new Map();
         this.lifecycleGeneration = 0;
         this.cancelledCardKeys = new Set();
@@ -113,8 +119,11 @@ class MovieRatingsEnrichmentService {
     observe(container) {
         if (!container || typeof container.querySelectorAll !== 'function') return;
         this.releaseDetachedCards();
-        const cards = Array.from(container.querySelectorAll('.movie-card-component, .featured-card'))
+        const found = Array.from(container.querySelectorAll('.movie-card-component, .featured-card'))
             .filter(card => card.dataset.ratingsState !== 'ready');
+        // What the cache knows goes on the card before the browser paints it.
+        this.paintCachedCards(found);
+        const cards = found.filter(card => card.dataset.ratingsState !== 'ready');
         this.trace('observe', {
             container: container.id || container.className || container.tagName || 'unknown',
             cardCount: cards.length,
@@ -151,12 +160,53 @@ class MovieRatingsEnrichmentService {
         cards.forEach(card => this.observer.observe(card));
     }
 
+    /**
+     * Applies cached ratings without waiting for a card to scroll into view, so a rendered
+     * or re-rendered list shows what is known at once. A record that is only partly usable
+     * still paints what it has; the card then goes through the network pass as usual.
+     * @param {HTMLElement[]} cards
+     */
+    paintCachedCards(cards) {
+        if (!this.cacheSnapshot) {
+            void this.readCache().then(() => {
+                if (this.cacheSnapshot) this.paintCachedCards(cards);
+            }).catch(() => {});
+            return;
+        }
+        cards.forEach(card => this.paintCachedCard(card, this.cacheSnapshot));
+    }
+
+    paintCachedCard(card, cache) {
+        const state = card.dataset.ratingsState || '';
+        if (!['', 'empty', 'queued'].includes(state)) return;
+        const item = this.itemFromCard(card);
+        const key = this.cacheKeyFor(item);
+        const stored = cache[key];
+        if (!stored || !this.isCacheIdentityCompatible(stored, item)) return;
+        const cached = this.mergeKinopoiskRecord(stored, cache);
+        card.dataset.ratingsEnrichmentKey = key;
+        if (this.isFullyUsableCache(cached)) {
+            this.applyRatings(card, this.preserveKnownRatings(cached, item));
+            if (card.dataset.ratingsState === 'ready') this.pendingCards.delete(card);
+            return;
+        }
+        if (!this.hasAvailableProvider(cached)) return;
+        this.applyRatings(card, {
+            ...cached,
+            status: 'partial',
+            kpState: this.knownRating(cached.kpRating) > 0 ? 'available' : 'pending',
+            imdbState: this.knownRating(cached.imdbRating) > 0 ? 'available' : 'pending'
+        }, { partial: true });
+        card.dataset.ratingsState = state;
+    }
+
     enqueueCards(cards) {
         const pendingBefore = this.pendingCards.size;
         let added = 0;
         cards.filter(Boolean).forEach(card => {
             if (['ready', 'loading', 'partial'].includes(card.dataset.ratingsState)) return;
             this.cancelledCardKeys.delete(this.cacheKeyFor(this.itemFromCard(card)));
+            if (card.dataset.ratingsEnrichmentKey) this.cancelledCardKeys.delete(card.dataset.ratingsEnrichmentKey);
             this.trackedCards.add(card);
             card.dataset.ratingsState = 'queued';
             this.pendingCards.add(card);
@@ -268,7 +318,10 @@ class MovieRatingsEnrichmentService {
                     imdbVotes: Number(cached.votes?.imdb) || 0,
                     imdbId: this.normalizeImdbId(cached.imdbId) || item.imdbId,
                     kpState: cached.kpState,
-                    imdbState: cached.imdbState
+                    imdbState: cached.imdbState,
+                    identityVerified: cached.identityVerified === true,
+                    // An expired record is a starting point, not an answer: it is read again.
+                    needsRefresh: !(Number(cached.expiresAt) > Date.now())
                 }
                 : {};
             if (cachedIdentity.kpId) partialCacheHits += 1;
@@ -295,76 +348,14 @@ class MovieRatingsEnrichmentService {
             return;
         }
 
-        const unresolved = candidates.filter(candidate => !(Number(candidate.kpId) > 0));
-        const resolvedUnresolved = await Promise.all(
-            unresolved.map(candidate => this.resolveIdentityDedup(candidate))
-        );
-        const resolvedByCard = new Map(
-            resolvedUnresolved.map(candidate => [candidate.card, candidate])
-        );
-        const resolved = candidates.map(candidate => resolvedByCard.get(candidate.card) || candidate);
-        const withIdentity = resolved.filter(candidate => candidate.kpId > 0);
-        const missingIdentity = resolved.filter(candidate => candidate.kpId <= 0);
-        this.trace('identity:complete', {
-            durationMs: Date.now() - startedAt,
-            requested: candidates.length,
-            resolved: withIdentity.length,
-            missing: missingIdentity.length,
-            cards: resolved.map(candidate => ({
-                ...this.cardTraceData(candidate.card),
-                kpId: candidate.kpId,
-                kpRating: candidate.kpRating,
-                imdbRating: candidate.imdbRating,
-                imdbId: candidate.imdbId
-            }))
-        });
-
-        for (const candidate of missingIdentity) {
-            if (!this.isCurrentCandidate(candidate)) continue;
-            const record = this.createRecord(candidate, {
-                status: 'not-found',
-                ...(candidate.searchFailed ? { retryAfterMs: this.searchFailureRetryMs } : {})
-            });
-            cache[candidate.key] = record;
-            if (this.isCurrentCandidate(candidate)) this.applyRatings(candidate.card, record);
-        }
-
-        // Stage A: persist and render identity plus any KP rating exposed by
-        // the search result. IMDb stays pending and cannot delay this paint.
-        withIdentity.map(candidate => {
-            const record = this.createRecord(candidate, {
-                status: this.hasPendingProvider(candidate) ? 'partial' : 'resolved',
-                kpId: candidate.kpId,
-                kpRating: candidate.kpRating,
-                imdbRating: candidate.imdbRating,
-                imdbId: candidate.imdbId,
-                kpState: Number(candidate.kpRating) > 0 ? 'available' : 'pending',
-                imdbState: Number(candidate.imdbRating) > 0 ? 'available' : 'pending'
-            });
-            if (!this.isCurrentCandidate(candidate)) return { candidate, record };
-            cache[candidate.key] = record;
-            cache[`kp:${candidate.kpId}`] = record;
-            if (this.isCurrentCandidate(candidate)) {
-                this.applyRatings(candidate.card, record, { partial: this.hasPendingProvider(candidate) });
-            }
-            return { candidate, record };
-        });
-        await this.writeCache(this.boundCache(cache), invalidatedCacheKeys);
-
-        const enrichable = withIdentity.filter(candidate => this.isCurrentCandidate(candidate)).filter(candidate => (
-            this.hasPendingProvider(candidate)
-        ));
-        if (enrichable.length > 0) {
-            this.lastBackgroundEnrichment = this.enrichProvidersInBackground(enrichable);
-            this.lastBackgroundEnrichment.catch(error => {
-                this.trace('stageB:error', {
-                    message: error?.message || 'ENRICHMENT_BACKGROUND_FAILED',
-                    candidateCount: enrichable.length
-                });
-            });
-        } else {
-            this.lastBackgroundEnrichment = Promise.resolve();
-        }
+        // A title whose identity is known paints and loads now: a slow search for the
+        // card next to it holds nothing back.
+        const known = candidates.filter(candidate => Number(candidate.kpId) > 0);
+        const unknown = candidates.filter(candidate => !(Number(candidate.kpId) > 0));
+        await Promise.all([
+            this.startCandidates(known, cache, invalidatedCacheKeys),
+            ...unknown.map(async candidate => this.startCandidates([await this.resolveIdentityDedup(candidate)], cache))
+        ]);
 
         this.trace('flush:complete', {
             durationMs: Date.now() - startedAt,
@@ -372,48 +363,253 @@ class MovieRatingsEnrichmentService {
             cacheHits,
             partialCacheHits,
             networkCandidates: candidates.length,
-            backgroundProviderCount: enrichable.length,
             pendingRemaining: this.pendingCards.size
         });
         this.schedulePendingFlush();
     }
 
+    /**
+     * Shows and stores what is known about these cards, then starts loading what is not.
+     * @param {Array<Object>} candidates
+     * @param {Object} cache
+     * @param {string[]} [removeKeys]
+     */
+    async startCandidates(candidates, cache, removeKeys = []) {
+        const withIdentity = [];
+        for (const candidate of candidates) {
+            if (Number(candidate.kpId) > 0) {
+                this.seedFromKinopoiskRecord(candidate, cache);
+                const record = this.createProgressRecord(candidate);
+                this.rememberRecord(cache, candidate, record);
+                this.paintCandidate(candidate, record, { partial: this.hasPendingProvider(candidate) });
+                withIdentity.push(candidate);
+            } else {
+                this.settleMissingIdentity(candidate, cache);
+            }
+        }
+        if (candidates.length > 0 || removeKeys.length > 0) {
+            await this.writeCache(this.boundCache(cache), removeKeys);
+        }
+        const enrichable = withIdentity.filter(candidate => this.isCardCurrent(candidate)
+            && (candidate.needsRefresh === true || this.hasPendingProvider(candidate)));
+        if (enrichable.length > 0) this.trackBackgroundWork(this.enrichProvidersInBackground(enrichable));
+    }
+
+    /** The kp:<id> record is the one Movie Details and Ratings also update, so it is the freshest. */
+    seedFromKinopoiskRecord(candidate, cache) {
+        const record = cache?.[`kp:${candidate.kpId}`];
+        if (!record || !(Number(record.expiresAt) > Date.now())) return;
+        candidate.kpRating = this.knownRating(record.kpRating) || this.knownRating(candidate.kpRating);
+        candidate.imdbRating = this.knownRating(record.imdbRating) || this.knownRating(candidate.imdbRating);
+        candidate.kpVotes = Number(record.votes?.kp) || Number(candidate.kpVotes) || 0;
+        candidate.imdbVotes = Number(record.votes?.imdb) || Number(candidate.imdbVotes) || 0;
+        candidate.imdbId = this.normalizeImdbId(candidate.imdbId) || this.normalizeImdbId(record.imdbId);
+        // Each provider's answer lasts its own time: Kinopoisk having no rating yet (read
+        // again after 15 minutes) does not mean IMDb, checked for 12 hours, is asked again.
+        const now = Date.now();
+        if (Number(record.kpRetryAfter) > now) candidate.kpChecked = true;
+        if (record.imdbState === 'unavailable'
+            && Number(record.imdbCheckVersion) >= MovieRatingsEnrichmentService.IMDB_CHECK_VERSION
+            && Number(record.imdbRetryAfter) > now) {
+            candidate.imdbChecked = true;
+            candidate.imdbRetryAfter = Number(record.imdbRetryAfter);
+        }
+    }
+
+    settleMissingIdentity(candidate, cache) {
+        if (candidate.generation !== this.lifecycleGeneration) return;
+        // A cancelled search says nothing about the title. A card still on screen
+        // (its twin elsewhere on the page was the one cancelled) simply asks again.
+        if (candidate.searchFailed && candidate.searchReason === 'REQUEST_CANCELLED') {
+            candidate.card.dataset.ratingsState = '';
+            if (!this.cancelledCardKeys.has(candidate.key)) this.enqueueCards([candidate.card]);
+            return;
+        }
+        const record = this.createRecord(candidate, {
+            status: 'not-found',
+            ...(candidate.searchFailed ? { retryAfterMs: this.searchFailureRetryMs } : {})
+        });
+        cache[candidate.key] = record;
+        this.paintCandidate(candidate, record);
+        if (this.knownRating(record.imdbRating) <= 0 && candidate.item?.isTmdbOnly) {
+            this.trackBackgroundWork(this.readImdbWithoutIdentity(candidate, cache));
+        }
+    }
+
+    /**
+     * Kinopoisk not knowing a title says nothing about IMDb: TMDB has its exact IMDb ID.
+     * The record stays negative, so Kinopoisk is still asked again after the usual wait.
+     */
+    async readImdbWithoutIdentity(candidate, cache) {
+        candidate.imdbId = this.normalizeImdbId(candidate.imdbId) || this.normalizeImdbId(candidate.item?.imdbId);
+        await this.prefetchImdbRatings([candidate]);
+        if (this.knownRating(candidate.imdbRating) <= 0 || !this.isCardCurrent(candidate)) return;
+        const record = this.createRecord(candidate, {
+            status: 'not-found',
+            imdbRating: candidate.imdbRating,
+            imdbId: candidate.imdbId,
+            votes: { imdb: candidate.imdbVotes },
+            imdbAnswered: true,
+            ...(candidate.searchFailed ? { retryAfterMs: this.searchFailureRetryMs } : {})
+        });
+        (this.cacheSnapshot || cache)[candidate.key] = record;
+        this.paintCandidate(candidate, record);
+        await this.flushCacheWrite();
+    }
+
+    /** A record of what is known so far; a provider nobody has answered for stays pending. */
+    createProgressRecord(candidate) {
+        const kpRating = this.knownRating(candidate.kpRating);
+        const imdbRating = this.knownRating(candidate.imdbRating);
+        const pending = this.hasPendingProvider(candidate);
+        return this.createRecord(candidate, {
+            status: pending ? 'partial' : (kpRating > 0 || imdbRating > 0 ? 'resolved' : 'no-ratings'),
+            kpId: candidate.kpId,
+            kpRating,
+            imdbRating,
+            imdbId: candidate.imdbId,
+            kpState: kpRating > 0 ? 'available' : (candidate.kpChecked === true ? 'unavailable' : 'pending'),
+            imdbState: imdbRating > 0 ? 'available' : (candidate.imdbChecked === true ? 'unavailable' : 'pending'),
+            imdbAnswered: candidate.imdbChecked === true,
+            imdbRetryAfter: candidate.imdbRetryAfter
+        });
+    }
+
+    rememberRecord(cache, candidate, record) {
+        cache[candidate.key] = record;
+        cache[`kp:${candidate.kpId}`] = record;
+    }
+
+    /** @returns {boolean} true when the card took the record */
+    paintCandidate(candidate, record, options = {}) {
+        if (!this.isCardCurrent(candidate)) return false;
+        const painted = this.applyRatings(candidate.card, record, options);
+        // A card that left the screen is picked up again when it returns.
+        if (!painted || (this.cancelledCardKeys.has(candidate.key) && candidate.card.dataset.ratingsState !== 'ready')) {
+            candidate.card.dataset.ratingsState = '';
+        }
+        return painted;
+    }
+
+    trackBackgroundWork(work) {
+        const tracked = work.catch(error => {
+            this.trace('stageB:error', { message: error?.message || 'ENRICHMENT_BACKGROUND_FAILED' });
+        });
+        this.lastBackgroundEnrichment = Promise.allSettled([this.lastBackgroundEnrichment, tracked]);
+    }
+
+    /**
+     * Each card takes its answer as soon as it has one, cheapest source first: Kinopoisk's
+     * GraphQL (one quick request per title), then one IMDb request for what Kinopoisk does
+     * not know, and the hidden Kinopoisk page only for what is still missing. Every answer is
+     * kept, whether or not its card is still on screen.
+     * @param {Array<Object>} candidates
+     */
     async enrichProvidersInBackground(candidates) {
         const startedAt = Date.now();
-        await this.prefetchImdbRatings(candidates);
-        const records = await Promise.all(candidates.map(async candidate => {
+        let updatedCards = 0;
+        const finish = async candidate => {
+            candidate.finished = true;
+            let record;
             try {
-                return await this.buildRatingRecordDedup(candidate);
+                ({ record } = await this.buildRatingRecordDedup(candidate));
             } catch (error) {
-                return {
-                    candidate,
-                    record: this.createRecord(candidate, {
-                        status: this.hasAvailableProvider(candidate) ? 'partial' : 'no-ratings',
-                        kpId: candidate.kpId,
-                        kpRating: candidate.kpRating,
-                        imdbRating: candidate.imdbRating,
-                        imdbId: candidate.imdbId,
-                        kpState: Number(candidate.kpRating) > 0 ? 'available' : 'unavailable',
-                        imdbState: Number(candidate.imdbRating) > 0 ? 'available' : 'unavailable',
-                        imdbAnswered: false,
-                        error: error?.message || 'ENRICHMENT_FAILED'
-                    })
-                };
+                record = this.createRecord(candidate, {
+                    status: this.hasAvailableProvider(candidate) ? 'partial' : 'no-ratings',
+                    kpId: candidate.kpId,
+                    kpRating: candidate.kpRating,
+                    imdbRating: candidate.imdbRating,
+                    imdbId: candidate.imdbId,
+                    kpState: Number(candidate.kpRating) > 0 ? 'available' : 'unavailable',
+                    imdbState: Number(candidate.imdbRating) > 0 ? 'available' : 'unavailable',
+                    imdbAnswered: false,
+                    error: error?.message || 'ENRICHMENT_FAILED'
+                });
             }
+            if (await this.saveResult(candidate, record)) updatedCards += 1;
+        };
+
+        await Promise.all(candidates.map(async candidate => {
+            await this.readGraphqlRatings(candidate);
+            if (!candidate.graphqlChecked) return;
+            if (this.hasPendingProvider(candidate)) await this.saveProgress(candidate);
+            else await finish(candidate);
         }));
-        const cache = await this.readCache();
-        records.forEach(({ candidate, record }) => {
-            if (!this.isCurrentCandidate(candidate)) return;
-            cache[candidate.key] = record;
-            cache[`kp:${candidate.kpId}`] = record;
-            this.applyRatings(candidate.card, record);
-        });
-        await this.writeCache(this.boundCache(cache));
+
+        const waiting = candidates.filter(candidate => !candidate.finished);
+        if (waiting.some(candidate => this.hasPendingProvider(candidate))) {
+            try {
+                await this.prefetchImdbRatings(waiting);
+            } catch (error) {
+                this.trace('imdb:batch-error', { message: error?.message || String(error) });
+            }
+        }
+        await Promise.all(waiting.map(finish));
+        await this.flushCacheWrite();
+
         this.trace('stageB:complete', {
             durationMs: Date.now() - startedAt,
-            processed: records.length,
-            updatedCards: records.filter(({ candidate }) => this.isCurrentCandidate(candidate)).length
+            processed: candidates.length,
+            updatedCards
         });
+    }
+
+    /** Kinopoisk's own answer: both ratings with vote counts for most titles. */
+    async readGraphqlRatings(candidate) {
+        const service = this.kinopoiskService;
+        if (!this.enableDetailFallback || typeof service?.movieRatingsViaGraphql !== 'function') return;
+        let ratings = null;
+        try {
+            ratings = await this.withInFlight(this.graphqlInFlight, `graphql:${candidate.kpId}`,
+                () => service.movieRatingsViaGraphql(candidate.kpId));
+        } catch (error) {
+            this.trace('graphql:error', { kpId: candidate.kpId, message: error?.message || String(error) });
+        }
+        candidate.graphqlChecked = true;
+        candidate.graphqlRatings = ratings || null;
+        if (!ratings) return;
+        // A fresh answer replaces what the cache remembered.
+        candidate.kpRating = this.knownRating(ratings.kpRating) || this.knownRating(candidate.kpRating);
+        candidate.kpVotes = Number(ratings.kpVotes) || Number(candidate.kpVotes) || 0;
+        candidate.kpChecked = true;
+        if (ratings.imdbAnswered) {
+            candidate.imdbRating = this.knownRating(ratings.imdbRating) || this.knownRating(candidate.imdbRating);
+            candidate.imdbVotes = Number(ratings.imdbVotes) || Number(candidate.imdbVotes) || 0;
+            candidate.imdbChecked = true;
+        }
+    }
+
+    async saveProgress(candidate) {
+        const cache = await this.readCache();
+        const record = this.createProgressRecord(candidate);
+        this.rememberRecord(cache, candidate, record);
+        this.paintCandidate(candidate, record, { partial: true });
+        this.scheduleCacheWrite();
+    }
+
+    /** @returns {Promise<boolean>} true when the card took the record */
+    async saveResult(candidate, record) {
+        // A card that left the screen gave up its hidden page: IMDb is unknown there, not absent.
+        const interrupted = this.cancelledCardKeys.has(candidate.key)
+            && this.knownRating(record.imdbRating) <= 0
+            && record.imdbCheckVersion === undefined;
+        const final = interrupted ? { ...record, status: 'partial', imdbState: 'pending' } : record;
+        const cache = await this.readCache();
+        this.rememberRecord(cache, candidate, final);
+        const painted = this.paintCandidate(candidate, final, interrupted ? { partial: true } : {});
+        this.scheduleCacheWrite();
+        return painted;
+    }
+
+    scheduleCacheWrite() {
+        if (this.cacheWriteTimer) return;
+        this.cacheWriteTimer = setTimeout(() => { void this.flushCacheWrite(); }, 250);
+    }
+
+    flushCacheWrite() {
+        if (this.cacheWriteTimer) clearTimeout(this.cacheWriteTimer);
+        this.cacheWriteTimer = null;
+        return this.writeCache(this.boundCache(this.cacheSnapshot || {}));
     }
 
     /**
@@ -429,7 +625,7 @@ class MovieRatingsEnrichmentService {
         // While the proxy is down (or not deployed) TMDB external_ids lookups
         // would be wasted; the KP movie page supplies IMDb instead.
         if (this.imdbParser.isRatingsProxyAvailable && !this.imdbParser.isRatingsProxyAvailable()) return;
-        const missing = candidates.filter(candidate => !(Number(candidate.imdbRating) > 0));
+        const missing = candidates.filter(candidate => !(Number(candidate.imdbRating) > 0) && candidate.imdbChecked !== true);
         if (missing.length === 0) return;
 
         await Promise.all(missing.map(async candidate => {
@@ -478,7 +674,9 @@ class MovieRatingsEnrichmentService {
         const title = this.normalizeIdentityTitle(item.name || item.title || item.alternativeName || item.originalTitle);
         const year = Number(item.year) || 0;
         const mediaType = item.mediaType || item.type || 'movie';
-        const key = `identity:${title}|${year}|${mediaType}`;
+        // Two films can share a name and a year; the original name keeps them apart.
+        const original = this.normalizeIdentityTitle(item.originalTitle || item.alternativeName);
+        const key = `identity:${title}|${original}|${year}|${mediaType}`;
         const shared = await this.withInFlight(this.identityInFlight, key, () => this.resolveIdentity(candidate));
         return {
             ...shared,
@@ -492,8 +690,22 @@ class MovieRatingsEnrichmentService {
     async buildRatingRecordDedup(candidate) {
         const mediaType = candidate.item?.mediaType || candidate.item?.type || 'movie';
         const key = `ratings:kp:${candidate.kpId}:${mediaType}`;
-        const shared = await this.withInFlight(this.ratingsInFlight, key, () => this.buildRatingRecord(candidate));
-        return { candidate, record: shared.record };
+        // Cards of one title share the requests, but each gets a record with its own identity:
+        // a record built for another card would not pass this card's identity check.
+        const ratings = await this.withInFlight(this.ratingsInFlight, key, () => this.fetchProviderRatings(candidate));
+        return {
+            candidate,
+            record: this.createRecord(candidate, {
+                status: ratings.kpRating > 0 || ratings.imdbRating > 0 ? 'resolved' : 'no-ratings',
+                kpId: candidate.kpId,
+                kpRating: ratings.kpRating,
+                imdbRating: ratings.imdbRating,
+                imdbId: ratings.imdbId,
+                votes: { kp: ratings.kpVotes, imdb: ratings.imdbVotes },
+                imdbAnswered: ratings.imdbAnswered || candidate.imdbChecked === true,
+                imdbRetryAfter: candidate.imdbRetryAfter
+            })
+        };
     }
 
     async withInFlight(map, key, worker) {
@@ -522,31 +734,37 @@ class MovieRatingsEnrichmentService {
     hasPendingProvider(candidate) {
         const kpRating = Number(candidate?.kpRating) || 0;
         const imdbRating = Number(candidate?.imdbRating) || 0;
-        return kpRating <= 0 || (imdbRating <= 0 && candidate?.imdbChecked !== true);
+        return (kpRating <= 0 && candidate?.kpChecked !== true)
+            || (imdbRating <= 0 && candidate?.imdbChecked !== true);
     }
 
     hasAvailableProvider(candidate) {
         return Number(candidate?.kpRating) > 0 || Number(candidate?.imdbRating) > 0;
     }
 
-    isCurrentCandidate(candidate) {
+    /** The card still shows this title and the page is still alive. */
+    isCardCurrent(candidate) {
         const key = candidate?.card?.dataset?.ratingsEnrichmentKey;
         return candidate?.generation === this.lifecycleGeneration
-            && !this.cancelledCardKeys.has(candidate?.key)
             && (!key || key === candidate.key);
     }
 
-    cancelCard(card) {
+    /**
+     * A card that left the screen stops waiting for a hidden page, which the visible cards
+     * need more. Answers already on their way are still kept. A card that never started
+     * has nothing to cancel, which is every card off screen when a list first renders.
+     */
+    cancelCard(card, { notify = true } = {}) {
         if (!card) return;
+        this.pendingCards.delete(card);
+        if (!['queued', 'loading', 'partial'].includes(card.dataset.ratingsState)) return;
         const item = this.itemFromCard(card);
-        const key = this.cacheKeyFor(item);
+        // Work already started goes by the key it started under, whatever the card has learned since.
+        const key = card.dataset.ratingsEnrichmentKey || this.cacheKeyFor(item);
         const requestKey = this.requestKeyForCard(item, card);
         this.cancelledCardKeys.add(key);
-        this.pendingCards.delete(card);
-        if (['queued', 'loading', 'partial'].includes(card.dataset.ratingsState)) {
-            card.dataset.ratingsState = '';
-        }
-        if (requestKey && globalThis.chrome?.runtime?.sendMessage) {
+        card.dataset.ratingsState = '';
+        if (notify && requestKey && globalThis.chrome?.runtime?.sendMessage) {
             try {
                 const response = globalThis.chrome.runtime.sendMessage({
                     type: 'KINOPOISK_OFFSCREEN_CANCEL',
@@ -581,17 +799,34 @@ class MovieRatingsEnrichmentService {
         return null;
     }
 
+    /** The page is going away: its queued hidden pages must not hold the slots for the next one. */
+    cancelSession() {
+        if (!globalThis.chrome?.runtime?.sendMessage) return;
+        try {
+            const response = globalThis.chrome.runtime.sendMessage({
+                type: 'KINOPOISK_OFFSCREEN_CANCEL_SESSION',
+                sessionId: this.enrichmentSessionId
+            });
+            response?.catch?.(() => {});
+        } catch {
+            // The page is closing; a frame left running ends at its own timeout.
+        }
+    }
+
     dispose() {
-        for (const card of this.trackedCards) this.cancelCard(card);
+        this.cancelSession();
+        for (const card of this.trackedCards) this.cancelCard(card, { notify: false });
         this.trackedCards.clear();
         this.lifecycleGeneration += 1;
         this.observer?.disconnect?.();
         this.observer = null;
         this.pendingCards.clear();
         this.identityInFlight.clear();
+        this.graphqlInFlight.clear();
         this.ratingsInFlight.clear();
         if (this.flushTimer) clearTimeout(this.flushTimer);
         this.flushTimer = null;
+        if (this.cacheWriteTimer) void this.flushCacheWrite();
     }
 
     async resolveIdentity(candidate) {
@@ -642,7 +877,7 @@ class MovieRatingsEnrichmentService {
             });
             if (result?.failed) {
                 this.trace('identity:search-failed', { ...this.cardTraceData(candidate.card), reason: result.reason });
-                return { ...candidate, kpId: 0, searchFailed: true };
+                return { ...candidate, kpId: 0, searchFailed: true, searchReason: result.reason };
             }
             const resultOriginalTitle = String(result?.originalTitle || result?.originalName || '').trim();
             const identityVerified = !candidate.item.isTmdbOnly
@@ -691,7 +926,11 @@ class MovieRatingsEnrichmentService {
         }
     }
 
-    async buildRatingRecord(candidate) {
+    /**
+     * The sources that can answer for this title after GraphQL and the IMDb batch.
+     * @returns {Promise<{kpRating:number,imdbRating:number,imdbId:string|null,kpVotes:number,imdbVotes:number,imdbAnswered:boolean}>}
+     */
+    async fetchProviderRatings(candidate) {
         const startedAt = Date.now();
         let kpRating = Number(candidate.kpRating) || 0;
         let imdbRating = Number(candidate.imdbRating) || 0;
@@ -700,6 +939,9 @@ class MovieRatingsEnrichmentService {
         let imdbVotes = Number(candidate.imdbVotes) || 0;
         let kpMoviePageAttempted = false;
         const imdbChecked = candidate.imdbChecked === true;
+        const kpChecked = candidate.kpChecked === true;
+        // A card that left the screen does not spend a hidden page; it asks again on return.
+        const offScreen = this.cancelledCardKeys.has(candidate.key);
         // True once IMDb data was actually read (batch answer or a parsed
         // Kinopoisk page). A failed scrape must not cache "no IMDb" for 12 hours.
         let imdbAnswered = imdbChecked;
@@ -709,7 +951,6 @@ class MovieRatingsEnrichmentService {
             kpRating,
             imdbRating,
             imdbId,
-            imdbPageFallbackAvailable: Boolean(this.imdbParser?.getImdbRating),
             detailFallbackEnabled: this.enableDetailFallback
         });
 
@@ -717,34 +958,33 @@ class MovieRatingsEnrichmentService {
         // movie page displays both KP and IMDb ratings, while IMDb's own
         // hidden iframe search is commonly blocked with HTTP 202/challenge.
         if (this.enableDetailFallback
+            && !offScreen
             && candidate.kpId
             && this.kinopoiskService?.scrapeMoviePageRatingsOffscreen
-            && this.hasPendingProvider({
-                kpRating,
-                imdbRating,
-                imdbChecked
-            })) {
+            && this.hasPendingProvider({ kpRating, imdbRating, imdbChecked, kpChecked })) {
             kpMoviePageAttempted = true;
             try {
                 const parsed = await this.kinopoiskService.scrapeMoviePageRatingsOffscreen(candidate.kpId, {
                     mediaType: candidate.item?.mediaType || candidate.item?.type || null,
                     requestKey: `kp-detail:${candidate.kpId}:${candidate.item?.mediaType || candidate.item?.type || 'movie'}`,
                     priority: this.requestPriority(candidate.card, 'visible-ratings'),
-                    sessionId: this.enrichmentSessionId
+                    sessionId: this.enrichmentSessionId,
+                    // GraphQL was asked a moment ago; the page need not repeat it.
+                    ...(candidate.graphqlChecked ? { graphqlRatings: candidate.graphqlRatings } : {})
                 });
-                if (parsed) imdbAnswered = true;
-                kpRating = kpRating > 0 ? kpRating : Number(parsed?.kpRating) || 0;
-                imdbRating = imdbRating > 0 ? imdbRating : Number(parsed?.imdbRating) || 0;
+                if (parsed && parsed.imdbAnswered !== false) imdbAnswered = true;
+                kpRating = this.knownRating(parsed?.kpRating) || kpRating;
+                imdbRating = this.knownRating(parsed?.imdbRating) || imdbRating;
                 imdbId = imdbId || this.normalizeImdbId(parsed?.imdbId);
-                kpVotes = kpVotes > 0 ? kpVotes : Number(parsed?.kpVotes || parsed?.votes?.kp) || 0;
-                imdbVotes = imdbVotes > 0 ? imdbVotes : Number(parsed?.imdbVotes || parsed?.votes?.imdb) || 0;
+                kpVotes = Number(parsed?.kpVotes || parsed?.votes?.kp) || kpVotes;
+                imdbVotes = Number(parsed?.imdbVotes || parsed?.votes?.imdb) || imdbVotes;
                 this.trace('ratings:kp-page-result', {
                     ...this.cardTraceData(candidate.card),
                     kpId: candidate.kpId,
                     kpRating,
                     imdbRating,
                     imdbId,
-                    source: 'kinopoisk-page'
+                    source: parsed?.source || 'kinopoisk-page'
                 });
             } catch (error) {
                 this.trace('ratings:kp-page-error', {
@@ -757,7 +997,7 @@ class MovieRatingsEnrichmentService {
 
         // Search HTML is the primary KP rating source. Parse the movie page
         // only when the search result did not expose the KP rating.
-        if (this.enableDetailFallback && !kpMoviePageAttempted
+        if (this.enableDetailFallback && !kpMoviePageAttempted && !offScreen && !kpChecked
             && kpRating <= 0 && this.ratingParser?.getKinopoiskRating) {
             try {
                 const parsed = await this.ratingParser.getKinopoiskRating(candidate.kpId);
@@ -773,28 +1013,15 @@ class MovieRatingsEnrichmentService {
         // and suggestion fetches are blocked for extension pages (HTTP 202
         // challenge, no CORS) and are no longer attempted per card.
 
-        const result = {
-            candidate,
-            record: this.createRecord(candidate, {
-                status: kpRating > 0 || imdbRating > 0 ? 'resolved' : 'no-ratings',
-                kpId: candidate.kpId,
-                kpRating,
-                imdbRating,
-                imdbId,
-                votes: { kp: kpVotes, imdb: imdbVotes },
-                imdbAnswered
-            })
-        };
         this.trace('ratings:complete', {
             durationMs: Date.now() - startedAt,
             ...this.cardTraceData(candidate.card),
             kpId: candidate.kpId,
             kpRating,
             imdbRating,
-            imdbId,
-            status: result.record.status
+            imdbId
         });
-        return result;
+        return { kpRating, imdbRating, imdbId, kpVotes, imdbVotes, imdbAnswered };
     }
 
     /**
@@ -808,13 +1035,30 @@ class MovieRatingsEnrichmentService {
         const kpId = Number(record?.kpId) || 0;
         const kpRecord = kpId > 0 ? cache?.[`kp:${kpId}`] : null;
         if (!record || !kpRecord || kpRecord === record) return record;
-        const kpRating = this.knownRating(record.kpRating) || this.knownRating(kpRecord.kpRating);
-        const imdbRating = this.knownRating(record.imdbRating) || this.knownRating(kpRecord.imdbRating);
+        // Both describe one title: the newer record's values win, the other fills its gaps.
+        const kpIsNewer = Number(kpRecord.updatedAt) > Number(record.updatedAt);
+        const [first, second] = kpIsNewer ? [kpRecord, record] : [record, kpRecord];
+        const kpRating = this.knownRating(first.kpRating) || this.knownRating(second.kpRating);
+        const imdbRating = this.knownRating(first.imdbRating) || this.knownRating(second.imdbRating);
         const votes = {
-            kp: Number(record.votes?.kp) || Number(kpRecord.votes?.kp) || 0,
-            imdb: Number(record.votes?.imdb) || Number(kpRecord.votes?.imdb) || 0
+            kp: Number(first.votes?.kp) || Number(second.votes?.kp) || 0,
+            imdb: Number(first.votes?.imdb) || Number(second.votes?.imdb) || 0
         };
-        const imdbId = this.normalizeImdbId(record.imdbId) || this.normalizeImdbId(kpRecord.imdbId);
+        const imdbId = this.normalizeImdbId(first.imdbId) || this.normalizeImdbId(second.imdbId);
+        if (kpIsNewer) {
+            return this.preserveKnownRatings({
+                ...kpRecord,
+                tmdbId: record.tmdbId,
+                name: record.name,
+                year: record.year,
+                mediaType: record.mediaType,
+                identityVerified: record.identityVerified,
+                kpRating,
+                imdbRating,
+                votes,
+                imdbId
+            });
+        }
         const unchanged = kpRating === this.knownRating(record.kpRating)
             && imdbRating === this.knownRating(record.imdbRating)
             && votes.kp === (Number(record.votes?.kp) || 0)
@@ -880,7 +1124,8 @@ class MovieRatingsEnrichmentService {
             ...(kpId > 0 && kpRating <= 0 ? { kpRetryAfter: now + this.providerRetryMs } : {}),
             ...(imdbRating <= 0 && values.imdbAnswered !== false ? { imdbCheckVersion: MovieRatingsEnrichmentService.IMDB_CHECK_VERSION } : {}),
             ...(imdbRating <= 0 ? {
-                imdbRetryAfter: now + (values.imdbAnswered === false ? this.providerRetryMs : this.imdbRetryMs),
+                // An answer read from an earlier record keeps its own expiry.
+                imdbRetryAfter: Number(values.imdbRetryAfter) || now + (values.imdbAnswered === false ? this.providerRetryMs : this.imdbRetryMs),
                 imdbAttemptSessionId: this.enrichmentSessionId
             } : {})
         };
@@ -1066,9 +1311,13 @@ class MovieRatingsEnrichmentService {
 
     async readCache() {
         if (this.cachePromise) return this.cachePromise;
-        this.cachePromise = this.storage?.get
+        this.cachePromise = (this.storage?.get
             ? new Promise(resolve => this.storage.get([this.cacheKey], result => resolve(result?.[this.cacheKey] || {})))
-            : Promise.resolve({});
+            : Promise.resolve({})
+        ).then(cache => {
+            this.cacheSnapshot = cache;
+            return cache;
+        });
         return this.cachePromise;
     }
 
@@ -1096,6 +1345,7 @@ class MovieRatingsEnrichmentService {
             const bounded = this.boundCache(merged);
             await new Promise(resolve => this.storage.set({ [this.cacheKey]: bounded }, resolve));
             this.cachePromise = Promise.resolve(bounded);
+            this.cacheSnapshot = bounded;
         });
         this.cacheWritePromise = this.cacheWritePromise.then(write, write);
         return this.cacheWritePromise;

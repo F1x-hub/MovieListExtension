@@ -844,6 +844,74 @@ async function run() {
         h.dispose();
     }
 
+    // A background refresh keeps every card that did not change, with its ratings and poster.
+    {
+        const h = harness();
+        const renderer = h.page.renderer;
+        const item = (tmdbId, title = `Title ${tmdbId}`) => ({
+            tmdbId, isTmdbOnly: true, name: title, year: 2026, type: 'movie', mediaType: 'movie',
+            posterUrl: `https://image.tmdb.org/t/p/w342/${tmdbId}.jpg`
+        });
+        const grid = h.element('films-grid');
+        const cardsOf = container => Array.from(container.children);
+        const films = [item(1), item(2), { ...item(3), airingStatus: 'new' }];
+        renderer.renderCategoryGrid(films, grid);
+        const [first, second, third] = cardsOf(grid);
+        h.page.ratingEnricher.applyRatings(first, {
+            kpId: 1001, tmdbId: 1, name: 'Title 1', year: 2026, mediaType: 'movie', identityVerified: true,
+            kpRating: 7.3, imdbRating: 7.6, status: 'resolved', kpState: 'available', imdbState: 'available'
+        });
+        assert.ok(first.querySelector('.mc-badge-kp'));
+
+        renderer.renderCategoryGrid([item(1), item(2), { ...item(3), airingStatus: 'new' }], grid);
+        assert.deepEqual(cardsOf(grid), [first, second, third], 'an unchanged refresh keeps the same nodes');
+        assert.ok(first.querySelector('.mc-badge-kp'), 'and what they show');
+        assert.equal(third.querySelectorAll('.home-airing-badge').length, 1, 'a kept card does not gain a second badge');
+
+        renderer.renderCategoryGrid([item(2), item(9), item(1)], grid);
+        assert.equal(cardsOf(grid)[0], second, 'a moved card is the same node');
+        assert.equal(cardsOf(grid)[2], first);
+        assert.notEqual(cardsOf(grid)[1], third, 'a new title gets its own card');
+        assert.equal(third.isConnected, false, 'a title that left is gone');
+        assert.equal(cardsOf(grid).length, 3);
+
+        renderer.renderCategoryGrid([item(2, 'New title'), item(9), item(1)], grid);
+        assert.notEqual(cardsOf(grid)[0], second, 'a card whose content changed is drawn again');
+
+        h.locale('en');
+        renderer.renderCategoryGrid([item(2, 'New title'), item(9), item(1)], grid);
+        assert.notEqual(cardsOf(grid)[2], first, 'another language draws the cards again');
+        h.locale('ru');
+
+        const slider = h.element('featured-slider');
+        const hero = [item(21), item(22), item(23)];
+        assert.equal(renderer.renderFeaturedSlider(hero, slider), true);
+        const [heroFirst, heroSecond, heroThird] = cardsOf(slider);
+        assert.equal(renderer.renderFeaturedSlider([item(21), item(22), item(23)], slider), false, 'an unchanged hero is not touched');
+        assert.deepEqual(cardsOf(slider), [heroFirst, heroSecond, heroThird]);
+
+        assert.equal(renderer.renderFeaturedSlider([item(23), item(21), item(30)], slider), true);
+        assert.equal(cardsOf(slider)[0], heroThird);
+        assert.equal(cardsOf(slider)[1], heroFirst);
+        assert.equal(heroThird.dataset.slideIndex, '0', 'a moved slide knows its new place');
+        assert.equal(heroThird.classList.contains('home-hero-animate'), false, 'and does not play its entrance again');
+        assert.equal(cardsOf(slider)[2].dataset.tmdbId, '30');
+        h.dispose();
+    }
+
+    // Leaving the page frees the hidden Kinopoisk pages queued for its cards.
+    {
+        const h = harness();
+        const messages = [];
+        h.context.chrome.runtime.sendMessage = message => { messages.push(message); return Promise.resolve({}); };
+        const previous = globalThis.chrome;
+        globalThis.chrome = h.context.chrome;
+        h.dom.window.dispatchEvent(new h.dom.window.PageTransitionEvent('pagehide', { persisted: false }));
+        assert.equal(messages.filter(message => message.type === 'KINOPOISK_OFFSCREEN_CANCEL_SESSION').length, 1);
+        globalThis.chrome = previous;
+        h.dom.window.close();
+    }
+
     console.log('Home personal lifecycle: real renderer/enricher, keyed DOM/focus, skeletons, uid cache and auth/network races passed');
 }
 

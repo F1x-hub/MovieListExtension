@@ -244,7 +244,8 @@ class KinopoiskPersonHtmlService {
         if (this.movieSearchBlocked) return technicalFailure('SSO_BLOCKED');
 
         const searchTitle = candidateTitles[0];
-        const cacheKey = `${this._normalizeMovieTitle(searchTitle)}|${Number(year) || ''}|${options.mediaType || ''}|${options.allowYearTolerance ? 'tolerant' : 'strict'}|${Number(options.maxYearDelta) || ''}|${options.requireRating ? 'rating' : 'identity'}`;
+        // Every title counts: two films can share the name that is searched for.
+        const cacheKey = `${candidateTitles.map(title => this._normalizeMovieTitle(title)).join('/')}|${Number(year) || ''}|${options.mediaType || ''}|${options.allowYearTolerance ? 'tolerant' : 'strict'}|${Number(options.maxYearDelta) || ''}|${options.requireRating ? 'rating' : 'identity'}`;
         this._kpTrace('search:start', {
             searchTitle,
             candidateTitles,
@@ -760,7 +761,15 @@ class KinopoiskPersonHtmlService {
             return !targetYear || Math.abs(movieYear - targetYear) <= (allowYearTolerance ? maxYearDelta : 0);
         });
         const distinctMatches = [...new Map(matches.map(movie => [Number(movie.id), movie])).values()];
-        return distinctMatches.length === 1 ? distinctMatches[0] : null;
+        if (distinctMatches.length <= 1) return distinctMatches[0] || null;
+        // Several titles share a name. Both names matching are independent evidence;
+        // with no single title like that nothing is guessed, however close the year.
+        const bothNames = distinctMatches.filter(movie => {
+            const title = this._normalizeMovieTitle(movie.title);
+            const original = this._normalizeMovieTitle(movie.originalTitle);
+            return title && original && title !== original && wanted.includes(title) && wanted.includes(original);
+        });
+        return bothNames.length === 1 ? bothNames[0] : null;
     }
 
     _normalizeSearchMediaType(value) {

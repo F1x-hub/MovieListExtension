@@ -48,11 +48,6 @@ records what was finished.
   can sit under the header when the page is scrolled to the end; scrolling up reveals
   it. This comes from the geometry, and no test covers it.
 
-- **A Kinopoisk page answer is thrown away when Kinopoisk adds `?socialAlias=` after the
-  hash.** `content-scripts/kinopoisk-search-scraper.js:599` cuts the request ID only at
-  `&`, so the background ignores the result, the slot stays busy for 8 seconds and the
-  card gets no rating. Seen twice in a real browser, on film 6469214.
-
 ## Film page speed
 
 A real browser's first open from Home took 1289 and 1532 ms before the cache and
