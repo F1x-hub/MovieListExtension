@@ -462,6 +462,7 @@ keeps npm-compatible three-component semver metadata.
 - Rated no longer shows a person's score as the Kinopoisk rating. A film with no saved rating showed the rater's score under «Кинопоиск» until the real rating came (Ведьма из Блэр: 2, then 6.5). A rating that arrived before its card was in the list is no longer lost (Пробуждение stayed at 8 and «—» for the whole visit), an IMDb value no longer stays grey like a missing one, and parallel saves no longer lose each other's titles, which made a film load again on every visit.
 - Leaving Home or the catalogue frees the hidden Kinopoisk pages queued for its cards, so the film page opened next is not behind them.
 - KP and IMDb badges keep their order whatever their state, and provider ratings always print one decimal: 7.0, not 7.
+- A title Kinopoisk does not have no longer opens a dead end. Cards from Home, the catalogue, a person's filmography and the New Year gifts find their film on Kinopoisk first; when that search finished without a card (Образцовый гражданин, TMDB 1792170), the page showed «Что-то пошло не так» with a «Повторить» that only ran the same search again. It now says «Этого фильма нет в Kinopoisk» and offers «Вернуться назад». A search that did not finish (a timeout or a blocked page) still offers «Повторить», now under «Kinopoisk временно недоступен», and the retry replaces the failed attempt in the tab's history, so Back leads to the page the card was on.
 
 ### Docs
 

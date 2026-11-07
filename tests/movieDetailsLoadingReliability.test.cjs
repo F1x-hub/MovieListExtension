@@ -140,6 +140,83 @@ function firebase(services = {}) {
     assert.equal(retried.asked.length, 0, 'A retry goes back to the search');
     assert.equal(retried.events[0], 'searching');
 
+    // A finished search that found no card is an answer, not a failure: a retry
+    // would only repeat it, so the page says so and offers the way back. A search
+    // that did not finish keeps its retry.
+    {
+        const resolveRoute = async answer => {
+            context.window.location.search = homeSearch;
+            const asked = [];
+            context.HomeMovieNavigationService = class {
+                async findKnownMapping() { return null; }
+                async resolve(item, options) { asked.push(options); return typeof answer === 'function' ? answer() : answer; }
+            };
+            firebase({ getMovieCacheService: () => ({ getCachedMovie: async () => null }), getKinopoiskService: () => ({}) });
+            const page = manager();
+            let shown = null;
+            const loads = [];
+            page.page.showError = error => { shown = error; };
+            page.showHomeResolutionState = () => {};
+            page.loadMovieById = async id => { loads.push(id); };
+            page.withMovieLoadDeadline = work => prototype.withMovieLoadDeadline.call(page, work, 5);
+            await page.initializeUI();
+            return { shown, asked, loads };
+        };
+        // The film page always passes both actions; the dialog shows those the error allows.
+        const actionOf = error => context.ErrorPresentation.getPresentation(error, { onBack() {}, onRetry() {} }).primary;
+
+        const missing = await resolveRoute(null);
+        assert.equal(missing.asked[0].reportFailure, true, 'The route asks to hear about a search that did not finish');
+        assert.equal(missing.loads.length, 0);
+        assert.equal(missing.shown?.code, 'KINOPOISK_NOT_FOUND', 'A film Kinopoisk does not have is named as such');
+        assert.equal(missing.shown.retryable, false);
+        assert.equal(actionOf(missing.shown), 'back', 'It offers the way back instead of a retry');
+        assert.equal(context.ErrorPresentation.getPresentation(missing.shown).primary, 'close', 'Never a retry, even without a way back');
+
+        const failed = await resolveRoute({ failed: true, reason: 'BACKGROUND_TIMEOUT' });
+        assert.equal(failed.loads.length, 0);
+        assert.equal(failed.shown?.code, 'KINOPOISK_UNAVAILABLE', 'A search that did not finish is not "not found"');
+        assert.equal(actionOf(failed.shown), 'retry', 'It can be retried');
+        assert.match(String(failed.shown.message), /BACKGROUND_TIMEOUT/, 'Its reason stays in the technical details');
+
+        const slow = await resolveRoute(() => new Promise(() => {}));
+        assert.equal(actionOf(slow.shown), 'retry', 'So can a search that ran out of time');
+
+        // The words the dialog shows, in both languages.
+        const catalog = {};
+        vm.runInNewContext(fs.readFileSync('src/shared/i18n/locales.js', 'utf8')
+            .replace('export const locales', 'globalThis.locales'), catalog);
+        const realI18n = context.i18n;
+        try {
+            for (const [locale, title, back] of [
+                ['ru', 'Этого фильма нет в Kinopoisk', 'Вернуться назад'],
+                ['en', "This movie isn't on Kinopoisk", 'Go back']
+            ]) {
+                context.i18n = {
+                    currentLocale: locale,
+                    get: key => key.split('.').reduce((node, part) => node?.[part], catalog.locales[locale]) ?? key
+                };
+                const shown = context.ErrorPresentation.getPresentation(missing.shown, { onBack() {}, onRetry() {} });
+                assert.equal(shown.title, title, `${locale}: the title says the film is not on Kinopoisk`);
+                assert.equal(shown.primaryLabel, back, `${locale}: the action goes back`);
+                assert.equal(shown.message, catalog.locales[locale].errors.kinopoisk.not_found.message);
+            }
+        } finally {
+            context.i18n = realI18n;
+        }
+
+        // A retry replaces the failed attempt, so Back leaves for the page the card was on.
+        const replaced = [];
+        context.window.location.search = homeSearch;
+        context.window.location.replace = url => replaced.push(url);
+        manager().handleLoadRetry();
+        delete context.window.location.replace;
+        assert.equal(replaced.length, 1, 'A retry does not add a page to go back through');
+        const retryParams = new URLSearchParams(replaced[0].slice(replaced[0].indexOf('?')));
+        assert.equal(retryParams.get('resolveTmdbId'), '7');
+        assert.match(retryParams.get('retry') || '', /^\d+$/);
+    }
+
     context.window.location.search = '?movieId=101';
     delete context.HomeMovieNavigationService;
 

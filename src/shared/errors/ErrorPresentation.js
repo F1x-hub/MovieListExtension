@@ -35,6 +35,12 @@
             message: 'errors.kinopoisk.network.message',
             primary: 'retry'
         },
+        // A finished search found no card: a retry would repeat the answer.
+        KINOPOISK_NOT_FOUND: {
+            title: 'errors.kinopoisk.not_found.title',
+            message: 'errors.kinopoisk.not_found.message',
+            primary: 'back'
+        },
         TMDB_UNAVAILABLE: {
             title: 'errors.tmdb.unavailable.title',
             message: 'errors.tmdb.unavailable.message',

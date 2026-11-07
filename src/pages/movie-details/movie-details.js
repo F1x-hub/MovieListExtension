@@ -1227,7 +1227,9 @@ class MovieDetailsManager {
         const params = new URLSearchParams(window.location.search);
         if (params.has('resolveTmdbId')) {
             params.set('retry', String(Date.now()));
-            window.location.search = params.toString();
+            // Replace the failed attempt: Back then leaves for the page the card
+            // was on, instead of returning to a search that runs again.
+            window.location.replace(`?${params.toString()}`);
         } else {
             window.location.reload();
         }
@@ -1642,10 +1644,29 @@ class MovieDetailsManager {
             const resolver = new HomeMovieNavigationService({
                 kinopoiskService: firebaseManager.getKinopoiskService()
             });
-            const resolved = await this.withMovieLoadDeadline(resolver.resolve(item, { forceRetry: urlParams.has('retry') }));
+            // A search that did not finish may succeed on a retry; a finished
+            // search without a card will only repeat itself, so the two are
+            // reported apart.
+            const resolved = await this.withMovieLoadDeadline(resolver.resolve(item, {
+                forceRetry: urlParams.has('retry'),
+                reportFailure: true
+            }));
+            if (resolved?.failed) {
+                throw createAppError('KINOPOISK_UNAVAILABLE', {
+                    category: 'provider',
+                    retryable: true,
+                    message: `Поиск в Kinopoisk не завершился (${resolved.reason || 'UNKNOWN'})`,
+                    context: { operation: 'home-movie-resolution', reason: resolved.reason || null }
+                });
+            }
             const kinopoiskId = Number(resolved?.kinopoiskId || resolved?.movieId);
             if (!Number.isSafeInteger(kinopoiskId) || kinopoiskId <= 0) {
-                throw new Error('Точная карточка фильма в Kinopoisk не найдена');
+                throw createAppError('KINOPOISK_NOT_FOUND', {
+                    category: 'not-found',
+                    retryable: false,
+                    message: `Точная карточка фильма в Kinopoisk не найдена (TMDB ${mediaType}:${tmdbId})`,
+                    context: { operation: 'home-movie-resolution', tmdbId, mediaType }
+                });
             }
 
             console.log('[MovieDetails] Home TMDB-only route resolved:', {

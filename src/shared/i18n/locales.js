@@ -332,6 +332,10 @@ export const locales = {
                 network: {
                     title: "Kinopoisk connection error",
                     message: "The extension could not connect to Kinopoisk. Check your connection and try again."
+                },
+                not_found: {
+                    title: "This movie isn't on Kinopoisk",
+                    message: "We searched Kinopoisk and didn't find it. A movie page can't open without its Kinopoisk card."
                 }
             },
             tmdb: {
@@ -2210,6 +2214,10 @@ export const locales = {
                 network: {
                     title: "Ошибка соединения с Kinopoisk",
                     message: "Не удалось подключиться к Kinopoisk. Проверьте соединение и повторите попытку."
+                },
+                not_found: {
+                    title: "Этого фильма нет в Kinopoisk",
+                    message: "Мы искали его в Kinopoisk и не нашли. Без карточки Kinopoisk страницу фильма не открыть."
                 }
             },
             tmdb: {
