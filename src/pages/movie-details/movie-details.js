@@ -11732,6 +11732,10 @@ class MovieDetailsManager {
                     policy: isTorrentStream ? 'persistent' : 'bounded',
                     networkProfile: isTorrentStream ? 'local' : 'remote',
                     localManifestUrl: isTorrentStream ? url : undefined,
+                    // While a torrent downloads, MediaPlayer's playlist grows (EVENT, no
+                    // ENDLIST) and hls.js would start at its live edge: where the file is
+                    // prepared up to, often mid-film. A saved position is applied later.
+                    config: isTorrentStream ? { startPosition: 0 } : undefined,
                     attachFirst: true,
                     isCurrent: isCurrentPlayer,
                     beforeLoad: (instance) => {

@@ -242,7 +242,10 @@
                         hls.loadSource(url);
                     } else {
                         hls.stopLoad();
-                        hls.startLoad(-1);
+                        // A growing playlist is live to hls.js: before the first frame,
+                        // startLoad(-1) would jump to its live edge, past the caller's start.
+                        const configuredStart = Number(hls.config?.startPosition);
+                        hls.startLoad(!(video.currentTime > 0) && configuredStart >= 0 ? configuredStart : -1);
                     }
                 } catch (error) {
                     console.warn('[HlsPlaybackFactory] HLS recovery retry failed:', global.PlayerDiagnostics?.sanitizeError(error) || { category: 'unknown' });
