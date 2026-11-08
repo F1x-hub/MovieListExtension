@@ -447,6 +447,10 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+### Features
+
+- A torrent that is still downloading shows the whole film on the player from the start. The time reads, for example, «4:20 / 2:04:00» instead of growing with each converted piece, and the track spans the full length in three parts: solid where the film can be watched now, bright dashes where the file is on disk and MediaPlayer is still preparing it, and dim dashes where it is not downloaded yet. Dashes rather than colour keep it apart from the solid buffer of streaming sources. Over a part that cannot play yet the cursor becomes a crossed circle, the hint shows the time with «Ещё не скачано» or «Скачано, готовим к просмотру» and no frame, and a click there does nothing; the arrow keys and End stop where the film can play. The length comes from MediaPlayer's `totalDurationSeconds` and the dashes from the file's download progress, which only approximates time; a file whose length MediaPlayer cannot read keeps the old growing timeline, and a fully converted film looks as before.
+
 </details>
 
 <details>

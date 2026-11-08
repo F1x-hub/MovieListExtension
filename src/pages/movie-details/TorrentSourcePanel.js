@@ -1827,7 +1827,7 @@ class MovieDetailsTorrentPanelMethods {
         if (!status) return;
         if (Object.keys(progress).length) this.latestTorrentPlaybackProgress = progress;
         else progress = this.latestTorrentPlaybackProgress || {};
-        if (this.torrentPlaybackVideo) this.torrentPlaybackVideo._torrentPlaybackSnapshot = progress.playback || null;
+        this.syncTorrentVideoTimeline(this.torrentPlaybackVideo, progress);
         const activeDownload = this.getTorrentActiveDownload();
         if (activeDownload) {
             this.renderTorrentDownloads(this.torrentDownloads);
@@ -2006,6 +2006,29 @@ class MovieDetailsTorrentPanelMethods {
         if (this.latestTorrentPlaybackProgress?.playback) return;
     }
 
+    /**
+     * The player's timeline for a session: the whole film's length from ffprobe and how
+     * much of the file is on disk. A converted copy or an unknown length leaves the
+     * element's own duration in charge (see PlayerMediaControls.Timeline.describe).
+     */
+    getTorrentMediaTimeline(progress = {}) {
+        const playback = progress?.playback;
+        const totalSeconds = Number(playback?.totalDurationSeconds);
+        if (!playback || !Number.isFinite(totalSeconds) || totalSeconds <= 0) return null;
+        const reported = Number(progress.progress);
+        const downloadedFraction = Number.isFinite(reported)
+            ? Math.max(0, Math.min(1, reported <= 1 ? reported : reported / 100))
+            : null;
+        return Object.freeze({ totalSeconds, downloadedFraction, complete: playback.isComplete === true });
+    }
+
+    syncTorrentVideoTimeline(video, progress = {}) {
+        if (!video) return;
+        video._torrentPlaybackSnapshot = progress.playback || null;
+        video._mediaTimeline = this.getTorrentMediaTimeline(progress);
+        if (typeof Event === 'function') video.dispatchEvent?.(new Event('extension-timeline-change'));
+    }
+
     attachTorrentPlaybackVideo(video) {
         this.detachTorrentPlaybackVideo();
         if (!video) return;
@@ -2018,6 +2041,7 @@ class MovieDetailsTorrentPanelMethods {
             video._torrentPlaybackSnapshot = this.latestTorrentPlaybackProgress?.playback || null;
             controller.attachExternalVideo(video, { providerId: MOVIE_DETAILS_TORRENT_SOURCE, selection: controller.getSelection() });
         }
+        this.syncTorrentVideoTimeline(video, this.latestTorrentPlaybackProgress || {});
         this.applyTorrentTrackSnapshot(video);
         void this.refreshTorrentTracks();
         const updateAvailability = () => this.updateTorrentPlaybackAvailability(video);

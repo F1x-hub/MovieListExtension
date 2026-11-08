@@ -123,6 +123,30 @@
             const m = Math.floor((seconds % 3600) / 60);
             const s = Math.floor(seconds % 60);
             return (h > 0 ? h + ':' : '') + (m < 10 && h > 0 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+        },
+        /**
+         * What a progress track spans. A source still being prepared (a torrent that
+         * downloads and converts) sets `video._mediaTimeline = { totalSeconds,
+         * downloadedFraction, complete }`: the track then spans the whole film from the
+         * start, `availableEnd` is what the element can already play (its own growing
+         * duration) and `downloadedEnd` estimates the file on disk. Any other video
+         * spans its own duration, entirely available.
+         */
+        describe(video) {
+            const native = Number(video?.duration);
+            const nativeDuration = Number.isFinite(native) && native > 0 ? native : 0;
+            const plan = video?._mediaTimeline;
+            const total = Number(plan?.totalSeconds);
+            if (!plan || plan.complete === true || !Number.isFinite(total) || total <= nativeDuration) {
+                return { duration: nativeDuration, availableEnd: nativeDuration, downloadedEnd: nativeDuration, partial: false };
+            }
+            const fraction = Number(plan.downloadedFraction);
+            const downloaded = Number.isFinite(fraction) ? Math.max(0, Math.min(1, fraction)) * total : 0;
+            return { duration: total, availableEnd: nativeDuration, downloadedEnd: Math.max(nativeDuration, downloaded), partial: true };
+        },
+        /** Whether `time` can be played now; a prepared source refuses what is still missing. */
+        isAvailable(span, time) {
+            return Number.isFinite(time) && span?.duration > 0 && (!span.partial || time <= span.availableEnd);
         }
     });
     global.PlayerMediaControls = Object.freeze({ PlayerVolumeController, PlaybackRate, SubtitleAppearance, Timeline });

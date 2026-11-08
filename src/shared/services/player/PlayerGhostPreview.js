@@ -44,8 +44,14 @@ class GhostPlayer {
         this._timeLabel = document.createElement('span');
         this._timeLabel.className = 'ghost-time-label';
 
+        // Says why a torrent's moment cannot be chosen yet; hidden elsewhere.
+        this._statusLabel = document.createElement('span');
+        this._statusLabel.className = 'ghost-status-label';
+        this._statusLabel.hidden = true;
+
         this._tooltip.appendChild(this._ghostVideo);
         this._tooltip.appendChild(this._timeLabel);
+        this._tooltip.appendChild(this._statusLabel);
         this._getTooltipHost().appendChild(this._tooltip);
         this._onMetadata = () => this._applyTarget();
         this._onSeeked = () => this._revealFrame();
@@ -71,25 +77,45 @@ class GhostPlayer {
         if (!video) {
             return;
         }
-        if (!Number.isFinite(video.duration) || video.duration <= 0) {
+        // A torrent being prepared spans the whole film, not just what is converted.
+        const timeline = global.PlayerMediaControls.Timeline;
+        const span = timeline.describe(video);
+        if (span.duration <= 0) {
             return;
         }
 
         const rect     = this._progressContainer.getBoundingClientRect();
         if (rect.width <= 0) return;
-        const ratio    = global.PlayerMediaControls.Timeline.ratio(e.clientX, rect);
+        const ratio    = timeline.ratio(e.clientX, rect);
         if (ratio === null) return;
-        const seekTime = Math.min(ratio * video.duration, Math.max(0, video.duration - 0.05));
+        const seekTime = Math.min(ratio * span.duration, Math.max(0, span.duration - 0.05));
+        const available = timeline.isAvailable(span, seekTime);
 
         this._hovering = true;
         clearTimeout(this._hideTimer);
         this._targetTime = null;
         this._ghostVideo.style.visibility = 'hidden';
+        this._setStatus(available ? '' : this._unavailableText(span, seekTime));
 
         this._showTooltip(e.clientX, rect.top, seekTime);
 
         clearTimeout(this._debounce);
-        this._debounce = setTimeout(() => this._seekGhost(seekTime), 120);
+        // No frame exists yet for a moment that is not prepared.
+        if (available) this._debounce = setTimeout(() => this._seekGhost(seekTime), 120);
+        else this._ghostHls?.stopLoad();
+    }
+
+    _unavailableText(span, time) {
+        const t = global.PlayerLocale?.t;
+        return time <= span.downloadedEnd
+            ? (t?.('timeline_preparing', {}, 'Скачано, готовим к просмотру') || 'Скачано, готовим к просмотру')
+            : (t?.('timeline_not_downloaded', {}, 'Ещё не скачано') || 'Ещё не скачано');
+    }
+
+    _setStatus(text) {
+        this._statusLabel.textContent = text;
+        this._statusLabel.hidden = !text;
+        this._tooltip.classList.toggle('ghost-tooltip--unavailable', Boolean(text));
     }
 
     _handleLeave() {

@@ -1327,10 +1327,12 @@
             const control = target?.closest?.('button,[role="button"]');
             try { return Boolean(control?.matches(':focus-visible')); } catch { return false; }
         };
+        // A torrent still being prepared spans the whole film, but keys stop where it can play.
         const seek = value => {
             if (!container.isConnected) return;
             const media = getVideo();
-            if (media && Number.isFinite(media.duration)) media.currentTime = Math.max(0, Math.min(media.duration, value));
+            const span = window.PlayerMediaControls.Timeline.describe(media);
+            if (media && span.availableEnd > 0) media.currentTime = Math.max(0, Math.min(span.availableEnd, value));
         };
         const help = document.createElement('div');
         help.className = 'player-shortcut-help'; help.hidden = true;
@@ -1398,7 +1400,7 @@
             slider.setAttribute('aria-valuemin', '0');
             const update = () => {
                 const media = getVideo();
-                const duration = Number.isFinite(media?.duration) ? media.duration : 0;
+                const duration = window.PlayerMediaControls.Timeline.describe(media).duration;
                 const time = Number.isFinite(media?.currentTime) ? media.currentTime : 0;
                 slider.setAttribute('aria-valuemax', String(Math.floor(duration)));
                 slider.setAttribute('aria-valuenow', String(Math.floor(time)));
@@ -1408,7 +1410,7 @@
             scope.listen(slider, 'keydown', event => {
                 const media = getVideo();
                 if (!media || !Number.isFinite(media.duration)) return;
-                const targets = { Home: 0, End: media.duration, PageUp: media.currentTime + 60, PageDown: media.currentTime - 60, ArrowLeft: media.currentTime - 5, ArrowRight: media.currentTime + 5 };
+                const targets = { Home: 0, End: window.PlayerMediaControls.Timeline.describe(media).availableEnd, PageUp: media.currentTime + 60, PageDown: media.currentTime - 60, ArrowLeft: media.currentTime - 5, ArrowRight: media.currentTime + 5 };
                 if (!Object.hasOwn(targets, event.key)) return;
                 event.preventDefault(); event.stopPropagation();
                 if (broadcastState && !broadcastState.admin) return; // The channel owns the position.
@@ -1416,7 +1418,7 @@
                 seek(targets[event.key]); update();
             });
             const media = getVideo();
-            if (media) for (const event of ['timeupdate', 'durationchange', 'loadedmetadata']) scope.listen(media, event, update);
+            if (media) for (const event of ['timeupdate', 'durationchange', 'loadedmetadata', 'extension-timeline-change']) scope.listen(media, event, update);
             update();
         }
         scope.listen(container, 'keydown', event => {
@@ -2518,6 +2520,35 @@
                     opacity: 1;
                     transform: translateY(-50%) scale(1);
                 }
+                /* A torrent being prepared spans the whole film. Shape, not colour, tells the
+                   parts apart and keeps them apart from a stream's solid buffer: solid can be
+                   watched, bright dashes are on disk and being prepared, dim dashes are still
+                   to be downloaded. */
+                .native-player-wrapper .player-progress-track.player-progress-track--partial {
+                    background-color: transparent !important;
+                }
+                .native-player-wrapper .player-progress-track--partial .player-progress-ready,
+                .native-player-wrapper .player-progress-track--partial .player-progress-downloaded,
+                .native-player-wrapper .player-progress-track--partial .player-progress-missing {
+                    position: absolute;
+                    top: 0;
+                    height: 100%;
+                    pointer-events: none;
+                }
+                .native-player-wrapper .player-progress-track--partial .player-progress-ready {
+                    left: 0;
+                    background-color: rgba(255, 255, 255, .38);
+                    border-radius: 999px;
+                }
+                .native-player-wrapper .player-progress-track--partial .player-progress-downloaded {
+                    background-image: repeating-linear-gradient(90deg, rgba(255, 255, 255, .55) 0 3px, transparent 3px 6px);
+                }
+                .native-player-wrapper .player-progress-track--partial .player-progress-missing {
+                    background-image: repeating-linear-gradient(90deg, rgba(255, 255, 255, .22) 0 3px, transparent 3px 6px);
+                }
+                .native-player-wrapper .player-progress-track.player-progress-track--blocked {
+                    cursor: not-allowed !important;
+                }
                 .native-player-wrapper .player-controls-group {
                     gap: 6px !important;
                 }
@@ -3003,6 +3034,22 @@
                     border-radius:  4px;
                     letter-spacing: .03em;
                 }
+                /* A moment a torrent cannot play yet: no frame, the time and why. */
+                .native-player-wrapper .ghost-tooltip.ghost-tooltip--unavailable > .ghost-video {
+                    display: none !important;
+                }
+                .ghost-status-label {
+                    font-size:      12px;
+                    font-weight:    500;
+                    color:          #e4e4e7;
+                    background:     rgba(0,0,0,.65);
+                    padding:        2px 8px;
+                    border-radius:  4px;
+                    white-space:    nowrap;
+                }
+                .ghost-status-label[hidden] {
+                    display: none;
+                }
             `;
             document.head.appendChild(subParams);
 
@@ -3071,17 +3118,48 @@
             progressContainer.appendChild(progressFilled);
 
             // Progress Bar Logic
+            // A torrent being prepared shows what can be watched and what is on disk
+            // instead of the element's buffer, both measured against the whole film.
+            // The three parts never overlap, so the solid one stays solid over the video.
+            let preparedLayers = null;
+            const renderPreparedSpan = (span) => {
+                if (!preparedLayers || preparedLayers.ready.parentNode !== bufferContainer) {
+                    bufferContainer.innerHTML = '';
+                    preparedLayers = Object.fromEntries(['ready', 'downloaded', 'missing'].map(name => {
+                        const layer = document.createElement('div');
+                        layer.className = `player-progress-${name}`;
+                        bufferContainer.appendChild(layer);
+                        return [name, layer];
+                    }));
+                }
+                const percent = seconds => Math.max(0, Math.min(100, (seconds / span.duration) * 100));
+                const ready = percent(span.availableEnd);
+                const downloaded = Math.max(ready, percent(span.downloadedEnd));
+                preparedLayers.ready.style.width = `${ready}%`;
+                preparedLayers.downloaded.style.left = `${ready}%`;
+                preparedLayers.downloaded.style.width = `${downloaded - ready}%`;
+                preparedLayers.missing.style.left = `${downloaded}%`;
+                preparedLayers.missing.style.width = `${100 - downloaded}%`;
+            };
+
             const updateBuffer = () => {
                 const currentVid = permanentVideo || video;
                 if (!currentVid) return;
 
-                const duration = currentVid.duration;
-                if (!Number.isFinite(duration) || duration <= 0) return;
+                const span = window.PlayerMediaControls.Timeline.describe(currentVid);
+                progressContainer.classList.toggle('player-progress-track--partial', span.partial);
+                if (span.partial) {
+                    renderPreparedSpan(span);
+                    return;
+                }
+                const duration = span.duration;
+                if (duration <= 0) return;
 
                 const buffered = currentVid.buffered;
-                
+
                 // Clear existing segments
                 bufferContainer.innerHTML = '';
+                preparedLayers = null;
 
                 // Render segments
                 // Render segments
@@ -3111,10 +3189,11 @@
             };
 
             video.addEventListener('timeupdate', () => {
-                const percent = (video.currentTime / video.duration) * 100;
-                progressFilled.style.width = `${percent}%`;
+                const span = window.PlayerMediaControls.Timeline.describe(video);
+                if (span.duration <= 0) return;
+                progressFilled.style.width = `${(video.currentTime / span.duration) * 100}%`;
             });
-            
+
             video.addEventListener('progress', updateBuffer);
             video.addEventListener('timeupdate', updateBuffer); // Also update on time as buffer might change
             video.addEventListener('loadedmetadata', updateBuffer);
@@ -3328,25 +3407,40 @@
                 
                 // Use current video
                 const currentVid = permanentVideo || video;
-                
-                console.log('[MovieExtension] Progress click. Percent:', percent, 'Duration:', currentVid.duration);
+                const span = window.PlayerMediaControls.Timeline.describe(currentVid);
 
-                if (Number.isFinite(currentVid.duration) && currentVid.duration > 0) {
-                     const newTime = currentVid.duration * percent;
-                     
+                console.log('[MovieExtension] Progress click. Percent:', percent, 'Duration:', span.duration);
+
+                if (span.duration > 0) {
+                     const newTime = span.duration * percent;
+                     // A torrent's part that is not prepared yet cannot be chosen.
+                     if (!window.PlayerMediaControls.Timeline.isAvailable(span, newTime)) return;
+
                      // Update progress bar IMMEDIATELY (visual feedback)
                      progressFilled.style.width = `${percent * 100}%`;
-                     
+
                      currentVid.currentTime = newTime;
                      console.log('[MovieExtension] Seeked to:', newTime);
-                     
+
                      // Update time display immediately (don't wait for timeupdate event)
                      if (timeDisplay) {
-                         timeDisplay.textContent = `${formatTime(newTime)} / ${formatTime(currentVid.duration)}`;
+                         timeDisplay.textContent = `${formatTime(newTime)} / ${formatTime(span.duration)}`;
                      }
                 } else {
                     console.warn('[MovieExtension] Cannot seek - invalid duration:', currentVid.duration);
                 }
+            });
+
+            // The crossed-circle cursor marks the part of a torrent that cannot be chosen yet.
+            progressContainer.addEventListener('mousemove', (e) => {
+                const timeline = window.PlayerMediaControls.Timeline;
+                const span = timeline.describe(permanentVideo || video);
+                const ratio = timeline.ratio(e.clientX, progressContainer.getBoundingClientRect());
+                const blocked = span.partial && ratio !== null && !timeline.isAvailable(span, ratio * span.duration);
+                progressContainer.classList.toggle('player-progress-track--blocked', blocked);
+            });
+            progressContainer.addEventListener('mouseleave', () => {
+                progressContainer.classList.remove('player-progress-track--blocked');
             });
 
             // Hover preview and target time are owned by GhostPlayer below.
@@ -3773,9 +3867,9 @@
 
             const updateTime = () => {
                 const current = video.currentTime || 0;
-                const total = video.duration || 0;
+                const total = window.PlayerMediaControls.Timeline.describe(video).duration;
                 timeDisplay.textContent = `${formatTime(current)} / ${formatTime(total)}`;
-                if (Number.isFinite(total) && total > 0) timeDisplay.style.visibility = 'visible';
+                if (total > 0) timeDisplay.style.visibility = 'visible';
             };
 
             // Video Events
@@ -4448,7 +4542,8 @@
                 
                 const updateTime = () => {
                     const current = videoEl.currentTime || 0;
-                    const total = Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
+                    // A torrent being prepared shows the whole film's length from the start.
+                    const total = window.PlayerMediaControls.Timeline.describe(videoEl).duration;
                     timeDisplay.textContent = `${formatTime(current)} / ${formatTime(total)}`;
                     timeDisplay.style.visibility = total > 0 ? 'visible' : 'hidden';
                     
@@ -4487,6 +4582,11 @@
                 videoEl.addEventListener('timeupdate', updateTime);
                 videoEl.addEventListener('loadedmetadata', () => {
                     updateTime();
+                });
+                // The torrent panel reports the film's length and download progress.
+                videoEl.addEventListener('extension-timeline-change', () => {
+                    updateTime();
+                    updateBuffer();
                 });
                 
                 // Loader Events

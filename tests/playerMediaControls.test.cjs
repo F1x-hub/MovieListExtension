@@ -35,3 +35,26 @@ test('timeline handles collapsed geometry and keeps hour formatting and clamped 
     assert.equal(Timeline.formatTime(3661), '1:01:01'); assert.equal(Timeline.formatTime(61), '1:01');
     assert.equal(Timeline.formatTime(NaN), '0:00');
 });
+test('a torrent being prepared spans the whole film and blocks what it cannot play yet', () => {
+    const plain = (span) => JSON.parse(JSON.stringify(span));
+    // Any other video spans its own duration, all of it available.
+    assert.deepEqual(plain(Timeline.describe({ duration: 300 })), { duration: 300, availableEnd: 300, downloadedEnd: 300, partial: false });
+    assert.deepEqual(plain(Timeline.describe({ duration: NaN })), { duration: 0, availableEnd: 0, downloadedEnd: 0, partial: false });
+    assert.equal(Timeline.describe(null).duration, 0);
+    const preparing = { duration: 600, _mediaTimeline: { totalSeconds: 3600, downloadedFraction: .4, complete: false } };
+    const span = Timeline.describe(preparing);
+    assert.deepEqual(plain(span), { duration: 3600, availableEnd: 600, downloadedEnd: 1440, partial: true });
+    assert.equal(Timeline.isAvailable(span, 600), true);
+    assert.equal(Timeline.isAvailable(span, 601), false);
+    assert.equal(Timeline.isAvailable(span, NaN), false);
+    // Before the stream starts, the film's length is still known.
+    assert.deepEqual(plain(Timeline.describe({ duration: NaN, _mediaTimeline: { totalSeconds: 3600, downloadedFraction: 2 } })),
+        { duration: 3600, availableEnd: 0, downloadedEnd: 3600, partial: true });
+    // The downloaded estimate never trails what already plays.
+    assert.equal(Timeline.describe({ duration: 900, _mediaTimeline: { totalSeconds: 3600, downloadedFraction: .1 } }).downloadedEnd, 900);
+    // A complete conversion, an unknown length or one the stream already reached hand back to the element.
+    for (const plan of [{ totalSeconds: 3600, complete: true }, { totalSeconds: null }, { totalSeconds: 590 }]) {
+        assert.equal(Timeline.describe({ duration: 600, _mediaTimeline: plan }).partial, false);
+    }
+    assert.equal(Timeline.isAvailable(Timeline.describe({ duration: 300 }), 299), true);
+});
