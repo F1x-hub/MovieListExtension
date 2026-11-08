@@ -66,7 +66,14 @@ class MovieDetailsTorrentPanelMethods {
     }
 
     isTorrentRequestCurrent(requestId, movie) {
-        return requestId === this.torrentRequestId && this.selectedMovie === movie;
+        if (requestId !== this.torrentRequestId) return false;
+        const current = this.selectedMovie;
+        if (current === movie) return true;
+        // Ratings, box office and background refreshes replace the film object with an
+        // updated copy of the same film right after load; only another film makes a
+        // request stale. Comparing objects left the panel on «Проверяем…» for good.
+        return Boolean(current && movie && current.kinopoiskId != null
+            && String(current.kinopoiskId) === String(movie.kinopoiskId));
     }
 
     focusTorrentRegion(target) {
@@ -173,7 +180,71 @@ class MovieDetailsTorrentPanelMethods {
         return this.openTorrentPicker();
     }
 
-    async openTorrentPicker() {
+    /**
+     * Opens the player on one saved download, as the Downloads page asks with
+     * `?torrentDownload=`: what the panel's own «Смотреть» does, without searching
+     * for releases first. A series first selects the download's episode, because
+     * the panel only lists the selected episode's downloads.
+     */
+    async openTorrentDownloadRoute({ downloadId, seasonNumber = null, episodeNumber = null } = {}) {
+        const movie = this.selectedMovie;
+        if (!movie || typeof downloadId !== 'string' || !downloadId) return false;
+        const isSeries = !this.isTorrentMovie(movie);
+        const hasEpisode = Number.isSafeInteger(seasonNumber) && Number.isSafeInteger(episodeNumber);
+        if (this.playbackController) {
+            this.playbackController.setContainer(this.elements.videoContainer, this.elements.videoPlayerModal);
+            this.playbackController.setSelection({
+                kinopoiskId: movie.kinopoiskId,
+                tmdbId: movie.tmdbId || null,
+                imdbId: movie.externalId?.imdb || movie.imdbId || null,
+                title: movie.name || movie.nameRu || '',
+                mediaType: isSeries ? (movie.type || 'tv-series') : 'movie',
+                seasonNumber: isSeries && hasEpisode ? seasonNumber : null,
+                episodeNumber: isSeries && hasEpisode ? episodeNumber : null,
+                source: 'HERO_WATCH',
+                initialTimestamp: 0
+            });
+        }
+        this.showVideoModal(this.selectedMovie);
+        this.videoModalMovie = this.selectedMovie;
+        this.populateSourceSelector();
+        return this.openTorrentPicker({ playDownloadId: isSeries && !hasEpisode ? null : downloadId });
+    }
+
+    /**
+     * Reads the Downloads page's request from the address and removes it, so a
+     * reload or Back does not start the same copy again.
+     * @returns {{downloadId:string, seasonNumber:number|null, episodeNumber:number|null}|null}
+     */
+    takeTorrentDownloadRoute(urlParams) {
+        const downloadId = String(urlParams?.get?.('torrentDownload') || '');
+        if (!downloadId) return null;
+        try {
+            const url = new URL(window.location.href);
+            ['torrentDownload', 'torrentSeason', 'torrentEpisode'].forEach(key => url.searchParams.delete(key));
+            window.history.replaceState(window.history.state, '', url.toString());
+        } catch { /* The request still applies to this load. */ }
+        if (this.isEmbedded || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(downloadId)) return null;
+        const whole = (key) => {
+            const raw = urlParams.get(key);
+            const value = Number(raw);
+            return raw !== null && raw !== '' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+        };
+        return { downloadId, seasonNumber: whole('torrentSeason'), episodeNumber: whole('torrentEpisode') };
+    }
+
+    /** Starts the routed download once the film has loaded; runs at most once. */
+    startPendingTorrentDownloadRoute() {
+        const route = this.pendingTorrentDownloadRoute;
+        this.pendingTorrentDownloadRoute = null;
+        if (!route || !this.selectedMovie) return;
+        void this.openTorrentDownloadRoute(route).catch((error) => {
+            console.warn('[MovieDetails] Saved download could not be opened:', error);
+            this.setTorrentSourceStatus(this.formatTorrentError(error), 'error');
+        });
+    }
+
+    async openTorrentPicker({ playDownloadId = null } = {}) {
         const panel = this.elements?.torrentSourcePanel;
         const movie = this.selectedMovie;
         if (!panel || !movie) return false;
@@ -262,6 +333,18 @@ class MovieDetailsTorrentPanelMethods {
                 this.renderTorrentPlaybackStatus(this.getTorrentProgressFromDownload(this.getTorrentActiveDownload()));
             } else if (this.torrentPlaybackSession) {
                 this.renderTorrentPlaybackStatus();
+            }
+
+            if (playDownloadId) {
+                const routed = this.getMatchingTorrentDownloads(this.torrentDownloads, movie)
+                    .find(download => String(download.id) === String(playDownloadId));
+                if (routed) {
+                    // The person chose this copy in the Downloads list: play it, and leave
+                    // the release search for when they ask for it.
+                    this.setTorrentPanelTab('downloads');
+                    return await this.playSavedTorrent(routed.id);
+                }
+                this.setTorrentSourceStatus('Эта загрузка не найдена у этого фильма в MediaPlayer. Выберите копию в списке или раздачу.', 'error');
             }
 
             // Saved copies come first when there are any beyond the pinned current one;
@@ -995,6 +1078,11 @@ class MovieDetailsTorrentPanelMethods {
         const found = this.torrentSearchState.found || this.torrentSources.length;
         const visible = this.getVisibleTorrentSources().length;
         const isRunning = this.torrentSearchState.status === 'running';
+        if (!found && this.torrentSearchState.status === 'idle') {
+            // A copy opened from Downloads plays without a search; nothing was looked for yet.
+            this.setTorrentSourceStatus('Другие раздачи не искали. Чтобы найти, нажмите «Искать заново».', 'quiet');
+            return;
+        }
         if (!found) {
             // The empty block in the list says this visually.
             this.setTorrentSourceStatus(

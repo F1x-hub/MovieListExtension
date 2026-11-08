@@ -167,6 +167,9 @@ const defaultPaneTarget = sidebarLinks[0]?.dataset.target || 'appearance';
 
 function readActivePane() {
     try {
+        // Other pages link straight to a section, e.g. Downloads → ?pane=mediaplayer.
+        const requestedPane = new URLSearchParams(window.location.search).get('pane');
+        if (paneTargets.has(requestedPane)) return requestedPane;
         const savedPane = typeof localStorage !== 'undefined'
             ? localStorage.getItem(ACTIVE_SETTINGS_PANE_STORAGE_KEY)
             : null;

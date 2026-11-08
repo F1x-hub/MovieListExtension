@@ -9,6 +9,7 @@ const files = {
     filterControls: 'src/shared/styles/filter-controls.css',
     home: 'src/pages/home/home.css',
     catalog: 'src/pages/catalog/catalog.css',
+    downloads: 'src/pages/downloads/downloads.css',
 };
 
 const migrationGuardFiles = {
@@ -129,6 +130,8 @@ assertOnlyApprovedHexes(files.components, true);
 assertOnlyApprovedHexes(files.filterControls, true);
 assertOnlyApprovedHexes(files.home, true);
 assertOnlyApprovedHexes(files.catalog, false);
+// The Downloads page takes every colour from the semantic tokens.
+assertOnlyApprovedHexes(files.downloads, false);
 
 const theme = read(files.theme);
 assert.match(theme, /--theme-accent:\s*#f4f4f5;/);

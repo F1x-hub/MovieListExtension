@@ -1036,6 +1036,34 @@ class TMDBService {
     }
 
     /**
+     * The few fields a list of saved downloads shows: one light request, without
+     * the credits, videos and images the full card needs.
+     * @param {number|string} tmdbId - TMDB entity ID
+     * @param {'movie'|'tv'} [mediaType='movie']
+     * @returns {Promise<{tmdbId:number, mediaType:string, name:string, alternativeName:string, year:number, posterUrl:string}>}
+     */
+    async getListingDetails(tmdbId, mediaType = 'movie') {
+        const type = mediaType === 'tv' ? 'tv' : 'movie';
+        const params = new URLSearchParams({ language: this.defaultLanguage });
+        const response = await this._fetchWithRotation(
+            `${this.baseUrl}/${type}/${encodeURIComponent(tmdbId)}?${params}`,
+            { method: 'GET' }
+        );
+        if (!response.ok) {
+            throw new Error(`TMDB ${type} listing details failed: HTTP ${response.status}`);
+        }
+        const item = await response.json();
+        return {
+            tmdbId: Number(item.id) || Number(tmdbId),
+            mediaType: type,
+            name: String((type === 'tv' ? item.name : item.title) || ''),
+            alternativeName: String((type === 'tv' ? item.original_name : item.original_title) || ''),
+            year: this.getYear(type === 'tv' ? item.first_air_date : item.release_date),
+            posterUrl: this.buildImageUrl(item.poster_path, 'w185')
+        };
+    }
+
+    /**
      * Public helper to get a TMDB TV show details.
      * @param {number|string} tmdbId - TMDB TV ID
      * @param {string} [imdbId] - IMDb ID used for matching, when available

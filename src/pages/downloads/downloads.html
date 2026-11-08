@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Загрузки - Movie Ratings</title>
+    <link rel="stylesheet" href="../../shared/styles/common.css">
+    <script defer src="../../shared/components/NumberStepper.js"></script>
+    <link rel="stylesheet" href="../../shared/styles/theme.css">
+    <link rel="stylesheet" href="../../shared/styles/components.css">
+    <link rel="stylesheet" href="../../shared/styles/navigation.css">
+    <link rel="stylesheet" href="downloads.css">
+    <script src="../../shared/services/ThemeService.js"></script>
+    <script src="../../shared/services/SeasonalThemeService.js"></script>
+    <link rel="icon" type="image/png" sizes="16x16" href="../../shared/assets/icons/app/favicon16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="../../shared/assets/icons/app/favicon32.png">
+</head>
+<body class="dark-theme">
+    <main class="main-content downloads-page">
+        <div class="downloads-layout">
+            <aside class="downloads-sidebar" aria-label="Загрузки">
+                <h2 class="downloads-sidebar__title">Загрузки</h2>
+                <nav class="downloads-filters" id="downloadsFilters" aria-label="Фильтр загрузок">
+                    <button type="button" class="downloads-filter is-active" data-filter="all" aria-pressed="true">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                        <span class="downloads-filter__label">Все</span>
+                        <span class="downloads-filter__count" data-count="all">0</span>
+                    </button>
+                    <button type="button" class="downloads-filter" data-filter="active" aria-pressed="false">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="8 12 12 16 16 12"></polyline><line x1="12" y1="8" x2="12" y2="16"></line></svg>
+                        <span class="downloads-filter__label">Качаются</span>
+                        <span class="downloads-filter__count" data-count="active">0</span>
+                    </button>
+                    <button type="button" class="downloads-filter" data-filter="ready" aria-pressed="false">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                        <span class="downloads-filter__label">Готовы</span>
+                        <span class="downloads-filter__count" data-count="ready">0</span>
+                    </button>
+                    <button type="button" class="downloads-filter" data-filter="paused" aria-pressed="false">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="10" y1="15" x2="10" y2="9"></line><line x1="14" y1="15" x2="14" y2="9"></line></svg>
+                        <span class="downloads-filter__label">На паузе</span>
+                        <span class="downloads-filter__count" data-count="paused">0</span>
+                    </button>
+                    <button type="button" class="downloads-filter" data-filter="error" aria-pressed="false">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        <span class="downloads-filter__label">Ошибки</span>
+                        <span class="downloads-filter__count" data-count="error">0</span>
+                    </button>
+                </nav>
+
+                <div class="downloads-sidebar__divider" role="presentation"></div>
+
+                <section class="downloads-storage" aria-labelledby="downloadsStorageTitle">
+                    <h3 class="downloads-storage__title" id="downloadsStorageTitle">Хранилище</h3>
+                    <p class="downloads-storage__path" id="downloadsFolder" hidden>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                        <span id="downloadsFolderPath"></span>
+                    </p>
+                    <p class="downloads-storage__line">Загрузки занимают <strong id="downloadsUsed">—</strong></p>
+                    <p class="downloads-storage__line" id="downloadsRetention" hidden></p>
+                    <a class="downloads-storage__link" id="downloadsSettingsLink" href="../settings/settings.html?pane=mediaplayer">Папка и срок хранения</a>
+                </section>
+            </aside>
+
+            <section class="downloads-content" aria-labelledby="downloadsTitle">
+                <header class="downloads-header">
+                    <h1 id="downloadsTitle">Все загрузки</h1>
+                    <div class="downloads-header__controls" id="downloadsControls">
+                        <div class="downloads-search">
+                            <input type="search" id="downloadsSearch" placeholder="Поиск в загрузках..." aria-label="Поиск в загрузках" autocomplete="off">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        </div>
+                        <label class="sort-control__label--sr-only" for="downloadsSort">Сортировка</label>
+                        <select id="downloadsSort" data-sort-control class="custom-select">
+                            <option value="activity">Сначала активные</option>
+                            <option value="created">Недавно добавленные</option>
+                            <option value="title">Название (А–Я)</option>
+                            <option value="size">Размер</option>
+                        </select>
+                    </div>
+                </header>
+
+                <div class="downloads-summary" id="downloadsSummary" role="status" aria-live="polite" hidden></div>
+
+                <div class="downloads-banner" id="downloadsBanner" role="alert" hidden>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    <p><span id="downloadsBannerTitle"></span><small id="downloadsBannerText"></small></p>
+                    <button type="button" class="btn btn-secondary btn-sm" id="downloadsRetryBtn">Проверить сейчас</button>
+                </div>
+
+                <div class="downloads-toolbar" id="downloadsToolbar" hidden>
+                    <label class="downloads-check downloads-check--all">
+                        <input type="checkbox" id="downloadsSelectAll">
+                        <span>Выбрать все</span>
+                    </label>
+                </div>
+
+                <div class="downloads-loader app-loader app-loader--section" id="downloadsLoader" role="status" aria-live="polite">
+                    <div class="app-loader__indicator" aria-label="Загружаем список"></div>
+                </div>
+
+                <div class="downloads-list" id="downloadsList" role="list" aria-labelledby="downloadsTitle"></div>
+                <div class="downloads-empty" id="downloadsEmpty" hidden></div>
+            </section>
+        </div>
+
+        <div class="downloads-bulkbar" id="downloadsBulkBar" role="region" aria-label="Действия с выбранными" hidden>
+            <span class="downloads-bulkbar__count" id="downloadsBulkCount" aria-live="polite"></span>
+            <div class="downloads-bulkbar__actions">
+                <button type="button" class="btn btn-secondary btn-sm" data-bulk="pause" id="downloadsBulkPause">Пауза</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-bulk="resume" id="downloadsBulkResume">Продолжить</button>
+                <button type="button" class="btn btn-danger btn-sm" data-bulk="delete" id="downloadsBulkDelete">Удалить</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-bulk="clear">Снять выделение</button>
+            </div>
+        </div>
+    </main>
+
+    <script defer src="../../../libs/firebase-app-compat.js"></script>
+    <script defer src="../../../libs/firebase-auth-compat.js"></script>
+    <script defer src="../../../libs/firebase-firestore-compat.js"></script>
+    <script defer src="../../shared/firestore.js"></script>
+    <script defer src="../../shared/services/UserService.js"></script>
+    <script defer src="../../shared/services/TMDBService.js"></script>
+    <script defer src="../../shared/services/MediaPlayerService.js"></script>
+    <script defer src="../../shared/utils/Utils.js"></script>
+    <script defer src="../../shared/utils/IconUtils.js"></script>
+    <script defer src="../../shared/utils/Icons.js"></script>
+    <script defer src="../../shared/components/BackToTop.js"></script>
+    <script defer src="../../shared/components/ConfirmDialog.js"></script>
+    <script defer src="../../shared/components/SortControl.js"></script>
+    <script defer src="../../shared/components/Navigation.js"></script>
+    <script defer src="DownloadsLibraryModel.js"></script>
+    <script defer src="downloads.js"></script>
+</body>
+</html>

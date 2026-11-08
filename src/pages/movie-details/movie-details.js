@@ -1417,6 +1417,8 @@ class MovieDetailsManager {
         let movieId = urlParams.get('movieId');
         let resolveTmdbId = urlParams.get('resolveTmdbId');
         const autoplay = urlParams.get('autoplay') === 'true';
+        // The Downloads page opens one saved torrent copy here.
+        this.pendingTorrentDownloadRoute = this.takeTorrentDownloadRoute?.(urlParams) ?? null;
         // «Эфир» embeds this page as a locked, player-only broadcast tied to the channel clock.
         const broadcastStart = Number.parseInt(urlParams.get('broadcastStart') || '', 10);
         if (this.isEmbedded && Number.isSafeInteger(broadcastStart) && broadcastStart > 0) {
@@ -1532,7 +1534,9 @@ class MovieDetailsManager {
                 void this.probeSourceAvailability(movieId);
                 this.perf?.complete();
             }
-            if (autoplay && this.selectedMovie) {
+            if (this.pendingTorrentDownloadRoute) {
+                this.startPendingTorrentDownloadRoute();
+            } else if (autoplay && this.selectedMovie) {
                 setTimeout(() => this.handleWatchClick(), 500);
             }
         } else {
@@ -1680,6 +1684,7 @@ class MovieDetailsManager {
             if (this.selectedMovie) {
                 this.preloadAllPlayers(kinopoiskId);
                 this.perf?.complete();
+                this.startPendingTorrentDownloadRoute?.();
             }
         } catch (error) {
             console.warn('[MovieDetails] Home TMDB-only route failed:', error);

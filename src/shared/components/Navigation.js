@@ -5,6 +5,23 @@
 class Navigation {
     // Cache key for storing user display data
     static USER_DISPLAY_CACHE_KEY = 'userDisplayCache';
+    // Owned by MediaPlayerService; Navigation only reads it.
+    static MEDIA_PLAYER_SETUP_KEY = 'mediaplayer_setup_v1';
+    // Setup errors that mean "set up, but the service does not answer right now".
+    static MEDIA_PLAYER_TRANSIENT_ERRORS = new Set(['connection_failed', 'timeout', 'torrent_not_configured', 'engine_closed']);
+
+    /**
+     * Whether the person has connected MediaPlayer in Settings. Downloads exist only
+     * then: without it there is no Downloads entry at all. A setup that worked but
+     * whose service is down right now still counts, so the page can say so.
+     */
+    static isMediaPlayerSetUp(enabled, setup) {
+        if (enabled !== true || !setup || typeof setup !== 'object' || setup.enabled !== true) return false;
+        if (setup.status === 'ready') return true;
+        return setup.status === 'error'
+            && Boolean(String(setup.installPath || '').trim())
+            && Navigation.MEDIA_PLAYER_TRANSIENT_ERRORS.has(String(setup.errorCode || ''));
+    }
 
     /** The name a profile shows, falling back to the session's own copy of the user. */
     static displayTextFor(profile, user) {
@@ -24,6 +41,7 @@ class Navigation {
         this.watchingService = null;
         this.cachedUserDisplay = null;
         this.showGames = false;
+        this.showDownloads = false;
         this._updateInProgress = false;
         this._pendingUser = null;
         this._searchNavigationPending = false;
@@ -86,9 +104,15 @@ class Navigation {
                     Navigation.USER_DISPLAY_CACHE_KEY,
                     'isAuthenticated',
                     'user',
-                    'showGames'
+                    'showGames',
+                    'mediaPlayerEnabled',
+                    Navigation.MEDIA_PLAYER_SETUP_KEY
                 ]);
                 this.showGames = Boolean(result.showGames);
+                this.showDownloads = Navigation.isMediaPlayerSetUp(
+                    result.mediaPlayerEnabled,
+                    result[Navigation.MEDIA_PLAYER_SETUP_KEY]
+                );
                 if (result.isAuthenticated) {
                     this.cachedUserDisplay = await this.bestKnownUserDisplay(result[Navigation.USER_DISPLAY_CACHE_KEY], result.user);
                 }
@@ -206,6 +230,8 @@ class Navigation {
                 return chrome.runtime.getURL('src/pages/calendar/calendar.html');
             case 'live':
                 return chrome.runtime.getURL('src/pages/live/live.html');
+            case 'downloads':
+                return chrome.runtime.getURL('src/pages/downloads/downloads.html');
             default:
                 console.warn(`[Navigation] No URL mapping for page: "${page}", falling back to "#"`);
                 return '#';
@@ -301,6 +327,11 @@ class Navigation {
                         <!-- Calendar Button -->
                         <a href="${this.getPageUrl('calendar')}" class="nav-icon-btn" id="navCalendarBtn" data-page="calendar" aria-label="${this.i18n?.get('navbar.calendar') || 'Календарь'}" title="Calendar">
                             <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.CALENDAR : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>'}</span>
+                        </a>
+
+                        <!-- Downloads: only once MediaPlayer is connected in Settings -->
+                        <a href="${this.getPageUrl('downloads')}" class="nav-icon-btn" id="navDownloadsBtn" data-page="downloads" aria-label="${this.i18n?.get('navbar.downloads') || 'Загрузки'}" title="${this.i18n?.get('navbar.downloads') || 'Загрузки'}" style="display: ${this.showDownloads ? 'inline-flex' : 'none'};">
+                            <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></span>
                         </a>
 
                         <!-- Games Button -->
@@ -439,6 +470,15 @@ class Navigation {
             });
         }
 
+        const downloadsBtn = document.getElementById('navDownloadsBtn');
+        if (downloadsBtn) {
+            downloadsBtn.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                this.navigateToPage('downloads');
+            });
+        }
+
         const gamesBtn = document.getElementById('navGamesBtn');
         if (gamesBtn) {
             gamesBtn.addEventListener('mousedown', async (e) => {
@@ -461,6 +501,9 @@ class Navigation {
                     if (btn) {
                         btn.style.display = changes.showGames.newValue ? 'inline-flex' : 'none';
                     }
+                }
+                if (area === 'local' && (changes.mediaPlayerEnabled || changes[Navigation.MEDIA_PLAYER_SETUP_KEY])) {
+                    void this.refreshDownloadsEntry();
                 }
             });
         }
@@ -1516,6 +1559,22 @@ class Navigation {
         }
     }
 
+    /** Shows or hides the Downloads entry after MediaPlayer is connected or turned off. */
+    async refreshDownloadsEntry() {
+        try {
+            const result = await chrome.storage.local.get(['mediaPlayerEnabled', Navigation.MEDIA_PLAYER_SETUP_KEY]);
+            this.showDownloads = Navigation.isMediaPlayerSetUp(
+                result.mediaPlayerEnabled,
+                result[Navigation.MEDIA_PLAYER_SETUP_KEY]
+            );
+        } catch (error) {
+            console.warn('Navigation: Could not read MediaPlayer setup:', error);
+            return;
+        }
+        const btn = document.getElementById('navDownloadsBtn');
+        if (btn) btn.style.display = this.showDownloads ? 'inline-flex' : 'none';
+    }
+
     setActivePage(page) {
         // Remove active class from all links
         const navLinks = document.querySelectorAll('.nav-link, .nav-icon-btn[data-page]');
@@ -2537,6 +2596,8 @@ if (typeof window !== 'undefined' && !window.location.pathname.includes('popup.h
             currentPage = 'ratings';
         } else if (window.location.pathname.includes('calendar.html') || window.location.pathname.includes('src/pages/calendar/')) {
             currentPage = 'calendar';
+        } else if (window.location.pathname.includes('src/pages/downloads/')) {
+            currentPage = 'downloads';
         } else if (window.location.pathname.includes('admin.html') || window.location.pathname.includes('src/pages/admin/')) {
             // Admin page handles its own navigation init
             return;

@@ -1,0 +1,780 @@
+/**
+ * Downloads page: every torrent MediaPlayer keeps, with filters, selection and
+ * bulk actions. Neutral chrome only: posters bring the colour, and danger keeps
+ * its semantic red together with an icon and a label.
+ */
+
+.downloads-page {
+    --downloads-overlay: rgba(var(--theme-ink-rgb), 0.06);
+    --downloads-overlay-strong: rgba(var(--theme-ink-rgb), 0.1);
+    --downloads-card-bg: var(--ui-color-surface-card);
+    min-height: 100vh;
+    background: var(--ui-color-page);
+}
+
+.light-theme .downloads-page {
+    --downloads-card-bg: var(--ui-color-surface);
+}
+
+.downloads-page [hidden] {
+    display: none !important;
+}
+
+.downloads-layout {
+    display: flex;
+    gap: 32px;
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 32px 24px 120px;
+}
+
+/* ---------- Sidebar ---------- */
+
+.downloads-sidebar {
+    flex: 0 0 260px;
+    position: sticky;
+    top: 80px;
+    align-self: flex-start;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 20px 14px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: 20px;
+    background: var(--downloads-card-bg);
+}
+
+.downloads-sidebar__title {
+    margin: 0 0 20px;
+    padding: 0 8px;
+    color: var(--ui-color-content);
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+.downloads-filters {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.downloads-filter {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--ui-color-content-muted);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--motion-duration-base) var(--motion-ease-out),
+        border-color var(--motion-duration-base) var(--motion-ease-out),
+        color var(--motion-duration-base) var(--motion-ease-out);
+}
+
+.downloads-filter svg {
+    flex: 0 0 auto;
+}
+
+.downloads-filter:hover {
+    background: var(--downloads-overlay);
+    color: var(--ui-color-content);
+}
+
+.downloads-filter.is-active {
+    border-color: var(--ui-color-border-hover);
+    background: var(--downloads-overlay-strong);
+    color: var(--ui-color-content);
+}
+
+.downloads-filter__label {
+    flex: 1 1 auto;
+}
+
+.downloads-filter__count {
+    color: var(--ui-color-content-subtle);
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.downloads-filter.is-active .downloads-filter__count {
+    color: var(--ui-color-content);
+}
+
+.downloads-sidebar__divider {
+    height: 1px;
+    margin: 18px 8px;
+    background: var(--ui-color-border);
+}
+
+.downloads-storage {
+    display: grid;
+    gap: 10px;
+    padding: 0 8px;
+    color: var(--ui-color-content-muted);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.downloads-storage p {
+    margin: 0;
+}
+
+.downloads-storage__title {
+    margin: 0 0 2px;
+    color: var(--ui-color-content-subtle);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.downloads-storage__path {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: var(--ui-color-content);
+    font-weight: 500;
+}
+
+.downloads-storage__path svg {
+    flex: 0 0 auto;
+    color: var(--ui-color-content-muted);
+}
+
+.downloads-storage__path span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.downloads-storage__line strong {
+    color: var(--ui-color-content);
+    font-weight: 600;
+}
+
+.downloads-storage__link {
+    justify-self: start;
+    color: var(--ui-color-content);
+    text-decoration: underline;
+    text-decoration-color: var(--ui-color-border-hover);
+    text-underline-offset: 3px;
+}
+
+.downloads-storage__link:hover {
+    text-decoration-color: currentColor;
+}
+
+/* ---------- Content ---------- */
+
+.downloads-content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.downloads-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.downloads-header h1 {
+    margin: 0;
+    color: var(--ui-color-content);
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+.downloads-header__controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.downloads-search {
+    position: relative;
+    flex: 0 0 240px;
+    width: 240px;
+}
+
+.downloads-search input {
+    box-sizing: border-box;
+    width: 100%;
+    height: 42px;
+    padding: 0 38px 0 14px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: 12px;
+    background: var(--downloads-card-bg);
+    color: var(--ui-color-content);
+    font: inherit;
+    font-size: 14px;
+}
+
+.downloads-search input::placeholder {
+    color: var(--ui-color-content-subtle);
+}
+
+.downloads-search input:focus-visible {
+    border-color: var(--ui-color-border-hover);
+}
+
+.downloads-search input::-webkit-search-cancel-button {
+    display: none;
+}
+
+.downloads-search svg {
+    position: absolute;
+    top: 50%;
+    right: 14px;
+    color: var(--ui-color-content-subtle);
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+.downloads-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 28px;
+    margin-bottom: 16px;
+    padding: 14px 18px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: 14px;
+    background: var(--downloads-card-bg);
+}
+
+.downloads-summary__item {
+    display: grid;
+    gap: 2px;
+}
+
+.downloads-summary__value {
+    color: var(--ui-color-content);
+    font-size: 16px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.downloads-summary__label {
+    color: var(--ui-color-content-subtle);
+    font-size: 12px;
+}
+
+.downloads-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    border: 1px dashed var(--ui-color-status-warning);
+    border-radius: 12px;
+    color: var(--ui-color-content);
+    font-size: 14px;
+}
+
+.downloads-banner > svg {
+    flex: 0 0 auto;
+    color: var(--ui-color-status-warning);
+}
+
+.downloads-banner p {
+    flex: 1 1 auto;
+    margin: 0;
+}
+
+.downloads-banner small {
+    display: block;
+    color: var(--ui-color-content-muted);
+    font-size: 12px;
+}
+
+.downloads-toolbar {
+    display: flex;
+    align-items: center;
+    min-height: 32px;
+    margin: 0 0 10px;
+    /* Lines the box up with the cards' boxes: card padding plus the centred 18px box in its 24px column. */
+    padding: 0 17px;
+}
+
+.downloads-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--ui-color-content-muted);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.downloads-check input,
+.dl-select input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--ui-color-content);
+    cursor: pointer;
+}
+
+.downloads-loader {
+    min-height: 180px;
+}
+
+.downloads-list {
+    display: grid;
+    gap: 12px;
+}
+
+/* ---------- Cards ---------- */
+
+.dl-card {
+    display: grid;
+    grid-template-columns: 24px 72px minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: start;
+    padding: 14px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: 16px;
+    background: var(--downloads-card-bg);
+    transition: border-color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.dl-card:hover {
+    border-color: var(--ui-color-border-hover);
+}
+
+.dl-card[data-selected="true"] {
+    border-color: var(--ui-color-content-muted);
+}
+
+.dl-select {
+    display: grid;
+    place-items: center;
+    height: 32px;
+    cursor: pointer;
+}
+
+.dl-poster {
+    position: relative;
+    width: 72px;
+    aspect-ratio: 2 / 3;
+    overflow: hidden;
+    border-radius: 10px;
+    background: var(--ui-color-surface-muted);
+}
+
+.dl-poster img {
+    position: relative;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.dl-poster__fallback {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--ui-color-content-subtle);
+}
+
+.dl-card__body {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    padding-top: 4px;
+}
+
+.dl-card__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+    min-width: 0;
+}
+
+.dl-card__title {
+    margin: 0;
+    color: var(--ui-color-content);
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.dl-card__title a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.dl-card__title a:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.dl-card__sub {
+    color: var(--ui-color-content-subtle);
+    font-size: 13px;
+}
+
+.dl-card__release {
+    overflow: hidden;
+    color: var(--ui-color-content-muted);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dl-live {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.dl-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+    color: var(--ui-color-content-muted);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.dl-status__state {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--ui-color-content);
+    font-weight: 650;
+}
+
+.dl-status__state svg {
+    flex: 0 0 auto;
+}
+
+.dl-live[data-state="error"] .dl-status__state {
+    color: var(--ui-color-status-danger);
+}
+
+.dl-live[data-stale="true"] .dl-status__state {
+    color: var(--ui-color-content-muted);
+}
+
+.dl-status__error {
+    flex-basis: 100%;
+    color: var(--ui-color-content);
+}
+
+.dl-progress {
+    height: 4px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: var(--ui-color-border-hover);
+}
+
+.dl-progress span {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--ui-color-content);
+    transition: width 600ms var(--motion-ease-out);
+}
+
+/* Paused is told by the label and the icon; the dashed bar repeats it as a shape. */
+.dl-live[data-state="paused"] .dl-progress span {
+    background: repeating-linear-gradient(90deg, var(--ui-color-content-muted) 0 6px, transparent 6px 9px);
+}
+
+.dl-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--ui-color-content-subtle);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.dl-note svg {
+    flex: 0 0 auto;
+}
+
+.dl-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 4px;
+    padding-top: 0;
+}
+
+.dl-actions .btn {
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.dl-actions .btn[aria-disabled="true"] {
+    color: var(--ui-color-content-subtle);
+    cursor: not-allowed;
+}
+
+.dl-icon-btn {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: none;
+    color: var(--ui-color-content-muted);
+    cursor: pointer;
+    transition: color var(--motion-duration-fast) var(--motion-ease-out),
+        background-color var(--motion-duration-fast) var(--motion-ease-out),
+        border-color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.dl-icon-btn:hover:not(:disabled) {
+    border-color: var(--ui-color-border);
+    background: var(--downloads-overlay);
+    color: var(--ui-color-content);
+}
+
+.dl-icon-btn:disabled {
+    color: var(--ui-color-content-subtle);
+    cursor: not-allowed;
+}
+
+.dl-icon-btn--danger:hover:not(:disabled) {
+    color: var(--ui-color-status-danger);
+}
+
+.dl-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    justify-self: start;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ui-color-content-muted);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.dl-toggle:hover {
+    color: var(--ui-color-content);
+}
+
+.dl-toggle svg {
+    transition: transform var(--motion-duration-base) var(--motion-ease-out);
+}
+
+.dl-toggle[aria-expanded="false"] svg {
+    transform: rotate(-90deg);
+}
+
+.dl-episodes {
+    grid-column: 3 / -1;
+    display: grid;
+    margin-top: -4px;
+    border-top: 1px solid var(--ui-color-border);
+}
+
+.dl-episode {
+    display: grid;
+    grid-template-columns: 24px 64px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--ui-color-border);
+}
+
+.dl-episode:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+
+.dl-episode__code {
+    color: var(--ui-color-content);
+    font-size: 13px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.dl-episode__body {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.dl-episode__name {
+    overflow: hidden;
+    color: var(--ui-color-content-muted);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---------- Empty and not-connected states ---------- */
+
+.downloads-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 64px 24px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: 20px;
+    background: var(--downloads-card-bg);
+    text-align: center;
+}
+
+.downloads-empty__icon {
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    margin-bottom: 16px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: 50%;
+    color: var(--ui-color-content-subtle);
+}
+
+.downloads-empty h3 {
+    margin: 0 0 6px;
+    color: var(--ui-color-content);
+    font-size: 1.15rem;
+    font-weight: 700;
+}
+
+.downloads-empty p {
+    max-width: 460px;
+    margin: 0;
+    color: var(--ui-color-content-muted);
+    font-size: 14px;
+}
+
+.downloads-empty .btn {
+    margin-top: 18px;
+}
+
+/* ---------- Bulk bar ---------- */
+
+.downloads-bulkbar {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    z-index: var(--z-dropdown, 1000);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px 18px;
+    box-sizing: border-box;
+    width: max-content;
+    max-width: calc(100vw - 32px);
+    padding: 10px 12px 10px 18px;
+    border: 1px solid var(--ui-color-border-hover);
+    border-radius: 14px;
+    background: var(--ui-color-surface);
+    color: var(--ui-color-content);
+    box-shadow: var(--elevation-3, 0 12px 40px rgba(0, 0, 0, 0.35));
+    transform: translateX(-50%);
+}
+
+.downloads-bulkbar__count {
+    font-size: 14px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.downloads-bulkbar__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* ---------- Narrow screens ---------- */
+
+@media (max-width: 1024px) {
+    .downloads-layout {
+        flex-direction: column;
+        gap: 20px;
+        padding: 20px 16px 120px;
+    }
+
+    .downloads-sidebar {
+        position: static;
+        flex-basis: auto;
+        width: 100%;
+        max-height: none;
+    }
+
+    .downloads-filters {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .downloads-filter {
+        width: auto;
+        padding: 8px 12px;
+    }
+
+    .downloads-filter__label {
+        flex: 0 1 auto;
+    }
+}
+
+@media (max-width: 760px) {
+    .downloads-header,
+    .downloads-header__controls {
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+    }
+
+    .downloads-search {
+        flex-basis: auto;
+        width: 100%;
+    }
+
+    .dl-card {
+        grid-template-columns: 24px 56px minmax(0, 1fr);
+        gap: 12px;
+    }
+
+    .dl-poster {
+        width: 56px;
+    }
+
+    .dl-card > .dl-actions {
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+    }
+
+    .dl-episodes {
+        grid-column: 1 / -1;
+    }
+
+    .dl-episode {
+        grid-template-columns: 24px 52px minmax(0, 1fr);
+    }
+
+    .dl-episode > .dl-actions {
+        grid-column: 3;
+        justify-content: flex-start;
+    }
+}
