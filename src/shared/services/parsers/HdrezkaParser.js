@@ -89,6 +89,7 @@ class HdrezkaParser extends BaseParserService {
             video.pause();
             if (container._hlsInstance === transport) container._hlsInstance = null;
             video._movieExtensionHls = null;
+            video._movieExtensionPreview = null;
             video.remove(); bridge.remove(); voiceBridge.remove();
             this.disposers.delete(dispose);
             if (container._hdrezkaDispose === dispose) {
@@ -160,6 +161,27 @@ class HdrezkaParser extends BaseParserService {
                     translationId: details.activeTranslationId, qualityHeight: height
                 } } });
             };
+            // The hover preview needs one small picture, not the quality being
+            // watched: the lightest variant costs several times less per hover.
+            // It is resolved once the film shows its first frame, so it never
+            // delays the start, and the preview keeps the playing stream until then
+            // or when it fails.
+            const offerPreview = (variants, chosen, request) => {
+                video._movieExtensionPreview = null;
+                const lightest = variants[0];
+                if (!lightest || lightest.height >= chosen.height) return;
+                video.addEventListener('loadeddata', async () => {
+                    if (!active() || request !== version) return;
+                    try {
+                        const url = await this.service.resolve(lightest.url);
+                        if (!active() || request !== version) return;
+                        const config = window.HlsPlaybackFactory?.buildConfig?.({}, {
+                            networkProfile: 'hdrezka', providerManifestUrl: url, rememberBandwidth: false
+                        });
+                        if (config) video._movieExtensionPreview = { url, config };
+                    } catch { /* The preview keeps using the playing stream. */ }
+                }, { once: true });
+            };
             const load = async (height, position, paused) => {
                 const request = ++version;
                 phase = 'streams';
@@ -222,6 +244,10 @@ class HdrezkaParser extends BaseParserService {
                     onFatal: ({ reason, data }) => { fail({ code: 'HDREZKA_HLS_FAILED', hlsReason: reason, status: data?.response?.code }); return true; }
                 });
                 if (!transport) { video.removeEventListener('loadedmetadata', restore); throw new Error('HDREZKA_HLS_UNAVAILABLE'); }
+                // Every quality of a dub shows the same picture, so prepared preview frames
+                // belong to the film and dub, not to a signed stream address.
+                video.dataset.previewFramesKey = `hdrezka:${details.movieId}:${details.activeTranslationId}`;
+                offerPreview(variants, chosen, request);
                 persist(chosen.height);
                 return true;
             };

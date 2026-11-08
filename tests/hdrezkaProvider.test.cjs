@@ -362,6 +362,30 @@ test('HDRezka quality expiry reports API access requirements instead of losing t
     assert.ok(overlays.at(-1).data.message.includes('оставьте вкладку открытой'));
 });
 
+test('HDRezka offers its lightest quality to the hover preview once the film shows a frame', async t => {
+    const { window, container, video } = await recoveryMount(t);
+    const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+    video.dispatchEvent(new window.Event('loadeddata'));
+    await settle();
+    assert.equal(video._movieExtensionPreview, null, 'the lightest quality being watched is its own preview');
+
+    container.querySelector('[data-quality-option="720"]').click();
+    await settle();
+    assert.equal(video._movieExtensionPreview, null, 'nothing extra is resolved before the film shows a frame');
+    video.dispatchEvent(new window.Event('loadeddata'));
+    await settle();
+    const preview = video._movieExtensionPreview;
+    assert.equal(preview?.url, manifest('weyland.stream.voidboost.one', 480), 'the preview uses the resolved 480p stream');
+    assert.equal(preview.config.loader?.movieExtensionPolicyLoader, true, 'the preview keeps the protected HDRezka transport');
+    assert.equal(container.querySelector('[data-quality-option].active')?.dataset.qualityOption, '720', 'playback stays on the chosen quality');
+
+    container.querySelector('[data-quality-option="480"]').click();
+    await settle();
+    assert.equal(video._movieExtensionPreview, null, 'switching to the lightest quality drops the separate preview');
+    container._hdrezkaDispose();
+    assert.equal(video._movieExtensionPreview, null);
+});
+
 test('HDRezka runtime expiry preserves typed access failure through the real HLS factory', async t => {
     const { control, hls, parser, container, states, diagnostics, failure } = await recoveryMount(t);
     control.failureCode = 'HDREZKA_ACCESS_REQUIRED';

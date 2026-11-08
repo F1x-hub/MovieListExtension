@@ -507,9 +507,27 @@ or remote provider URLs; adding a new definition remains a Jackett UI operation.
   manual HAR pilot; cached descriptors contain only the public film page.
   Protective config is applied after overrides; policy failures destroy
   once without recovery. No unmanaged/native HLS escape is allowed on extension
-  pages. Ghost previews inherit that loader and scope. Direct MP4, DNS rebinding
+  pages. Ghost previews inherit that loader and scope, or use the
+  `{ url, config }` a parser puts on `video._movieExtensionPreview`, with a config
+  from `HlsPlaybackFactory.buildConfig` for the same profile and URL: HDRezka offers
+  its lightest variant, resolved on the video's first `loadeddata`, and a preview
+  that fails falls back to the playing stream. Direct MP4, DNS rebinding
   and provider-frame traffic retain separate limited guarantees; sandbox defaults
   remain empty pending provider checks.
+- **Hover preview frames**: `GhostPlayer` prepares one frame per point the pointer can
+  take on the track when the player fills the screen (`_cellCount`: track width plus the
+  screen's extra width, at most one per second), in the background through its own
+  preview video. It works forward from the film's position while the film is steady
+  (not seeking, at least 8 s buffered, tab visible) and never while the pointer is on the
+  track; a point fails after 20 s and six failures in a row stop it. A prepared point
+  shows its JPEG in `img.ghost-frame` at once. Any other point shows only the time until
+  its own frame is decoded; a frame of another moment is never shown in its place.
+  Frames belong to `data-preview-frames-key` when a parser sets one (`torrent:<download>:<file>`,
+  `hdrezka:<film>:<dub>`), otherwise to the source URLs; a change starts over. With a key,
+  extension pages keep frames in IndexedDB `movieExtensionPreviewFrames` for the film's
+  length plus an hour (at least two hours) and delete expired ones whenever a source opens;
+  provider frames keep them in memory only. Its hls.js buffers at most one piece
+  (`maxBufferLength` 2 s). Verify with `node tests/playerHoverPreview.test.cjs`.
 - **Provider embedding boundary**: `BaseParserService` marks supported Venom iframes with `movieExtensionSite` using the parser's source-site hostname. `src/background/provider-embed-rules.json` restores that site's HTTP Referer only for marked subframes initiated by this extension, on allowlisted provider domains and source sites; keep matching host permissions in the manifest. Missing HTTP context can cause substituted Lift media and decode errors even while the video timeline advances; a `host` query alone is insufficient. `provider-ad-guard.js` runs in MAIN at document start, enables `santabarbaranoads=1`, and isolates ads through `adsConfig` and the `VenomPlayer.make` factory without altering formats, playlists, or time. The iframe's `no-referrer` policy hides the extension URL from the DOM while DNR supplies the source site's network header. `player-cleaner` adopts Venom's original content-video element; never copy an arbitrary new video's URL into it. Verify actual frames before and after seeking, not only readyState/currentTime. This does not remove ads encoded into arbitrary files or cover other player engines automatically.
 - **Native episode bridge acknowledgements**: `PLAYBACK_SELECTION_RESULT` is accepted only from the active iframe window and expected origin, with matching provider/season/episode and status `APPLIED`; `DISPATCHED` is not a successful canonical selection, stale overlapping requests must resolve false, and cleaner-side selection is successful only for strict boolean `true` after provider DOM confirmation. A newer request or `RESET_PERMANENT_VIDEO` invalidates older cleaner operations.
 - **CRITICAL: KinoGo Search Type Boundary**: `KinogoParser.search(title, year, { mediaType })` must receive a real year or `null`, never a Kinopoisk ID as the year. `ParserRegistry.searchAll()` and `BaseParserService.cachedSearch()` must forward `mediaType` and include it in their cache/discovery path. Season-aware searches must also include `seasonNumber` in the parser search cache key. MovieDetails source caches without a matching media type must be ignored. When `mediaType` is supplied, filter parsed candidates by `isSearchResultCompatible()` before ranking so same-title films cannot win a TV-series search. Series searches must prefer the active native-picker mirror `kinogo.my`, then fall back through the remaining supported mirrors; when a season is explicitly selected, prefer the matching season page over a premiere-year match. KinoGo episode changes must not reuse preloaded sources from another season, and explicit season remounts must bypass cached embed tokens because provider tokens can expire independently of the page URL. Allow explicit season suffixes only for series title matching. Serialized diagnostics must include the requested season, selected page URL, extracted embed URLs, and the final mounted iframe.

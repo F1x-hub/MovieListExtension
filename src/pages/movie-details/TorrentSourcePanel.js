@@ -2034,6 +2034,10 @@ class MovieDetailsTorrentPanelMethods {
         if (!video) return;
 
         this.torrentPlaybackVideo = video;
+        // Prepared preview frames belong to the downloaded file, so they outlive a new
+        // playback session or another audio track.
+        const session = this.torrentPlaybackSession;
+        if (session?.downloadId) video.dataset.previewFramesKey = `torrent:${session.downloadId}:${session.selectedFile?.fileId ?? ''}`;
         const controller = this.playbackController;
         if (controller?.registerAdapter && typeof window.TorrentAdapter === 'function') {
             if (!controller.getAdapter(MOVIE_DETAILS_TORRENT_SOURCE)) controller.registerAdapter(new window.TorrentAdapter());

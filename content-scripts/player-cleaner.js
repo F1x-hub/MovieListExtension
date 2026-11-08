@@ -2978,6 +2978,24 @@
                     background:    #111;
                     display:       block;
                 }
+                /* A frame prepared in advance for this point, shown in the video's place. */
+                .native-player-wrapper .ghost-tooltip > .ghost-frame {
+                    position:      absolute;
+                    top:           0;
+                    left:          50%;
+                    transform:     translateX(-50%);
+                    box-sizing:    border-box;
+                    width:         200px;
+                    height:        112px;
+                    border-radius: 6px;
+                    border:        1.5px solid rgba(255,255,255,.15);
+                    background:    #111;
+                    object-fit:    cover;
+                    display:       block;
+                }
+                .native-player-wrapper .ghost-tooltip.ghost-tooltip--unavailable > .ghost-frame {
+                    display: none !important;
+                }
                 .native-player-wrapper .provider-native-episode-nav {
                     position: relative;
                     align-items: center;
@@ -5787,6 +5805,8 @@
                     getCurrentType: () => permanentVideo?._movieExtensionHls ? 'hls'
                         : permanentVideo?.dataset?.playerPreviewType,
                     getCurrentHls: () => permanentVideo?._movieExtensionHls || window.hls || null,
+                    // A parser may offer a lighter stream of the same film for previews.
+                    getPreviewSource: () => permanentVideo?._movieExtensionPreview || null,
                     HlsClass: (typeof Hls !== 'undefined') ? Hls : null,
                 });
             }

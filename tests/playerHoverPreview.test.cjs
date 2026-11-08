@@ -119,17 +119,20 @@ const { chromium } = require('playwright');
             const track = await page.locator('.player-progress-track').boundingBox();
             const before = await page.locator('#movie').evaluate(video => video.currentTime);
             await page.mouse.move(track.x + track.width * 0.75, track.y + track.height / 2);
+            // The point's own frame: decoded for the pointer, or prepared beforehand.
             await page.waitForFunction(() => {
                 const ghost = window._iframeGhostPlayer;
-                return ghost._ghostVideo.readyState >= 2 && ghost._ghostVideo.style.visibility === 'visible';
+                return ghost._frameImage.style.visibility === 'visible'
+                    || ghost._ghostVideo.readyState >= 2 && ghost._ghostVideo.style.visibility === 'visible';
             }, null, { timeout: 10000 });
             const state = await page.evaluate(() => {
                 const ghost = window._iframeGhostPlayer;
+                const decoded = ghost._ghostVideo.style.visibility === 'visible';
                 const box = ghost._tooltip.getBoundingClientRect();
-                const frame = ghost._ghostVideo.getBoundingClientRect();
+                const frame = (decoded ? ghost._ghostVideo : ghost._frameImage).getBoundingClientRect();
                 const label = ghost._timeLabel.getBoundingClientRect();
                 return {
-                    time: ghost._ghostVideo.currentTime,
+                    time: decoded ? ghost._ghostVideo.currentTime : ghost._frames.timeOf(ghost._hoverCell),
                     mainTime: document.getElementById('movie').currentTime,
                     label: ghost._timeLabel.textContent,
                     insideViewport: box.left >= 0 && box.right <= innerWidth && box.top >= 0,
@@ -159,6 +162,86 @@ const { chromium } = require('playwright');
                 fs.mkdirSync(process.env.PLAYER_PREVIEW_ARTIFACT_DIR, { recursive: true });
                 await page.screenshot({ path: path.join(process.env.PLAYER_PREVIEW_ARTIFACT_DIR, `${mode}-${theme}-${width}.png`) });
             }
+            await page.mouse.move(0, 0);
+            await page.waitForFunction(() => !document.querySelector('.ghost-tooltip--visible'));
+        }
+
+        // Frames are prepared in the background, one for each point the pointer can reach
+        // in fullscreen. A prepared point shows its own frame at once; any other point shows
+        // only the time until its own frame is decoded, never another moment's frame.
+        const frameColour = () => page.evaluate(() => {
+            const image = window._iframeGhostPlayer._frameImage;
+            const canvas = document.createElement('canvas');
+            canvas.width = image.naturalWidth;
+            canvas.height = image.naturalHeight;
+            const context = canvas.getContext('2d');
+            context.drawImage(image, 0, 0);
+            const [r, , b] = context.getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data;
+            return r > b ? 'red' : 'blue';
+        });
+        const shown = () => page.evaluate(() => {
+            const ghost = window._iframeGhostPlayer;
+            const image = ghost._frameImage.getBoundingClientRect();
+            const video = ghost._ghostVideo.getBoundingClientRect();
+            return {
+                image: ghost._frameImage.style.visibility,
+                video: ghost._ghostVideo.style.visibility,
+                samePlace: ['left', 'top', 'width', 'height'].every(side => Math.abs(image[side] - video[side]) < 0.5)
+            };
+        });
+        {
+            await page.waitForFunction(() => {
+                const frames = window._iframeGhostPlayer._frames;
+                return frames && frames.size === frames.cells;
+            }, null, { timeout: 15000 });
+            const grid = await page.evaluate(() => {
+                const ghost = window._iframeGhostPlayer;
+                const track = document.querySelector('.player-progress-track').getBoundingClientRect();
+                const player = document.querySelector('.native-player-wrapper').getBoundingClientRect();
+                return {
+                    cells: ghost._frames.cells,
+                    film: ghost._cellCount(7472),
+                    fullscreenTrack: Math.round(Math.max(track.width, screen.width - (player.width - track.width)))
+                };
+            });
+            assert.equal(grid.cells, 2, 'a 1.5 s clip needs no more than one frame a second');
+            assert.equal(grid.film, grid.fullscreenTrack, 'a film gets one frame per point of the fullscreen track');
+
+            const track = await page.locator('.player-progress-track').boundingBox();
+            const at = ratio => [track.x + track.width * ratio, track.y + track.height / 2];
+            await page.mouse.move(...at(0.25));
+            assert.deepEqual(await shown(), { image: 'visible', video: 'hidden', samePlace: true },
+                'a prepared point shows its frame at once, in the frame\'s place');
+            assert.equal(await frameColour(), 'red');
+            await page.mouse.move(...at(0.75));
+            assert.equal((await shown()).image, 'visible');
+            assert.equal(await frameColour(), 'blue', 'each point shows its own moment');
+            if (process.env.PLAYER_PREVIEW_ARTIFACT_DIR) {
+                await page.screenshot({ path: path.join(process.env.PLAYER_PREVIEW_ARTIFACT_DIR, 'prepared.png') });
+            }
+            await page.mouse.move(0, 0);
+            await page.waitForFunction(() => !document.querySelector('.ghost-tooltip--visible'));
+
+            // Without prepared frames a point shows only its time until its own frame is decoded.
+            await page.evaluate(() => {
+                const ghost = window._iframeGhostPlayer;
+                ghost._isFilmSteady = () => false;
+                ghost._frames.destroy();
+                ghost._frames = null;
+            });
+            await page.mouse.move(...at(0.25));
+            assert.deepEqual(await shown(), { image: 'hidden', video: 'hidden', samePlace: true },
+                'an unprepared point never borrows another moment\'s frame');
+            await page.waitForFunction(() => {
+                const ghost = window._iframeGhostPlayer;
+                return ghost._ghostVideo.style.visibility === 'visible' && Math.abs(ghost._ghostVideo.currentTime - 0.375) < 0.1;
+            }, null, { timeout: 10000 });
+            await page.waitForFunction(() => window._iframeGhostPlayer._frames.get(0) !== null);
+            await page.mouse.move(...at(0.75));
+            assert.deepEqual(await shown(), { image: 'hidden', video: 'hidden', samePlace: true });
+            await page.mouse.move(...at(0.25));
+            assert.equal((await shown()).image, 'visible', 'a point decoded once comes back at once');
+            assert.equal(await frameColour(), 'red');
             await page.mouse.move(0, 0);
             await page.waitForFunction(() => !document.querySelector('.ghost-tooltip--visible'));
         }
@@ -256,15 +339,33 @@ const { chromium } = require('playwright');
             ghost._handleLeave();
             hls.listeners.manifestParsed();
             const afterLeave = [...hls.starts];
+            const buffer = [hls.config.maxBufferLength, hls.config.maxMaxBufferLength];
+
+            // A lighter stream offered for previews brings its own transport; when it
+            // fails, the preview goes back to the stream being watched.
+            const light = { url: 'https://media.example/light.m3u8', config: { xhrSetup: 'light-loader-fixture' } };
+            ghost._getPreviewSource = () => light;
+            ghost._seekGhost(1);
+            const lightHls = ghost._ghostHls;
+            const lighter = { url: lightHls.url, loader: lightHls.config.xhrSetup, replaced: hls.destroyed === true };
+            lightHls.listeners.error('error', { fatal: true });
+            ghost._seekGhost(1);
+            const fallback = { url: ghost._ghostHls.url, loader: ghost._ghostHls.config.xhrSetup, lightDestroyed: lightHls.destroyed === true };
+
             const mainTime = document.getElementById('movie').currentTime;
+            const last = ghost._ghostHls;
             ghost.destroy();
-            return { beforeManifest, starts, level, loader, afterLeave, mainTime, destroyed: hls.destroyed, previews: document.querySelectorAll('.ghost-tooltip').length };
+            return { beforeManifest, starts, level, loader, afterLeave, buffer, lighter, fallback, mainTime, destroyed: last.destroyed, previews: document.querySelectorAll('.ghost-tooltip').length };
         });
         assert.deepEqual(hlsContract, {
-            beforeManifest: 0, starts: [1], level: 1, loader: 'auth-loader-fixture', afterLeave: [1], mainTime: 0, destroyed: true, previews: 0
+            beforeManifest: 0, starts: [1], level: 1, loader: 'auth-loader-fixture', afterLeave: [1],
+            buffer: [2, 4],
+            lighter: { url: 'https://media.example/light.m3u8', loader: 'light-loader-fixture', replaced: true },
+            fallback: { url: 'https://media.example/playlist?session=fixture', loader: 'auth-loader-fixture', lightDestroyed: true },
+            mainTime: 0, destroyed: true, previews: 0
         });
         assert.deepEqual(errors, []);
-        console.log('PASS: immediate provider mount; real decoded hover frames; primary playback isolation; dark/light and narrow preview geometry; HLS manifest timing and cleanup');
+        console.log('PASS: immediate provider mount; real decoded hover frames; frames prepared in the background per fullscreen track point and shown at once; no borrowed frames; primary playback isolation; dark/light and narrow preview geometry; HLS manifest timing, one-piece buffer, lighter preview stream with fallback, and cleanup');
     } finally {
         await browser.close();
         if (server) await new Promise(resolve => server.close(resolve));
