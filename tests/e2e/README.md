@@ -183,15 +183,38 @@ never asked. This prints a line when the switch is on, and nothing or an error w
 Get-NetTCPConnection -State Listen -LocalPort (Get-Content "$env:LOCALAPPDATA\Google\Chrome\User Data\DevToolsActivePort" -TotalCount 1)
 ```
 
+#### One Allow for a whole task
+
+Chrome asks again for every new connection, so a long task that runs the check several
+times, or reaches it after the owner has left, would stop on that question. Nobody answers it
+but the owner: it is Chrome's protection against any local program taking over the profile,
+and a script that clicked Allow would let any program through as well. Instead, connect once
+at the start of the task and keep the connection:
+
+```bash
+npm run live:bridge
+```
+
+Start it in the background while the owner is at the screen; Chrome asks once and the owner
+presses Allow. The bridge keeps that connection, takes commands only on `127.0.0.1` under a
+random address in `.e2e-output/live/bridge.json`, and stops after two idle hours, when
+Chrome closes the connection, or on `node tests/live/chrome-bridge.cjs stop`. It waits up to
+30 minutes for the answer and then gives up; a task that reaches its live check without a
+connected bridge reports that check as pending instead of waiting. While it is connected,
+`npm run test:live:player` goes through it without a new question, and
+`node tests/live/chrome-bridge.cjs send <method> [paramsJson] [sessionId]` or
+`eval <sessionId> <file.js>` reach Chrome for other checks. `status` says whether it is connected.
+
 The quickest order for a check:
 
 1. Ask the owner to turn the switch on, then check the port.
-2. Start the run only once the owner is at the screen: Allow must be pressed and the windows
-   must stay in view. Anything covering them produces `window hidden`, and that run is wasted.
+2. Start the bridge, or the run, only once the owner is at the screen: Allow must be pressed and
+   the windows must stay in view. Anything covering them produces `window hidden`, and that run
+   is wasted.
 3. Use `--reload` to test the code in the repository, after closing any extension tab that
    matters. Without it pages open from disk, but the service worker stays the one already loaded.
 4. Name only the titles the change affects. A title takes about two minutes.
-5. Ask the owner to turn the switch off when finished.
+5. Stop the bridge and ask the owner to turn the switch off when finished.
 
 Each title opens in its own muted window. The run presses «Смотреть» with a real click, then
 «Следующая» on a series, then every offered source, and a source counts as playing only when

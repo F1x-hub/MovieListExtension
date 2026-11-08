@@ -5,7 +5,9 @@
  * passed through a provider outage that left this one with no working source.
  *
  * Needs Chrome's own switch, once per Chrome start: chrome://inspect/#remote-debugging.
- * Chrome asks the owner to allow the connection. Tests work in their own windows, read only
+ * Chrome asks the owner to allow the connection. With a bridge already connected
+ * (`npm run live:bridge`), the run goes through it and Chrome does not ask again.
+ * Tests work in their own windows, read only
  * this extension's pages and frames, and put back what they change: the title's last source,
  * source preference and watch positions, and the local source-health counters, so each title
  * starts from the default order. Nothing is written to Firestore by playing. A provider
@@ -18,6 +20,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
+const { connectThroughBridge } = require('./chrome-bridge.cjs');
 
 const EXTENSION_ID = 'dgdejomdgiabgcfijcdhjefijdfiemhd';
 const ORIGIN = `chrome-extension://${EXTENSION_ID}`;
@@ -302,8 +305,11 @@ async function reloadExtension(chrome) {
 (async () => {
     const args = process.argv.slice(2);
     const titles = args.filter(arg => /^\d+$/.test(arg)).map(Number);
-    const chrome = new Chrome();
-    await chrome.connect();
+    // A connected bridge already holds the owner's one Allow for this task.
+    const bridged = await connectThroughBridge();
+    const chrome = bridged || new Chrome();
+    if (bridged) console.log('Using the connected bridge; Chrome does not ask again.');
+    else await chrome.connect();
     if (args.includes('--reload')) await reloadExtension(chrome);
     const results = [];
     for (const id of titles.length ? titles : DEFAULT_TITLES) results.push(await runTitle(chrome, id));
