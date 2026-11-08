@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.5.1-69b500?style=flat-square" alt="Version 1.5.1">
+  <img src="https://img.shields.io/badge/VERSION-1.5.2-69b500?style=flat-square" alt="Version 1.5.2">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -446,6 +446,15 @@ keeps npm-compatible three-component semver metadata.
 
 <details open>
 <summary><strong>Unreleased</strong></summary>
+
+</details>
+
+<details>
+<summary><strong>1.5.2</strong> — MediaPlayer Suite 0.1.6: a new download of a big film no longer freezes the media player</summary>
+
+### Fixes
+
+- MediaPlayer Suite 0.1.6 ships with this release; the extension code is the same as in 1.5.1. Starting a new download of a big film could freeze MediaPlayer for several minutes: torrent pieces arrive out of order, a peer can hand over a piece near the end of the film first, and Windows then filled the whole file with zeros up to it (about 40 GB, roughly six minutes on a hard disk). Until it finished, the film page showed «MediaPlayer недоступен» and the film did not start. Suite 0.1.6 makes torrent files sparse, so such a piece is written at once. The release is announced only in the history of «Что нового», with no window.
 
 </details>
 

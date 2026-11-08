@@ -1,5 +1,11 @@
 export const whatsNew = [
     {
+        id: '1.5.2', version: '1.5.2', date: '2026-11-08', skipAnnouncement: true,
+        highlights: [
+            { id: 'mediaplayer-big-download', title: { ru: 'Большие фильмы запускаются сразу', en: 'Big films start right away' }, text: { ru: 'Медиаплеер больше не замирает на несколько минут, когда начинает скачивать большой фильм, и не пишет, что он недоступен.', en: 'The media player no longer freezes for several minutes when it starts downloading a big film, and no longer says it is unavailable.' } }
+        ]
+    },
+    {
         id: '1.5.1', version: '1.5.1', date: '2026-11-08',
         highlights: [
             { id: 'ratings-steady', title: { ru: 'Рейтинги КП и IMDb без ожидания', en: 'KP and IMDb ratings without the wait' }, text: { ru: 'На главной, на странице фильма и в «Оценках» рейтинги появляются быстро и не пропадают, а фильмы с одинаковым названием больше не путаются.', en: 'On Home, the film page and Rated, ratings arrive quickly and stay, and films with the same name are no longer mixed up.' } },
