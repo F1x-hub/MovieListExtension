@@ -1,5 +1,15 @@
 export const whatsNew = [
     {
+        id: '1.5.3', version: '1.5.3', date: '2026-11-09',
+        highlights: [
+            { id: 'downloads-page', title: { ru: 'Страница «Загрузки»', en: 'A Downloads page' }, text: { ru: 'Все торренты медиаплеера в одном месте: фильмы и сериалы с прогрессом, поиском и фильтрами. Загрузки можно ставить на паузу, продолжать и удалять по одной или сразу несколько, а «Смотреть» открывает фильм на этой копии.', en: 'Every media player torrent in one place: films and series with progress, search and filters. Pause, resume or delete one download or several at once, and “Watch” opens the film on that copy.' } },
+            { id: 'torrent-whole-film', title: { ru: 'Весь фильм на шкале', en: 'The whole film on the track' }, text: { ru: 'Пока торрент скачивается, плеер сразу показывает полную длину фильма и отмечает, что уже можно смотреть, а что ещё качается.', en: 'While a torrent downloads, the player shows the film’s full length at once and marks what can be watched now and what is still downloading.' } },
+            { id: 'torrent-from-start', title: { ru: 'Торрент с начала', en: 'Torrents start at the beginning' }, text: { ru: 'Фильм, который ещё скачивается, начинается с первой минуты, а не с середины.', en: 'A film that is still downloading starts at its first minute, not in the middle.' } },
+            { id: 'preview-right-frame', title: { ru: 'Нужный кадр при наведении', en: 'The right frame on hover' }, text: { ru: 'Подсказка над шкалой плеера сразу показывает кадр этого момента и никогда не подставляет кадр из другого места.', en: 'The hint over the player track shows the frame of that moment at once and never a frame from somewhere else.' } },
+            { id: 'mediaplayer-pause', title: { ru: 'Пауза останавливает загрузку', en: 'Pause stops the download' }, text: { ru: 'Медиаплеер больше не докачивает фильм на паузе, даже если открыт плеер, и продолжает большую загрузку после перезагрузки компьютера.', en: 'The media player no longer keeps downloading a paused film, even with the player open, and continues a big download after the computer restarts.' } }
+        ]
+    },
+    {
         id: '1.5.2', version: '1.5.2', date: '2026-11-08', skipAnnouncement: true,
         highlights: [
             { id: 'mediaplayer-big-download', title: { ru: 'Большие фильмы запускаются сразу', en: 'Big films start right away' }, text: { ru: 'Медиаплеер больше не замирает на несколько минут, когда начинает скачивать большой фильм, и не пишет, что он недоступен.', en: 'The media player no longer freezes for several minutes when it starts downloading a big film, and no longer says it is unavailable.' } }

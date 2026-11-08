@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.5.2-69b500?style=flat-square" alt="Version 1.5.2">
+  <img src="https://img.shields.io/badge/VERSION-1.5.3-69b500?style=flat-square" alt="Version 1.5.3">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -450,6 +450,11 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+</details>
+
+<details>
+<summary><strong>1.5.3</strong> — A Downloads page for every torrent, the whole film on a downloading torrent's track, with MediaPlayer Suite 0.1.7</summary>
+
 ### Features
 
 - A torrent that is still downloading shows the whole film on the player from the start. The time reads, for example, «4:20 / 2:04:00» instead of growing with each converted piece, and the track spans the full length in three parts: solid where the film can be watched now, bright dashes where the file is on disk and MediaPlayer is still preparing it, and dim dashes where it is not downloaded yet. Dashes rather than colour keep it apart from the solid buffer of streaming sources. Over a part that cannot play yet the cursor becomes a crossed circle, the hint shows the time with «Ещё не скачано» or «Скачано, готовим к просмотру» and no frame, and a click there does nothing; the arrow keys and End stop where the film can play. The length comes from MediaPlayer's `totalDurationSeconds` and the dashes from the file's download progress, which only approximates time; a file whose length MediaPlayer cannot read keeps the old growing timeline, and a fully converted film looks as before.
@@ -459,8 +464,8 @@ keeps npm-compatible three-component semver metadata.
 
 - The torrent panel no longer stays on «Проверяем локальный MediaPlayer…» when opened in the first seconds after a film page loads. It treated its request as outdated whenever the film object changed, and the page replaces that object with an updated copy of the same film (ratings, box office, background refresh) right after loading; now only another film or a newer request makes it outdated.
 - A torrent that is still downloading starts from the beginning again instead of where MediaPlayer has prepared it up to. While a file downloads, MediaPlayer's stream is a growing playlist, and hls.js took it for a live broadcast and started at its end, so a film downloaded past the middle began playing from the middle. The player now asks for the start explicitly (a saved position still applies), and a retry while MediaPlayer answers "not ready yet" before the first frame keeps that start instead of jumping to the end. Checked with real hls.js in Chromium (`tests/torrentHlsStartBrowser.test.cjs`: 24 s live edge before, 0 s after, also after a retry) and in the owner's Chrome on a film downloaded to 55%: playback began at 1.3 s with frames advancing.
-
 - The frame preview over the player's track shows the right frame at once. While the film plays, the player prepares in the background one frame for each point the pointer can reach on the track in fullscreen (1866 points for a two-hour film on a 1920-pixel screen), working forward from the current position. Preparation waits while the film is starting, seeking or short of buffered video, while the pointer is on the track and while the tab is hidden. A point not prepared yet shows only its time until its own frame is decoded; a frame of another moment is never shown in its place. Each frame downloads only the piece of video that holds it, in the source's lightest quality: on HDRezka the lightest quality the film offers, resolved after the film shows its first frame and replaced by the playing stream if it fails. Torrent and HDRezka frames are kept on the computer for the film's length plus an hour (at least two hours) and deleted after that, so reopening the film within that time shows them at once; frames of sources inside a provider's frame live only while the player is open. Checked in the owner's Chrome: on a 1080p remux torrent about 1.8 frames a second were prepared, a prepared point appeared on hover with no wait, and 385 frames took 2.2 MB; Rutube previews used its 144p stream. Sources inside a provider's frame (KinoGo, Ex-FS, VidSrc) pick this up after the extension is reloaded and were not checked live.
+- MediaPlayer Suite 0.1.7 ships with this release. A paused download now really stops: with the player open, MediaPlayer kept downloading a paused film while its card showed 0 B/s, because the reader feeding the conversion asked for the next missing piece by itself. A pause now closes that reader; the conversion reads what is on disk, waits at the first missing piece and continues from the same byte on resume. A large partly downloaded film also resumes after the service restarts instead of turning to an error: checking the stored pieces no longer counts against the 45-second metadata deadline, and the verified pieces are saved, so later starts do not hash the whole file again. The first start after the update still checks everything once (34 GB took about four minutes on a hard disk in the owner's check).
 
 ### Docs
 
