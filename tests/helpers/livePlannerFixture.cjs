@@ -20,8 +20,8 @@ function installLivePlannerFixture() {
     window.ConfirmDialog = { confirm: async () => true };
     window.PlayerConfig = {};
     window.KinopoiskService = class {
-        async searchMovies() { return { docs: [{ id: 258687, name: 'Интерстеллар', year: 2014, duration: 169, posterUrl: '/src/shared/assets/live/standby-pattern.png' }, { id: 447301, name: 'Начало', year: 2010, duration: 148, posterUrl: '/src/shared/assets/live/standby-pattern.png' }] }; }
-        async getMovieById(id) { return { id, name: 'Интерстеллар', year: 2014, duration: 169, posterUrl: '/src/shared/assets/live/standby-pattern.png' }; }
+        async searchMovies() { return { docs: [{ id: 258687, name: 'Интерстеллар', year: 2014, duration: 169, posterUrl: '/src/shared/assets/live/standby-pattern.webp' }, { id: 447301, name: 'Начало', year: 2010, duration: 148, posterUrl: '/src/shared/assets/live/standby-pattern.webp' }] }; }
+        async getMovieById(id) { return { id, name: 'Интерстеллар', year: 2014, duration: 169, posterUrl: '/src/shared/assets/live/standby-pattern.webp' }; }
     };
     window.CinemaChannelService = class {
         subscribe(callback) { callback(window.CinemaChannel.normalizeChannel(null)); return () => {}; }

@@ -1,5 +1,16 @@
 export const whatsNew = [
     {
+        id: '1.5.5', version: '1.5.5', date: '2026-11-10',
+        highlights: [
+            { id: 'franchise-icons', title: { ru: 'Иконки франшиз для коллекций', en: 'Franchise icons for collections' }, text: { ru: 'В выборе иконки появился раздел «Франшизы»: 51 цветная плитка, от Marvel и DC до «Звёздных войн» и «Гарри Поттера».', en: 'The icon picker has a Franchises section: 51 colour tiles, from Marvel and DC to Star Wars and Harry Potter.' } },
+            { id: 'bookmarks-instant', title: { ru: 'Закладки переключаются мгновенно', en: 'Bookmarks switch instantly' }, text: { ru: 'Списки «Смотрю», «Просмотрено», «Буду смотреть», «Избранное» и коллекции открываются сразу, без секундной паузы.', en: 'Watching, Watched, Plan to Watch, Favorites and collections open at once, without the one-second pause.' } },
+            { id: 'collection-menu-fixed', title: { ru: 'Меню и счётчики коллекций исправлены', en: 'Collection menus and counts fixed' }, text: { ru: 'Иконка больше не сдвигает название коллекции, меню «⋮» в закладках открывается, а счётчики показывают настоящее число фильмов.', en: 'An icon no longer pushes the collection name aside, the “⋮” menu on Bookmarks opens, and the counts show the real number of films.' } },
+            { id: 'downloads-without-tmdb', title: { ru: 'Скачанный фильм открывается и без TMDB', en: 'A downloaded film opens without TMDB' }, text: { ru: 'Фильм из «Загрузок» открывается, даже когда TMDB не отвечает.', en: 'A film from Downloads opens even when TMDB does not answer.' } },
+            { id: 'lighter-animated-avatars', title: { ru: 'Анимированные аватары стали легче', en: 'Lighter animated avatars' }, text: { ru: 'GIF для аватара и баннера сохраняет анимацию, но при загрузке сжимается в несколько раз.', en: 'A GIF avatar or banner keeps its animation and is compressed several times over on upload.' } },
+            { id: 'lighter-updates', title: { ru: 'Обновления стали легче', en: 'Lighter updates' }, text: { ru: 'Архив обновления уменьшился примерно на четверть.', en: 'The update archive is about a quarter smaller.' } }
+        ]
+    },
+    {
         id: '1.5.4', version: '1.5.4', date: '2026-11-09', skipAnnouncement: true,
         highlights: [
             { id: 'mediaplayer-cache-on-film-disk', title: { ru: 'Медиаплеер не забивает диск C:', en: 'The media player no longer fills drive C:' }, text: { ru: 'Подготовленная для просмотра копия фильма хранится рядом с самим фильмом и удаляется вместе с ним, а не копится на диске C:.', en: 'The copy of a film prepared for watching is kept next to the film and deleted with it instead of piling up on drive C:.' } }

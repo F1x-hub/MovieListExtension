@@ -86,8 +86,24 @@ before making the release visible. The ZIP is validated to contain a root-level
 The signed metadata keeps the GitHub release URL for compatibility and adds the
 Firebase Hosting mirror at
 `https://movielistdb-13208-updates.web.app/updates/latest/MovieList-extension-latest.zip`.
-The Native Host tries the mirror and then GitHub with bounded retries, while
-checking the signed size and SHA-256 before extraction. The release workflow
+`assetUrls` lists GitHub first and the mirror second, and the Native Host tries
+them in that order with bounded retries, while checking the signed size and
+SHA-256 before extraction. The mirror is a fallback: an installation downloads
+from Firebase Hosting only when GitHub cannot deliver the archive, so ordinary
+updates do not spend the Hosting transfer quota. Releases up to 1.5.4 listed the
+mirror first, and every installation downloaded each of them from it; installed
+updaters follow the order in the metadata, so the change needs no updater
+release. Where GitHub is unreachable, an update first waits out its attempts (up
+to three, 15 seconds each for the response headers) and then uses the mirror.
+The release job still downloads the published mirror archive once to compare it
+with the release artifact.
+
+The release archive carries no source maps: `scripts/package-release.js` removes
+every `*.map` file and the `sourceMappingURL` line of each script from `dist`
+before packing (`scripts/strip-source-maps.cjs`). `npm run build` still writes
+them for local debugging.
+
+The release workflow
 copies only the newest extension ZIP, metadata and signature to a dedicated
 Hosting site using `firebase.updates.json`. `MovieListSetup.exe` remains in the
 GitHub release because Spark blocks Windows executable files. Ordinary player deployments do not

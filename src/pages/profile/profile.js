@@ -5,6 +5,7 @@ import { AchievementService } from '../../shared/achievements/AchievementService
 import { AchievementsView } from '../../shared/achievements/AchievementsView.js';
 import { frameLevel, rankFor, totalPoints } from '../../shared/achievements/AchievementEngine.js';
 import { renderAvatarFrame } from '../../shared/achievements/AchievementBadge.js';
+import { compressAnimatedImage } from '../../shared/utils/animatedWebp.js';
 
 // Movie metadata comes from shared Firestore documents that any approved user may
 // edit, so image URLs are limited to the same schemes MovieCard.safeImageUrl allows.
@@ -105,7 +106,9 @@ class ProfilePageManager {
         this.photoPreview = null;
         this.bannerFile = null;
         this.bannerPreview = null;
-        
+        // Conversions of chosen GIFs still running, by image kind; saving waits for them.
+        this.imageCompression = {};
+
         // Infinite scroll state for recent ratings
         this.ratingsOffset = 0;
         this.ratingsLimit = 10;
@@ -1624,20 +1627,13 @@ const photoURL = profile.photoURL || '';
         }
 
         if (file.type === 'image/gif') {
-            this.photoFile = file;
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                this.photoPreview = reader.result;
-                this.updatePhotoPreview();
-                Utils.showToast(i18n.get('profile.cropper.gif_bypass'), 'info');
-            };
-            reader.readAsDataURL(file);
+            this.selectAnimatedImage(file, 'avatar');
             return;
         }
 
         const reader = new FileReader();
         reader.onloadend = () => {
-            this.openCropper(reader.result, 'avatar', file.type);
+            this.openCropper(reader.result, 'avatar');
         };
         reader.readAsDataURL(file);
     }
@@ -1692,20 +1688,13 @@ const photoURL = profile.photoURL || '';
         }
 
         if (file.type === 'image/gif') {
-            this.bannerFile = file;
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                this.bannerPreview = reader.result;
-                this.updateBannerPreview();
-                Utils.showToast(i18n.get('profile.cropper.gif_bypass'), 'info');
-            };
-            reader.readAsDataURL(file);
+            this.selectAnimatedImage(file, 'banner');
             return;
         }
 
         const reader = new FileReader();
         reader.onloadend = () => {
-            this.openCropper(reader.result, 'banner', file.type);
+            this.openCropper(reader.result, 'banner');
         };
         reader.readAsDataURL(file);
     }
@@ -1719,9 +1708,45 @@ const photoURL = profile.photoURL || '';
         this.updateBannerPreview();
     }
 
+    /**
+     * A GIF keeps its animation, so it skips the cropper. It is shown at once and
+     * re-encoded in the background as a smaller animated WebP, which replaces it
+     * as the file to upload unless the user has chosen something else meanwhile.
+     * When the conversion is unavailable or would not make the file smaller, the
+     * GIF itself is uploaded.
+     */
+    selectAnimatedImage(file, mode) {
+        const fileKey = mode === 'avatar' ? 'photoFile' : 'bannerFile';
+        const previewKey = mode === 'avatar' ? 'photoPreview' : 'bannerPreview';
+        const isSelected = (candidate) => this[fileKey] === candidate;
+        const showPreview = (candidate) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                if (!isSelected(candidate)) return;
+                this[previewKey] = reader.result;
+                if (mode === 'avatar') this.updatePhotoPreview();
+                else this.updateBannerPreview();
+            };
+            reader.readAsDataURL(candidate);
+        };
+
+        this[fileKey] = file;
+        showPreview(file);
+        Utils.showToast(i18n.get('profile.cropper.gif_bypass'), 'info');
+
+        (this.imageCompression ||= {})[mode] = compressAnimatedImage(file, mode, { isCurrent: () => isSelected(file) })
+            .then(compressed => {
+                if (!compressed || !isSelected(file)) return;
+                this[fileKey] = compressed;
+                showPreview(compressed);
+            })
+            .catch(error => {
+                console.warn('ProfilePage: Could not compress the animated image; the original will be uploaded:', error);
+            });
+    }
+
     // --- CROPPER LOGIC ---
-    openCropper(dataUrl, mode, fileType) {
-        this.cropperFileType = fileType;
+    openCropper(dataUrl, mode) {
         this.currentCropperMode = mode;
         if (this.elements.cropperImage) {
             this.elements.cropperImage.src = dataUrl;
@@ -1972,14 +1997,10 @@ const photoURL = profile.photoURL || '';
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, outputW, outputH);
         
-        // Note: Canvas toDataURL doesn't support outputting 'image/gif'. It will output PNG.
-        // If we strictly need to keep GIF animations, we cannot crop it via Canvas API.
-        // But we will at least use the original mime type or PNG fallback.
-        const outputMime = this.cropperFileType === 'image/gif' ? 'image/png' : (this.cropperFileType || 'image/jpeg');
-        const outputExt = outputMime.split('/')[1] === 'jpeg' ? 'jpg' : outputMime.split('/')[1];
-
-        const dataUrl = canvas.toDataURL(outputMime, 0.9);
-        const file = this.dataURLtoFile(dataUrl, `cropped-${this.currentCropperMode}-${Date.now()}.${outputExt}`);
+        // The crop is stored as WebP whatever the source was: the same picture as a
+        // PNG is several times heavier, and WebP keeps transparency.
+        const dataUrl = canvas.toDataURL('image/webp', 0.9);
+        const file = this.dataURLtoFile(dataUrl, `cropped-${this.currentCropperMode}-${Date.now()}.webp`);
         
         if (this.currentCropperMode === 'avatar') {
             this.photoFile = file;
@@ -2079,6 +2100,10 @@ const photoURL = profile.photoURL || '';
                     return;
                 }
             }
+
+            // A GIF chosen a moment ago may still be converting; the smaller copy is
+            // the one to upload.
+            await Promise.allSettled(Object.values(this.imageCompression || {}));
 
             // 2. New images get their own object names. The previous files stay valid
             // until the profile document points elsewhere and are deleted afterwards.

@@ -110,7 +110,19 @@ const scriptSource = pageSource
     .replace(/^import \{ AchievementsView \} from .*$/m, 'class AchievementsView {}')
     .replace(/^import \{ frameLevel, rankFor, totalPoints \} from .*$/m, 'const frameLevel = () => 0; const rankFor = () => ({ level: 0 }); const totalPoints = () => 0;')
     .replace(/^import \{ renderAvatarFrame \} from .*$/m, 'const renderAvatarFrame = () => "";')
+    .replace(/^import \{ compressAnimatedImage \} from .*$/m, 'const compressAnimatedImage = (...args) => globalThis.compressAnimatedImageStub(...args);')
     + '\nglobalThis.ProfilePageManager = ProfilePageManager; globalThis.safeImageUrl = safeImageUrl;';
+assert.doesNotMatch(scriptSource, /^import /m, 'every import of profile.js has a stand-in');
+// The real conversion needs a browser; each test sets what it should answer.
+context.compressAnimatedImageStub = async () => null;
+context.FileReader = class {
+    readAsDataURL(file) {
+        queueMicrotask(() => {
+            this.result = `data:${file.type};base64,AAAA`;
+            this.onloadend?.();
+        });
+    }
+};
 vm.runInContext(scriptSource, context, { filename: 'profile.js' });
 const { ProfilePageManager, safeImageUrl } = context;
 
@@ -455,6 +467,102 @@ function createManager() {
         await editor.handleFormSubmit(submitEvent);
         assert.deepEqual(calls, [], 'no upload, write or delete after a wrong password');
         assert.equal(editor.elements.passwordError.textContent, translations['profile.edit_modal.wrong_password']);
+    }
+
+    // A chosen GIF is uploaded as its smaller animated WebP copy
+    {
+        const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+        const gif = { type: 'image/gif', size: 4_000_000, name: 'dance.gif' };
+        const webp = { type: 'image/webp', size: 300_000, name: 'animated-avatar-1.webp' };
+        const pick = (editor, handler, file) => editor[handler]({ target: { files: [file] } });
+        const makeImageEditor = (calls) => {
+            const editor = makeEditor({}, calls);
+            editor.updatePhotoPreview = () => {};
+            editor.updateBannerPreview = () => {};
+            return editor;
+        };
+        const uploads = [];
+        const uploading = (calls) => fakeFirebase(calls, {
+            uploadAvatar: async (file) => { uploads.push(['avatar', file]); return { photoURL: 'https://x/a', photoPath: 'avatars/me/profile_2.webp' }; },
+            uploadBanner: async (file) => { uploads.push(['banner', file]); return { bannerURL: 'https://x/b', bannerPath: 'banners/me/banner_2.webp' }; }
+        });
+
+        // The GIF is usable at once; the copy replaces it and its preview when ready.
+        {
+            const requests = [];
+            context.compressAnimatedImageStub = async (file, mode, options) => { requests.push([file, mode, options.isCurrent()]); return webp; };
+            const editor = makeImageEditor([]);
+            toasts.length = 0;
+            pick(editor, 'handlePhotoChange', gif);
+            assert.equal(editor.photoFile, gif, 'the original is selected while the copy is prepared');
+            assert.deepEqual(toasts.at(-1), ['info', context.i18n.get('profile.cropper.gif_bypass')]);
+            await settle();
+            assert.deepEqual(requests, [[gif, 'avatar', true]]);
+            assert.equal(editor.photoFile, webp);
+            assert.equal(editor.photoPreview, 'data:image/webp;base64,AAAA', 'the preview shows what will be uploaded');
+            assert.equal(editor.bannerFile, undefined, 'the banner is untouched');
+
+            pick(editor, 'handleBannerChange', gif);
+            await settle();
+            assert.deepEqual(requests[1].slice(0, 2), [gif, 'banner']);
+            assert.equal(editor.bannerFile, webp);
+        }
+
+        // No smaller copy (old browser, or the copy is not smaller): the GIF stays.
+        {
+            context.compressAnimatedImageStub = async () => null;
+            const editor = makeImageEditor([]);
+            pick(editor, 'handlePhotoChange', gif);
+            await settle();
+            assert.equal(editor.photoFile, gif);
+            assert.equal(editor.photoPreview, 'data:image/gif;base64,AAAA');
+
+            context.compressAnimatedImageStub = async () => { throw new Error('decode failed'); };
+            const originalWarn = console.warn;
+            console.warn = () => {};
+            try {
+                pick(editor, 'handleBannerChange', gif);
+                await settle();
+            } finally { console.warn = originalWarn; }
+            assert.equal(editor.bannerFile, gif, 'a failed conversion keeps the original');
+        }
+
+        // A copy that arrives after the user removed or replaced the image is dropped.
+        {
+            let finish;
+            let stillCurrent;
+            context.compressAnimatedImageStub = (file, mode, options) => new Promise(resolve => {
+                finish = () => { stillCurrent = options.isCurrent(); resolve(webp); };
+            });
+            const editor = makeImageEditor([]);
+            editor.elements.photoInput = field('dance.gif');
+            pick(editor, 'handlePhotoChange', gif);
+            editor.handleRemovePhoto();
+            finish();
+            await settle();
+            assert.equal(stillCurrent, false, 'the conversion is told to stop');
+            assert.equal(editor.photoFile, null);
+            assert.equal(editor.photoPreview, null);
+        }
+
+        // Saving right after choosing waits for the copy and uploads it.
+        {
+            let finish;
+            context.compressAnimatedImageStub = () => new Promise(resolve => { finish = () => resolve(webp); });
+            const calls = [];
+            context.firebaseManager = uploading(calls);
+            const editor = makeImageEditor(calls);
+            uploads.length = 0;
+            pick(editor, 'handlePhotoChange', gif);
+            const saving = editor.handleFormSubmit(submitEvent);
+            await settle();
+            assert.deepEqual(uploads, [], 'nothing is uploaded while the copy is still being made');
+            finish();
+            await saving;
+            assert.deepEqual(uploads, [['avatar', webp]]);
+            assert.equal(calls.find(call => call[0] === 'update')[1].photoPath, 'avatars/me/profile_2.webp');
+        }
+        context.compressAnimatedImageStub = async () => null;
     }
 
     // 8: a failed username lookup is not reported as "taken"; double submit is ignored

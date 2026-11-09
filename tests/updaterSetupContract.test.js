@@ -70,7 +70,11 @@ assert.match(metadataScript, /const MIN_UPDATER_VERSION = '1\.1\.4';/,
     'legacy metadata must carry the protocol floor, not the current updater release');
 assert.match(metadataScript, /minUpdaterVersion: MIN_UPDATER_VERSION/);
 assert.match(metadataScript, /firebaseAssetUrl/);
-assert.match(metadataScript, /assetUrls:/);
+assert.match(metadataScript, /assetUrls: \[githubAssetUrl, firebaseAssetUrl\]/,
+    'GitHub must be the first download source; the Firebase Hosting mirror is the fallback');
+assert.match(metadataScript, /assetUrl: githubAssetUrl,/);
+assert.match(source, /foreach \(var url in urls\.Distinct\(StringComparer\.OrdinalIgnoreCase\)\)/,
+    'the updater must try the signed download sources in their listed order');
 assert.match(source, /AssetUrls/);
 assert.match(source, /updates\/latest/);
 assert.match(source, /\\\\d\+\(\?:\\\\\.\\\\d\+\)\{2,3\}/);

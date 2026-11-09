@@ -1,6 +1,6 @@
 {
   "name": "movie-rating-extension",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "description": "Rate and discover movies with community ratings and Kinopoisk integration",
   "main": "popup.js",
   "scripts": {
@@ -45,7 +45,7 @@
     "test:actor-age": "node tests/actorAge.test.cjs",
     "test:filter-controls-browser": "node tests/filterControlsBrowserSmoke.cjs",
     "test:filter-controls-layout": "node tests/filterControlsLayoutBrowser.cjs",
-    "test:profile-page": "node tests/profilePageAuditFixes.test.cjs && node tests/profileInsights.test.mjs && node tests/achievementEngine.test.mjs",
+    "test:profile-page": "node tests/profilePageAuditFixes.test.cjs && node tests/profileInsights.test.mjs && node tests/achievementEngine.test.mjs && node tests/animatedWebp.test.mjs && node tests/animatedWebpBrowser.test.cjs",
     "test:popup": "node tests/popupAuditFixes.test.cjs && node tests/popupRatingsCacheFailures.test.cjs && node tests/popupBackToTopAuditFixes.test.cjs && node tests/popupProfileCacheCleanup.test.cjs && node tests/popupPasswordReset.test.cjs && node tests/popupSurfaceContract.test.js && node tests/infiniteScrollRatings.test.js && node tests/crossTabAuthSync.test.js",
     "test:ratings-page": "node tests/ratingsPageContract.test.js && node tests/ratingsPageAuditFixes.test.cjs && node tests/ratingsPageState.test.mjs && node tests/ratingsPageHardening.test.cjs && node tests/ratingsMyRatingAndUrl.test.mjs",
     "test:media-player": "node tests/mediaPlayerAutoConnect.test.cjs && node tests/mediaPlayerDownloadFolderService.test.cjs && node tests/mediaPlayerDownloadFolderBrowser.test.cjs && node tests/torrentPlaybackSelection.test.cjs && node tests/torrentSubtitleBrowser.test.cjs && node tests/mediaPlayerIntegrationContract.test.js && node tests/movieDetailsTorrentLibrary.test.js && node tests/downloadsLibrary.test.cjs && node tests/downloadsPageBrowser.test.cjs && node tests/torrentHlsStartBrowser.test.cjs && node tests/torrentSharedPlayer.test.cjs && node tests/torrentTimelineBrowser.test.cjs && node tests/parserStreamFallback.test.cjs && node tests/playerProgressScope.test.cjs && node tests/playerQualityLabel.test.cjs && npm run test:player-preview",
@@ -66,7 +66,7 @@
     "test:component-updates": "node tests/componentUpdates.test.cjs && node tests/suiteRelease.test.cjs && node tests/componentUpdatesSettingsBrowser.test.cjs",
     "generate-component-metadata": "node scripts/generate-component-metadata.js",
     "test:updater-setup": "node tests/updaterSetupContract.test.js",
-    "test:package-release": "node tests/packageReleaseContract.test.js && node tests/googleAccessToken.test.cjs",
+    "test:package-release": "node tests/packageReleaseContract.test.js && node tests/stripSourceMaps.test.cjs && node tests/googleAccessToken.test.cjs",
     "test:icon-fallback": "node tests/iconFallbackContract.test.js",
     "test:provider-keys": "node tests/adminAuth.test.cjs && node tests/providerKeyVault.test.cjs && node tests/providerKeyManagement.test.cjs && node tests/providerKeyManagementHandler.test.cjs && node tests/providerKeyPool.test.cjs && node tests/tmdbProxy.test.cjs && node tests/migrateKinopoiskSecret.test.cjs && node tests/migrateTmdbSecret.test.cjs && node tests/adminProviderKeysContract.test.cjs && node tests/adminProviderKeysUIContract.test.js && node tests/kinopoiskProxy.test.cjs && node tests/kinopoiskQuotaCircuitBreaker.test.cjs",
     "pretest": "npm run test:hdrezka-provider && npm run test:pro-player && node tests/urlPolicy.test.cjs && node tests/hlsPolicyLoader.test.cjs && node tests/hlsPolicyFactory.test.cjs && node tests/hlsConsumerBoundary.test.cjs && node tests/playerFixtureServer.test.cjs && node tests/changeSourceRemovalContract.test.js && node tests/playerSettingsMenuEscaping.test.cjs && node tests/providerSandboxContract.test.js && node tests/numberStepper.test.cjs && node tests/sortControl.test.cjs && node tests/sortControlIntegration.test.cjs && node tests/searchNavigationControls.test.cjs && node tests/filterControls.test.cjs && node tests/filterControlsIntegration.test.cjs && node tests/catalogSelectControls.test.js && node tests/dropdownContract.test.js && node tests/collectionPageState.test.cjs && node tests/collectionIcon.test.cjs && node tests/bookmarksPageSwitch.test.cjs && npm run test:visual-design && npm run test:ratings-page && npm run test:profile-page && npm run test:icon-fallback && node tests/themeService.test.js && node tests/tmdbConfigFallback.test.js && node tests/calendarService.test.js && node tests/kinopoiskProxy.test.cjs && node tests/kinopoiskQuotaCircuitBreaker.test.cjs && node tests/theNumbersService.test.js && node tests/theNumbersFinanceRendering.test.js && node tests/starwarsMovies.test.js && node tests/idMappingReverseNegativePhase6B.test.js && node tests/movieDetailsAccessibilityPhase6C.test.js && node tests/movieDetailsPerfPhase6E.test.js && node tests/movieDetailsPhase6G.test.js && node tests/movieDetailsPhase6I.test.js && node tests/movieDetailsLoadingReliability.test.cjs && npm run test:loading-performance",

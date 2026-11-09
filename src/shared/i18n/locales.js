@@ -1008,7 +1008,7 @@ export const locales = {
                 banner: "Banner",
                 cancel: "Cancel",
                 apply: "Apply",
-                gif_bypass: "GIF image cannot be cropped in browser, using original image.",
+                gif_bypass: "A GIF cannot be cropped in the browser. Its animation is kept, and the file is compressed before upload.",
                 close: "Close the cropper",
                 image_alt: "Image to crop",
                 selection_label: "Crop area: arrows move it, + and − resize it"
@@ -2892,7 +2892,7 @@ export const locales = {
                 banner: "Баннер",
                 cancel: "Отмена",
                 apply: "Применить",
-                gif_bypass: "GIF нельзя обрезать в браузере, поэтому используется исходное изображение.",
+                gif_bypass: "GIF нельзя обрезать в браузере. Анимация сохранится, а файл будет сжат перед загрузкой.",
                 close: "Закрыть обрезку",
                 image_alt: "Изображение для обрезки",
                 selection_label: "Область обрезки: стрелки двигают её, + и − меняют размер"

@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.5.4-69b500?style=flat-square" alt="Version 1.5.4">
+  <img src="https://img.shields.io/badge/VERSION-1.5.5-69b500?style=flat-square" alt="Version 1.5.5">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -447,14 +447,16 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
-<details open>
-<summary><strong>Unreleased</strong></summary>
+<details>
+<summary><strong>1.5.5</strong> — franchise icons for collections, instant Bookmarks, lighter animated avatars and updates</summary>
 
 ### Features
 
 - The collection icon picker has a **Франшизы** section with 51 colour tiles in six groups: **Marvel** (Мстители, Железный человек, Капитан Америка, Тор, Халк, Человек-паук, Доктор Стрэндж, Чёрная пантера, Стражи Галактики, Человек-муравей, Люди Икс, Дэдпул), **DC** (Бэтмен, Джокер, Чудо-женщина, Аквамен), **Кино** (Звёздные войны, Дюна, Джеймс Бонд, Гарри Поттер, Властелин колец, Матрица, Парк и Мир Юрского периода, Пираты Карибского моря, Форсаж, Миссия невыполнима, Джон Уик, Индиана Джонс, Терминатор, Охотники за привидениями, Назад в будущее, Крёстный отец, Рокки, Люди в чёрном, Голодные игры, Годзилла), **Ужасы** (Пятница 13-е, Чужой, Хищник, Оно, Хэллоуин, Кошмар на улице Вязов), **Сериалы** (Игра престолов, Очень странные дела, Во все тяжкие, Шерлок, Игра в кальмара, Ходячие мертвецы) and **Мультфильмы и аниме** (Ледниковый период, Ван-Пис). Each tile uses the series' colours and an object it is known for (the gauntlet with six stones, a sling-ring portal, crossed light swords, a sandworm's mouth, a red balloon by a storm drain) and does not copy a logo: Batman is a bat signal over a night city. The tiles stay recognisable at the 16px size of the «⋮» menu, show larger in the picker under a heading per group, and name the franchise on hover. `docs/design-system.md` lists collection icons among the places where colour is allowed.
 
 - Collections no longer take uploaded pictures as icons; their icons are the drawn ones and the franchise tiles. The «Upload Custom Icon» button, the row of earlier uploads in the picker and the code that wrote to and deleted from Storage are gone. A collection that still has an old picture shows the folder icon, and opening it for editing preselects the first icon. The extension also deletes the local history of uploaded pictures (up to 50 of them), which since 1.2.8 had been written under the key `undefined` because its key name was lost. The Storage rules no longer allow anything under `collection_icons/`; they were deployed to `movielistdb-13208` on 2026-11-09, and no collection in Firestore points to an uploaded picture any more (three were cleared on two accounts). The files under `collection_icons/` are deleted from the Firebase console, because the service account has no Storage access.
+
+- An animated avatar or banner is uploaded several times lighter. A GIF chosen in the profile editor keeps its animation but is re-encoded in the browser as an animated WebP at the size the profile shows it (an avatar is scaled until its shorter side is 256px), and that copy is uploaded when it is smaller; otherwise, and in a browser that cannot make it, the GIF is uploaded as before. The preview in the editor shows the copy, and saving waits for it. Run through the same code in Chromium, the eleven GIFs now in Storage went from 18.1 MB to 4.6 MB, in 0.1–0.9 s each; a 191-frame banner came out larger and stays a GIF. A cropped still image is stored as WebP too, whatever it was. Images already uploaded are not converted: they change when their owner uploads again. Checked in the built extension up to the file queued for upload (`tests/e2e/specs/profile-image-upload.spec.cjs`); the upload to Storage itself was not run.
 
 ### Fixes
 
@@ -464,6 +466,11 @@ keeps npm-compatible three-component semver metadata.
 - The «⋮» menu next to a collection's name on Bookmarks opens. It was added inside its own button with a class the styles never open, and a press on an item reached the button first and removed the menu. It now opens below the button on a click or Enter, closes on a click elsewhere, on Escape or when another list is chosen, and marks «Delete Collection» as destructive.
 - Bookmarks refreshes its collection list from the server even when it has a cached copy, so films added to a collection on a film's page show up, and the sidebar counts change as soon as a film is added to or removed from a collection on Bookmarks. The «Дюна» collection showed 0 while holding three films.
 - A film opened from **Downloads** no longer ends on «Этого фильма нет в Kinopoisk» when TMDB does not answer. The page sent the film page only a TMDB ID and a title, without a year, and the film page then searched Kinopoisk by title and year, which cannot confirm a match without the year. Downloads now finds the film's Kinopoisk ID among the TMDB–Kinopoisk mappings this browser has already verified (an exact external ID, an admin mapping or a single exact title, year and type match, never a title alone), and «Смотреть» and the title open the film by that ID, like any other card. The film page's TMDB-ID route checks the same mappings before any search, so links opened from elsewhere without a year also open. When TMDB does not answer, a downloaded film this browser has opened before takes its title, year and poster from its saved card instead of the empty placeholder; that card is used for the visit only, so TMDB is asked again next time. Checked in Chromium with a TMDB proxy answering 503 (`tests/downloadsPageBrowser.test.cjs`) and in the owner's Chrome: «Супер 8» showed its year and poster and linked to `movieId=517433`, and the old link without a year opened the film. A film this browser has never opened still depends on TMDB for its poster and on the title-and-year search.
+
+### Refactor
+
+- Extension updates download the release archive from GitHub first and use the Firebase Hosting mirror only when GitHub cannot deliver it. The mirror used to come first, so every installation drew every release from the Hosting transfer quota: about 1.1 GB in the 30 days to 2026-11-09, all of it this one archive. The order is the `assetUrls` list of the signed `update.json`, and installed updaters follow it, so it applies from the next release without an updater update. Where GitHub is unreachable, an update now waits out its GitHub attempts (up to three, 15 seconds each) before it uses the mirror. The release job still downloads the mirror copy once per release to verify it.
+- The release archive is about a quarter smaller: 11.15 MB against 14.58 MB for 1.5.4, measured on a local build packed with the release steps. It no longer carries source maps (247 files; `npm run build` still writes them for local debugging, and an error in an installed release now points at minified code), and the Live standby background is a 107 KB WebP instead of a 2 MB PNG. The WebP was compared with the original side by side and checked on the Live page served as static files, not in a loaded extension.
 
 </details>
 

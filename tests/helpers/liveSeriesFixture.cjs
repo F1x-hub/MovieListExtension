@@ -1,7 +1,7 @@
 // Deterministic catalogue responses for offline editor tests. Never used in production.
 function installLiveSeriesFixture() {
     const series = { id: 101, kinopoiskId: 101, name: 'Тестовый сериал', type: 'tv-series', isSeries: true,
-        year: 2025, duration: 99, externalId: { tmdb: 555 }, posterUrl: '/src/shared/assets/live/standby-pattern.png' };
+        year: 2025, duration: 99, externalId: { tmdb: 555 }, posterUrl: '/src/shared/assets/live/standby-pattern.webp' };
     const episode = (seasonNumber, episodeNumber, runtime, name = `Название ${episodeNumber}`) => ({
         seasonNumber, episodeNumber, runtime, name, airDate: '2020-01-01'
     });

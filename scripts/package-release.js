@@ -59,6 +59,12 @@ if (fs.existsSync(localTmdbConfig)) fs.rmSync(localTmdbConfig, { force: true });
 const localTmdbSourceMap = `${localTmdbConfig}.map`;
 if (fs.existsSync(localTmdbSourceMap)) fs.rmSync(localTmdbSourceMap, { force: true });
 
+// Source maps help debug a local build. The public archive ships without them
+// and without the comments that point at them, so every install and update
+// downloads less.
+const strippedMaps = require('./strip-source-maps.cjs').stripSourceMaps(dist);
+console.log(`[release] Removed ${strippedMaps.maps} source maps (${(strippedMaps.bytes / 1048576).toFixed(2)} MB) from the archive.`);
+
 const forbiddenNames = ['serviceAccountKey.json', 'tmdb.config.js', '.env', '.firebase'];
 const files = [];
 function walk(directory) {
@@ -71,6 +77,7 @@ function walk(directory) {
 walk(dist);
 const forbidden = files.filter(file => forbiddenNames.some(name => file.includes(name)));
 if (forbidden.length > 0) fail(`forbidden files found in dist: ${forbidden.join(', ')}`);
+if (files.some(file => file.endsWith('.map'))) fail('source maps remain in dist after stripping.');
 
 const assetName = `MovieList-extension-${manifest.version}.zip`;
 const assetPath = path.join(root, assetName);

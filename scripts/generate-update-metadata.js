@@ -6,6 +6,7 @@ const root = path.join(__dirname, '..');
 const firebaseAssetUrl = 'https://movielistdb-13208-updates.web.app/updates/latest/MovieList-extension-latest.zip';
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'dist', 'manifest.json'), 'utf8'));
 const assetName = `MovieList-extension-${manifest.version}.zip`;
+const githubAssetUrl = `https://github.com/F1x-hub/MovieListExtension/releases/download/v${manifest.version}/${assetName}`;
 const assetPath = path.join(root, assetName);
 const privateKey = process.env.UPDATE_SIGNING_PRIVATE_KEY;
 const updaterSource = fs.readFileSync(
@@ -49,11 +50,11 @@ const metadata = {
     extensionId,
     version: manifest.version,
     assetName,
-    assetUrl: `https://github.com/F1x-hub/MovieListExtension/releases/download/v${manifest.version}/${assetName}`,
-    assetUrls: [
-        firebaseAssetUrl,
-        `https://github.com/F1x-hub/MovieListExtension/releases/download/v${manifest.version}/${assetName}`
-    ],
+    assetUrl: githubAssetUrl,
+    // The updater tries these in order. GitHub serves the archive first; the
+    // Firebase Hosting mirror is the fallback, so its transfer quota is spent
+    // only when GitHub cannot deliver the file.
+    assetUrls: [githubAssetUrl, firebaseAssetUrl],
     sha256: crypto.createHash('sha256').update(asset).digest('hex'),
     size: asset.length,
     minUpdaterVersion: MIN_UPDATER_VERSION,

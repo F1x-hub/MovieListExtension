@@ -226,7 +226,7 @@ dark/light values for those roles and owns theme mode mapping.
 The broadcast standby screen is fixed dark media content in either shell theme.
 Its neutral `--ui-broadcast-*` roles live in `tokens.css`; the surrounding page,
 programme card and admin editor follow the selected theme. The original
-`src/shared/assets/live/standby-pattern.png` is the approved TV test-pattern art,
+`src/shared/assets/live/standby-pattern.webp` is the approved TV test-pattern art,
 not a copy of the stock reference images. Standby is silent and static, with no
 flashing noise. The admin programme uses one calendar day from 00:00 to 24:00,
 inline zoom controls and labelled draggable blocks with fixed duration. New
