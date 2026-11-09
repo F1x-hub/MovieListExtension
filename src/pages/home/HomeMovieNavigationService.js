@@ -3,8 +3,10 @@
  * This service never calls the Kinopoisk API.
  */
 class HomeMovieNavigationService {
-    constructor({ kinopoiskService = null, htmlSearchService = null } = {}) {
+    constructor({ kinopoiskService = null, htmlSearchService = null, idMappingService = null } = {}) {
         this.kinopoiskService = kinopoiskService;
+        // Created on first use: only the film page's known-mapping check needs it.
+        this.idMappingService = idMappingService;
         this.htmlSearchService = htmlSearchService || (
             typeof KinopoiskPersonHtmlService !== 'undefined'
                 ? new KinopoiskPersonHtmlService({ kinopoiskService })
@@ -95,13 +97,31 @@ class HomeMovieNavigationService {
     /**
      * The Kinopoisk ID this browser has already verified for a card, or null.
      * Reads local storage only, so it is safe before the session is known.
+     * An identity IdMappingService already trusts needs no title or year, so a
+     * route that arrives without them (Downloads while TMDB is down) still opens.
      */
     async findKnownMapping(item = {}) {
         const tmdbId = Number(item.tmdbId || item.id);
         if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0) return null;
         const mediaType = this._normalizeMediaType(item.mediaType || item.type);
+        const trusted = await this._findTrustedIdentity(tmdbId, mediaType);
+        if (trusted) return trusted;
         const cached = (await this._readCache())[`${mediaType}:${tmdbId}`];
         return this._isUsableMapping(cached, item, mediaType) ? Number(cached.kpId) : null;
+    }
+
+    async _findTrustedIdentity(tmdbId, mediaType) {
+        if (!this.idMappingService && typeof IdMappingService !== 'undefined') {
+            this.idMappingService = new IdMappingService();
+        }
+        if (typeof this.idMappingService?.findTrustedKinopoiskId !== 'function') return null;
+        try {
+            const kinopoiskId = Number(await this.idMappingService.findTrustedKinopoiskId(tmdbId, mediaType));
+            return Number.isSafeInteger(kinopoiskId) && kinopoiskId > 0 ? kinopoiskId : null;
+        } catch (error) {
+            console.warn('[HomeMovieNavigation] Local identity lookup failed:', error?.message || error);
+            return null;
+        }
     }
 
     _isUsableMapping(cached, item, mediaType) {

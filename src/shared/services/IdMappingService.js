@@ -767,6 +767,26 @@ class IdMappingService {
     }
 
     /**
+     * The Kinopoisk ID this browser already holds as a verified identity for a
+     * TMDB title (TRUSTED_REVERSE_METHODS: exact external IDs, admin mappings,
+     * curated exceptions, one exact title-year-type match; never a title alone
+     * or a legacy record). Reads the local cache only (no
+     * Firestore, no provider request), so a page may ask before its session is known.
+     * @param {number|string} tmdbId
+     * @param {'movie'|'tv'} [mediaType='movie']
+     * @returns {Promise<number|null>}
+     */
+    async findTrustedKinopoiskId(tmdbId, mediaType = 'movie') {
+        const id = Number(tmdbId);
+        if (!Number.isSafeInteger(id) || id <= 0) return null;
+        const normType = this.normalizeMediaType(mediaType);
+        const key = this.buildKey(normType, id);
+        const entry = this.VERIFIED_MAPPING_OVERRIDES[key] || (await this.getMappingCache())[key];
+        const trusted = this._normalizeTrustedMapping(entry);
+        return trusted && trusted.tmdbId === id && trusted.mediaType === normType ? trusted.kpId : null;
+    }
+
+    /**
      * Check if a Kinopoisk entity type is compatible with a TMDB media type.
      * Strict rule: Never match TMDB movie to KP tv-series or TMDB tv to KP movie.
      * Uses Kinopoisk doc metadata (isSeries, movieLength, seriesLength) to safely disambiguate 'anime'.

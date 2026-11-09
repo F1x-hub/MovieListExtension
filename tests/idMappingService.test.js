@@ -1531,7 +1531,32 @@ async function runTests() {
     assert.strictEqual(normalizedAnime.seriesLength, 23, 'KP normalization must preserve seriesLength');
 
     console.log('  ✅ KP-rooted recovery, persistence, exact precedence, and ambiguity guard passed');
-    console.log('🎉 ALL 37 IdMappingService Tests Passed Successfully!');
+
+    // 38. A verified local identity answers without any request; weaker records do not.
+    console.log('--- 38. Testing local trusted TMDB -> Kinopoisk lookup ---');
+    globalThis.chrome.storage.local.store = {
+        [service.CACHE_KEY]: {
+            'movie:37686': { tmdbId: 37686, mediaType: 'movie', kpId: 517433, status: 'resolved', identityStatus: 'VERIFIED', verificationMethod: 'exact_external_tmdb', verificationSource: 'automatic', resolutionSource: 'automatic' },
+            'movie:900': { tmdbId: 900, mediaType: 'movie', kpId: 77, status: 'resolved', resolutionSource: 'automatic' },
+            'movie:901': { tmdbId: 901, mediaType: 'movie', kpId: 78, status: 'resolved', verificationMethod: 'legacy_resolved' },
+            'movie:902': { tmdbId: 902, mediaType: 'movie', status: 'not-found', retryAfter: Date.now() + 60000 },
+            'tv:1396': { tmdbId: 1396, mediaType: 'tv', kpId: 404900, status: 'resolved', isManual: true, resolutionSource: 'manual' }
+        }
+    };
+    const localOnly = new IdMappingService({ getMovieById: async () => assert.fail('A local lookup asks no provider') }, {});
+    localOnly.getFirebaseManager = () => assert.fail('A local lookup reads no Firestore');
+    assert.strictEqual(await localOnly.findTrustedKinopoiskId(37686, 'movie'), 517433, 'An exact external mapping is trusted');
+    assert.strictEqual(await localOnly.findTrustedKinopoiskId('37686'), 517433, 'The media type defaults to movie');
+    assert.strictEqual(await localOnly.findTrustedKinopoiskId(37686, 'tv'), null, 'A movie identity never answers for a series');
+    assert.strictEqual(await localOnly.findTrustedKinopoiskId(900, 'movie'), 77, 'An old automatic record migrates to exact TMDB');
+    assert.strictEqual(await localOnly.findTrustedKinopoiskId(901, 'movie'), null, 'A legacy title-only record is not trusted');
+    assert.strictEqual(await localOnly.findTrustedKinopoiskId(902, 'movie'), null, 'A negative record is not a film');
+    assert.strictEqual(await localOnly.findTrustedKinopoiskId(1396, 'tv-series'), 404900, 'An admin series mapping is trusted');
+    assert.strictEqual(await localOnly.findTrustedKinopoiskId(559, 'movie'), 82441, 'A curated exception wins without a cache entry');
+    assert.strictEqual(await localOnly.findTrustedKinopoiskId(0), null);
+    assert.strictEqual(await localOnly.findTrustedKinopoiskId('abc'), null);
+    console.log('  ✅ Local trusted lookup passed');
+    console.log('🎉 ALL 38 IdMappingService Tests Passed Successfully!');
 }
 
 runTests().catch(err => {

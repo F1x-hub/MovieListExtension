@@ -39,9 +39,21 @@ const TMDB = {
     'movie/157336': { id: 157336, title: 'Интерстеллар', original_title: 'Interstellar', release_date: '2014-11-05', poster_path: '/inter.jpg' }
 };
 
-async function mount(browser, { theme = 'dark', width = 1280, height = 1000, enabled = true, serviceDown = false } = {}) {
+// Interstellar was opened on its film page in this browser: a verified mapping and its card stay.
+const KNOWN_FILM_STORAGE = {
+    tmdb_kp_mapping_cache_v2: {
+        'movie:157336': { tmdbId: 157336, mediaType: 'movie', kpId: 258687, status: 'resolved', identityStatus: 'VERIFIED', verificationMethod: 'exact_external_tmdb', verificationSource: 'automatic', resolutionSource: 'automatic' }
+    },
+    local_movie_cache_258687: {
+        id: '258687', kinopoiskId: 258687, name: 'Интерстеллар', alternativeName: 'Interstellar', year: 2014,
+        posterUrl: 'https://avatars.mds.yandex.net/get-kinopoisk-image/fixture/600x900',
+        posterPreviewUrl: 'https://avatars.mds.yandex.net/get-kinopoisk-image/fixture/300x450'
+    }
+};
+
+async function mount(browser, { theme = 'dark', width = 1280, height = 1000, enabled = true, serviceDown = false, tmdbDown = false, storage = {} } = {}) {
     const page = await browser.newPage({ viewport: { width, height } });
-    const state = { downloads: initialDownloads(), requests: [], serviceDown, errors: [] };
+    const state = { downloads: initialDownloads(), requests: [], serviceDown, errors: [], tmdbRequests: 0 };
     page.on('pageerror', error => state.errors.push(error.message));
 
     await page.route(`${origin}/**`, async (route) => {
@@ -80,6 +92,9 @@ async function mount(browser, { theme = 'dark', width = 1280, height = 1000, ena
         return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     });
     await page.route('https://us-central1-movielistdb-13208.cloudfunctions.net/**', (route) => {
+        state.tmdbRequests += 1;
+        // What the proxy answers while its project cannot start an instance.
+        if (tmdbDown) return route.fulfill({ status: 503, contentType: 'text/html', body: '<h1>Error: Server Error</h1>' });
         const target = new URL(new URL(route.request().url()).searchParams.get('url'));
         const key = target.pathname.replace(/^\/3\//, '');
         const body = TMDB[key];
@@ -88,10 +103,12 @@ async function mount(browser, { theme = 'dark', width = 1280, height = 1000, ena
             : { status: 404, contentType: 'application/json', body: '{}' });
     });
     await page.route('https://image.tmdb.org/**', route => route.fulfill({ contentType: 'image/png', body: POSTER }));
+    await page.route('https://avatars.mds.yandex.net/**', route => route.fulfill({ contentType: 'image/png', body: POSTER }));
 
-    await page.addInitScript(({ theme, enabled, origin }) => {
+    await page.addInitScript(({ theme, enabled, origin, storage }) => {
         localStorage.setItem('movieExtensionTheme', theme);
         const values = {
+            ...storage,
             mediaPlayerEnabled: enabled,
             mediaplayer_setup_v1: enabled
                 ? { enabled: true, status: 'ready', installPath: 'C:\\Fixture\\MediaPlayer', checks: [] }
@@ -133,7 +150,7 @@ async function mount(browser, { theme = 'dark', width = 1280, height = 1000, ena
             },
             i18n: { getUILanguage: () => 'ru' }
         };
-    }, { theme, enabled, origin });
+    }, { theme, enabled, origin, storage });
 
     await page.goto(`${origin}/src/pages/downloads/downloads.html`);
     return { page, state };
@@ -227,6 +244,34 @@ async function settle(page) {
         assert.equal(target.searchParams.get('torrentEpisode'), '1');
         assert.equal(target.searchParams.get('originalTitle'), 'Breaking Bad');
         assert.deepEqual(state.errors, [], `no page errors: ${state.errors.join(' | ')}`);
+        await page.close();
+
+        // ---------- TMDB down, one film known in this browser ----------
+        ({ page, state } = await mount(browser, { theme: 'dark', tmdbDown: true, storage: KNOWN_FILM_STORAGE }));
+        await settle(page);
+        const known = page.locator('.dl-card', { hasText: 'Интерстеллар' });
+        await known.locator('.dl-poster img').waitFor({ timeout: 10000 });
+        assert.ok(state.tmdbRequests > 0, 'TMDB is asked first');
+        assert.equal(await known.locator('.dl-poster img').getAttribute('src'),
+            KNOWN_FILM_STORAGE.local_movie_cache_258687.posterPreviewUrl, "the film's own card lends its poster");
+        assert.match(await known.textContent(), /2014/, 'and its year');
+        assert.equal(await page.locator('.dl-poster img').count(), 1, 'films unknown here keep the placeholder');
+        const knownLink = new URL(await known.locator('.dl-card__title a').getAttribute('href'));
+        assert.equal(knownLink.searchParams.get('movieId'), '258687', 'a known film opens by its Kinopoisk ID');
+        assert.equal(knownLink.searchParams.has('resolveTmdbId'), false);
+        const unknownLink = new URL(await page.locator('.dl-card', { hasText: 'Оппенгеймер' }).locator('.dl-card__title a').getAttribute('href'));
+        assert.equal(unknownLink.searchParams.get('resolveTmdbId'), '872585', 'an unknown one is still looked up on its page');
+        await page.waitForTimeout(600);
+        assert.equal(await page.evaluate(() => Object.keys(window.__fixtureStorage.values.downloads_tmdb_meta_v1 || {}).length), 0,
+            'a borrowed card is not kept, so TMDB is asked again next visit');
+        assert.deepEqual(state.errors, [], `no page errors: ${state.errors.join(' | ')}`);
+        await page.screenshot({ path: path.join(shots, 'dark-tmdb-down.png'), fullPage: true });
+        const knownNavigation = page.waitForRequest(request => request.url().includes('movie-details.html'));
+        await known.locator('[data-action="play"]').click();
+        const knownTarget = new URL((await knownNavigation).url());
+        assert.equal(knownTarget.searchParams.get('movieId'), '258687', '«Смотреть» opens the known film by its Kinopoisk ID');
+        assert.equal(knownTarget.searchParams.get('torrentDownload'), uuid(6), 'on that copy');
+        assert.equal(knownTarget.searchParams.has('resolveTmdbId'), false);
         await page.close();
 
         // ---------- Light theme, narrow ----------

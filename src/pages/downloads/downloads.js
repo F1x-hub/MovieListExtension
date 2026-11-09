@@ -17,6 +17,8 @@
     const MAX_BACKOFF_MS = 30000;
     const SETUP_KEY = 'mediaplayer_setup_v1';
     const META_CACHE_KEY = 'downloads_tmdb_meta_v1';
+    // MovieCacheService keeps each film page's card in this browser under this key.
+    const LOCAL_FILM_PREFIX = 'local_movie_cache_';
     const META_TTL_MS = 30 * 24 * 60 * 60 * 1000;
     const META_LIMIT = 300;
     const META_CONCURRENCY = 4;
@@ -160,6 +162,7 @@
         constructor() {
             this.service = typeof MediaPlayerService !== 'undefined' ? new MediaPlayerService() : null;
             this.tmdb = typeof TMDBService !== 'undefined' ? new TMDBService() : null;
+            this.idMapping = typeof IdMappingService !== 'undefined' ? new IdMappingService(null, this.tmdb) : null;
             this.downloads = [];
             this.items = [];
             this.entries = [];
@@ -170,6 +173,8 @@
             this.cards = new Map();
             this.cardSignatures = new WeakMap();
             this.meta = new Map();
+            // Kinopoisk ID per linked item (null when this browser has no verified one).
+            this.identities = new Map();
             this.metaPending = new Set();
             this.metaQueue = [];
             this.metaActive = 0;
@@ -367,8 +372,9 @@
         saveMetaCacheSoon() {
             clearTimeout(this.metaSaveTimer);
             this.metaSaveTimer = setTimeout(() => {
+                // A card borrowed from the film's local copy is not kept, so TMDB is asked again next visit.
                 const entries = [...this.meta.entries()]
-                    .filter(([, value]) => value && value.name !== undefined)
+                    .filter(([, value]) => value && value.name !== undefined && !value.localOnly)
                     .sort((first, second) => Number(second[1].fetchedAt || 0) - Number(first[1].fetchedAt || 0))
                     .slice(0, META_LIMIT);
                 try {
@@ -378,10 +384,10 @@
         }
 
         requestMeta(items) {
-            if (!this.tmdb?.getListingDetails) return;
             items.forEach((item) => {
                 const key = this.metaKey(item);
-                if (!key || this.meta.has(key) || this.metaPending.has(key)) return;
+                if (!key || this.metaPending.has(key)) return;
+                if (this.meta.has(key) && this.identities.has(key)) return;
                 this.metaPending.add(key);
                 this.metaQueue.push(item);
             });
@@ -393,14 +399,10 @@
                 const item = this.metaQueue.shift();
                 const key = this.metaKey(item);
                 this.metaActive += 1;
-                this.tmdb.getListingDetails(item.tmdbId, item.mediaType)
-                    .then((details) => {
-                        this.meta.set(key, { ...details, fetchedAt: Date.now() });
-                        this.saveMetaCacheSoon();
-                    })
+                this.loadItemMeta(item, key)
                     .catch(() => {
-                        // Not retried during this visit; the card keeps MediaPlayer's title.
-                        this.meta.set(key, { failed: true });
+                        if (!this.meta.has(key)) this.meta.set(key, { failed: true });
+                        if (!this.identities.has(key)) this.identities.set(key, null);
                     })
                     .finally(() => {
                         this.metaActive -= 1;
@@ -411,18 +413,83 @@
             }
         }
 
+        /**
+         * TMDB gives the title, year and poster; this browser's verified mapping
+         * gives the Kinopoisk ID the film's page opens by. When TMDB does not
+         * answer, the film's own page may have left its card here: its title,
+         * year and poster stand in for this visit. Neither is retried during it.
+         */
+        async loadItemMeta(item, key) {
+            const needsMeta = !this.meta.has(key);
+            const [details, kinopoiskId] = await Promise.all([
+                needsMeta ? this.fetchTmdbMeta(item) : null,
+                this.identities.has(key) ? this.identities.get(key) : this.findKinopoiskId(item)
+            ]);
+            this.identities.set(key, kinopoiskId);
+            if (!needsMeta) return;
+            if (details) {
+                this.meta.set(key, { ...details, fetchedAt: Date.now() });
+                this.saveMetaCacheSoon();
+                return;
+            }
+            const local = kinopoiskId ? await this.readLocalFilm(kinopoiskId) : null;
+            this.meta.set(key, local ? { ...local, localOnly: true } : { failed: true });
+        }
+
+        async fetchTmdbMeta(item) {
+            if (!this.tmdb?.getListingDetails) return null;
+            try {
+                return await this.tmdb.getListingDetails(item.tmdbId, item.mediaType);
+            } catch {
+                return null;
+            }
+        }
+
+        async findKinopoiskId(item) {
+            if (!this.idMapping?.findTrustedKinopoiskId) return null;
+            try {
+                const id = Number(await this.idMapping.findTrustedKinopoiskId(item.tmdbId, item.mediaType));
+                return Number.isSafeInteger(id) && id > 0 ? id : null;
+            } catch {
+                return null;
+            }
+        }
+
+        /** The title, year and poster of the film's card this browser keeps, or null. */
+        async readLocalFilm(kinopoiskId) {
+            const key = `${LOCAL_FILM_PREFIX}${kinopoiskId}`;
+            const film = (await storageGet([key]))[key];
+            const name = String(film?.name || '').trim();
+            // A record can hold only parsed ratings (RatingsRefreshService), or a loading placeholder.
+            if (!name || name === 'Loading...' || name === 'Unknown Movie') return null;
+            const poster = [film.posterPreviewUrl, film.posterUrl, film.poster?.previewUrl, film.poster?.url]
+                .find(url => typeof url === 'string' && /^https:\/\//i.test(url));
+            const year = Number(film.year);
+            return {
+                name,
+                alternativeName: String(film.alternativeName || film.enName || film.originalName || '').trim(),
+                year: Number.isSafeInteger(year) && year > 0 ? year : 0,
+                posterUrl: poster || ''
+            };
+        }
+
         // ---------- URLs ----------
 
         movieUrl(item, record = null) {
             const meta = this.metaFor(item) || {};
-            const params = new URLSearchParams({
-                resolveTmdbId: String(item.tmdbId),
-                source: 'home-tmdb-only',
-                title: meta.name || item.title || '',
-                originalTitle: meta.alternativeName || '',
-                year: meta.year ? String(meta.year) : '',
-                mediaType: item.mediaType === 'tv' ? 'tv' : 'movie'
-            });
+            const kinopoiskId = this.identities.get(this.metaKey(item));
+            // A film this browser has a verified Kinopoisk ID for opens like any other
+            // card; the others are looked up on the film page by title and year.
+            const params = kinopoiskId
+                ? new URLSearchParams({ movieId: String(kinopoiskId) })
+                : new URLSearchParams({
+                    resolveTmdbId: String(item.tmdbId),
+                    source: 'home-tmdb-only',
+                    title: meta.name || item.title || '',
+                    originalTitle: meta.alternativeName || '',
+                    year: meta.year ? String(meta.year) : '',
+                    mediaType: item.mediaType === 'tv' ? 'tv' : 'movie'
+                });
             if (record) {
                 params.set('torrentDownload', record.id);
                 if (Model.hasEpisode(record)) {
@@ -927,6 +994,7 @@
                 this.displayTitle(item),
                 meta?.year || 0,
                 meta?.posterUrl || '',
+                this.identities.get(this.metaKey(item)) || 0,
                 item.linked,
                 this.collapsed.has(item.key),
                 this.health,

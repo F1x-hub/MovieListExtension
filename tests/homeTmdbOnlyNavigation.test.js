@@ -238,6 +238,28 @@ assert.equal(await knownLookups.findKnownMapping({ ...toyStory, tmdbId: 5002 }),
 knownMappingStore.home_kp_html_mapping_v5['movie:5000'].updatedAt = Date.now() - 31 * 24 * 60 * 60 * 1000;
 assert.equal(await knownLookups.findKnownMapping(toyStory), null, 'An expired mapping is searched again');
 
+// An identity IdMappingService already trusts opens the film without a title or
+// year: Downloads sends neither while TMDB does not answer.
+const trustedAsked = [];
+const trustedLookups = new HomeMovieNavigationService({
+    htmlSearchService: { findMovieByTitle: async () => assert.fail('A trusted identity must not search') },
+    idMappingService: {
+        async findTrustedKinopoiskId(tmdbId, mediaType) {
+            trustedAsked.push(`${mediaType}:${tmdbId}`);
+            return tmdbId === 37686 ? 517433 : null;
+        }
+    }
+});
+assert.equal(await trustedLookups.findKnownMapping({ tmdbId: 37686, name: 'Супер 8', mediaType: 'movie' }), 517433);
+assert.deepEqual(trustedAsked, ['movie:37686']);
+knownMappingStore.home_kp_html_mapping_v5['movie:5000'].updatedAt = Date.now();
+assert.equal(await trustedLookups.findKnownMapping(toyStory), 482, 'Without a trusted identity the checked HTML mapping still answers');
+assert.equal(await trustedLookups.findKnownMapping({ ...toyStory, year: null }), null, 'and still needs its year');
+const brokenLookups = new HomeMovieNavigationService({
+    idMappingService: { findTrustedKinopoiskId: async () => { throw new Error('storage unavailable'); } }
+});
+assert.equal(await brokenLookups.findKnownMapping(toyStory), 482, 'A failed identity read falls back to the HTML mapping');
+
 // The Home route keeps its film in this browser only, and TMDB does not wait for Firestore.
 const homeRouteDetails = { tmdbId: 999, title: 'История игрушек', original_title: 'Toy Story', year: 1995,
     posterUrl: 'https://image.test/toy-story.jpg', overview: 'A story about toys with enough detail.', genres: [{ name: 'Animation' }] };
