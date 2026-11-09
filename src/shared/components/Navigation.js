@@ -1038,10 +1038,7 @@ class Navigation {
                     <div style="display: flex; flex-direction: column; gap: 8px;">
                         ${collections.map(collection => {
                             const isInCollection = movieCollections.some(c => c.id === collection.id);
-                            const isCustomIcon = collection.icon && (collection.icon.startsWith('data:') || collection.icon.startsWith('https://') || collection.icon.startsWith('http://'));
-                            const iconHtml = isCustomIcon 
-                                ? `<img src="${collection.icon}" style="width: 22px; height: 22px; object-fit: cover; border-radius: 4px; vertical-align: middle;">`
-                                : collection.icon;
+                            const iconHtml = CollectionService.renderIconHtml(collection.icon, { size: 22 });
                             return `
                                 <label style="
                                     display: flex;

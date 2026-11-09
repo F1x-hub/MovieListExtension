@@ -37,7 +37,13 @@ Color is allowed only when it carries content or an unavoidable semantic:
 2. external provider or brand marks such as IMDb, Kinopoisk, Telegram, or Google;
 3. game boards, pieces, and game-specific feedback;
 4. essential success, warning, or danger feedback;
-5. seasonal decoration owned by `SeasonalThemeService` (see below).
+5. seasonal decoration owned by `SeasonalThemeService` (see below);
+6. collection icons: the franchise tiles from
+   `src/shared/data/collectionIcons.js`. They are artwork the user picks, drawn
+   at the icon's size and always next to the collection's name. They use flat
+   colours and opacity only (no gradients, masks or clip paths, which need ids),
+   and none reproduces a logo or wordmark. Collections cannot use uploaded
+   pictures: that feature was removed, and an old picture shows the folder icon.
 
 Exceptions must remain local, documented, and visually subordinate to the
 neutral interface. Semantic states require a label, icon, shape, border style, or

@@ -18,7 +18,14 @@ class BookmarksPageManager {
         this.activeCollectionId = null;
         this.movieCacheService = null;
         this.availableCollections = []; // Store for menu
-        
+        // Card ratings/posters and watching progress are read once per visit: a
+        // switch between lists used to wait on Firestore and on all of local
+        // storage every time (about a second with 72 bookmarks).
+        this.cardMovieCache = new Map();
+        this.cardMoviePending = new Map();
+        this.progressSnapshot = null;
+        this.renderToken = 0;
+
         this.init();
     }
 
@@ -60,9 +67,12 @@ class BookmarksPageManager {
             this.movieCacheService.db = window.firebaseManager.db;
         }
         
-        // Only fetch from server if cache was not found
+        // Collections drawn from the cache are still refreshed: other pages add
+        // films to collections without invalidating this page's copy.
         if (!cacheHit.collections) {
             await this.loadCustomCollections();
+        } else {
+            void this.loadCustomCollections();
         }
         if (!cacheHit.bookmarks) {
             await this.loadBookmarks();
@@ -139,7 +149,7 @@ class BookmarksPageManager {
                 );
                 
                 if (hasProgressUpdate) {
-                    console.log('BookmarksPage: Progress updated, refreshing grid...');
+                    this.progressSnapshot = null;
                     this.applyFilters(); // Re-render grid with new progress
                     return;
                 }
@@ -311,9 +321,19 @@ class BookmarksPageManager {
         
         // Collection Menu Button
         if (this.elements.collectionMenuBtn) {
-            this.elements.collectionMenuBtn.addEventListener('mousedown', (e) => {
+            // click, not mousedown, so Enter and Space open it too.
+            this.elements.collectionMenuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.toggleCollectionMenuDropdown();
+            });
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.collection-menu-anchor')) this.closeCollectionMenu();
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape' || !this.collectionMenu) return;
+                const hadFocus = this.collectionMenu.contains(document.activeElement);
+                this.closeCollectionMenu();
+                if (hadFocus) this.elements.collectionMenuBtn.focus();
             });
         }
 
@@ -497,8 +517,8 @@ class BookmarksPageManager {
                 buttonElement.appendChild(newCheck);
                 
                 if (textSpan) {
+                    // Weight only: a fixed white vanished on the light theme's menu.
                     textSpan.style.fontWeight = '500';
-                    textSpan.style.color = '#fff';
                 }
             }
 
@@ -508,16 +528,17 @@ class BookmarksPageManager {
             // The collection object in availableCollections needs update for renderGrid correctness on next render
             const col = this.availableCollections.find(c => c.id === collectionId);
             if (col) {
-                const idToCheck = parseInt(movieId); // Assuming numbers
-                // If it was already there (based on isCheck), remove it.
-                // But checks were based on DOM.
-                // Let's rely on server response or manually update cache.
-                const idx = col.movieIds.indexOf(idToCheck);
+                col.movieIds ||= [];
+                // Stored ids may be numbers or strings.
+                const idx = col.movieIds.findIndex(id => String(id) === String(movieId));
                 if (idx > -1) {
                     col.movieIds.splice(idx, 1);
                 } else {
-                    col.movieIds.push(idToCheck);
+                    col.movieIds.push(parseInt(movieId));
                 }
+                // The sidebar counts and an open collection read this list.
+                this.renderCustomCollections(this.availableCollections);
+                if (this.activeCollectionId === collectionId) this.applyFilters();
             }
 
             if (typeof Utils !== 'undefined') Utils.showToast(isChecked ? 'Removed from collection' : 'Added to collection', 'success');
@@ -657,11 +678,7 @@ class BookmarksPageManager {
         if (!this.elements.customCollectionsList) return;
 
         this.elements.customCollectionsList.innerHTML = collections.map(col => {
-            // Check if icon is custom
-            const isCustomIcon = col.icon && (col.icon.startsWith('data:') || col.icon.startsWith('https://') || col.icon.startsWith('http://'));
-            const iconHtml = isCustomIcon 
-                ? `<img src="${col.icon}" style="width: 20px; height: 20px; object-fit: cover; border-radius: 4px;">`
-                : (col.icon || '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>');
+            const iconHtml = CollectionService.renderIconHtml(col.icon, { size: 20 });
 
             return `
                 <button type="button" class="sidebar-item filter-choice collection-item ${this.activeCollectionId === col.id ? 'active is-active' : ''}" data-collection-id="${col.id}" aria-pressed="${this.activeCollectionId === col.id}">
@@ -733,9 +750,6 @@ class BookmarksPageManager {
             '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 17h2v.5H3v1h1v.5H2v1h3v-4H2v1zm1-9h1V4H2v1h1v3zm-1 3h1.8L2 13.1v.9h3v-1H3.2L5 10.9V10H2v1zm5-6v2h14V5H7zm0 14h14v-2H7v2zm0-6h14v-2H7v2z"/></svg>' // List/Playlist
         ];
         
-        // Check if current icon is a custom image (base64 or Firebase Storage URL)
-        const isCustomIcon = collection && collection.icon && (collection.icon.startsWith('data:') || collection.icon.startsWith('https://') || collection.icon.startsWith('http://'));
-
         modal.innerHTML = `
             <div class="collection-modal-content" style="
                 background: var(--theme-bg-secondary);
@@ -788,57 +802,8 @@ class BookmarksPageManager {
                     <div>
                         <label style="display: block; margin-bottom: 8px; font-weight: 500;">Icon</label>
                         
-                        <!-- Custom Icon Upload Section -->
-                        <div style="margin-bottom: 12px;">
-                            <input type="file" id="customIconInput" accept="image/png,image/jpeg,image/jpg,image/gif" style="display: none;">
-                            <button type="button" id="uploadIconBtn" style="
-                                background: var(--filter-include-bg);
-                                color: var(--filter-include-text);
-                                border: 1px solid var(--filter-include-border);
-                                padding: 8px 12px;
-                                border-radius: 6px;
-                                cursor: pointer;
-                                font-size: 13px;
-                                font-weight: 500;
-                                display: flex;
-                                align-items: center;
-                                gap: 6px;
-                            ">
-                                <span><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span> Upload Custom Icon
-                            </button>
-                            <div id="customIconPreview" style="
-                                margin-top: 8px;
-                                display: ${isCustomIcon ? 'flex' : 'none'};
-                                align-items: center;
-                                gap: 8px;
-                                padding: 8px;
-                                background: var(--theme-bg-tertiary);
-                                border-radius: 8px;
-                            ">
-                                <img id="customIconImg" src="${isCustomIcon ? collection.icon : ''}" style="
-                                    width: 40px;
-                                    height: 40px;
-                                    object-fit: cover;
-                                    border-radius: 6px;
-                                    border: 2px solid var(--accent-color);
-                                ">
-                                <span style="flex: 1; font-size: 13px; color: var(--text-secondary);">Custom icon</span>
-                                <button type="button" id="removeCustomIconBtn" style="
-                                    background: none;
-                                    border: none;
-                                    color: var(--text-secondary);
-                                    cursor: pointer;
-                                    font-size: 18px;
-                                    padding: 4px;
-                                ">×</button>
-                            </div>
-                            <div style="margin-top: 4px; font-size: 11px; color: var(--text-secondary);">
-                                Max 500KB • PNG, JPG, GIF
-                            </div>
-                        </div>
-                        
-                        <!-- Emoji Icons Grid -->
-                        <div id="iconsGrid" style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 150px; overflow-y: auto; padding: 8px; background: var(--theme-input-bg); border-radius: 8px; border: 1px solid var(--theme-border);">
+                        <!-- Icon grid: general icons, then franchise tiles -->
+                        <div id="iconsGrid" style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 360px; overflow-y: auto; padding: 8px; background: var(--theme-input-bg); border-radius: 8px; border: 1px solid var(--theme-border);">
                             <!-- Icons will be populated dynamically -->
                         </div>
                     </div>
@@ -870,244 +835,41 @@ class BookmarksPageManager {
 
         const nameInput = modal.querySelector('#collectionNameInput');
         const charCount = modal.querySelector('#nameCharCount');
-        const customIconInput = modal.querySelector('#customIconInput');
-        const uploadIconBtn = modal.querySelector('#uploadIconBtn');
-        const customIconPreview = modal.querySelector('#customIconPreview');
-        const customIconImg = modal.querySelector('#customIconImg');
-        const removeCustomIconBtn = modal.querySelector('#removeCustomIconBtn');
         
-        let selectedIcon = collection ? collection.icon : defaultIcons[0];
-        let customIconData = isCustomIcon ? collection.icon : null;
+        // An icon that can no longer be drawn (a truncated SVG from the old picker or
+        // a picture from the removed upload) starts from the first icon, so saving
+        // repairs the record.
+        let selectedIcon = collection && CollectionService.isUsableIcon(collection.icon) ? collection.icon : defaultIcons[0];
 
         nameInput.addEventListener('input', () => {
             charCount.textContent = nameInput.value.length;
         });
         charCount.textContent = nameInput.value.length;
 
-        // Custom icon upload handler
-        uploadIconBtn.addEventListener('mousedown', () => {
-            customIconInput.click();
-        });
-
-        customIconInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            // Validate file type
-            const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
-            if (!validTypes.includes(file.type)) {
-                (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Please select a valid image file (PNG, JPG, or GIF)' }) : window.alert('Please select a valid image file (PNG, JPG, or GIF)'));
-                return;
-            }
-
-            // Validate file size (500KB)
-            if (file.size > 500 * 1024) {
-                (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Image size must be less than 500KB' }) : window.alert('Image size must be less than 500KB'));
-                return;
-            }
-
-            try {
-                // Convert image to base64
-                const reader = new FileReader();
-                reader.onload = async (event) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        const width = img.width;
-                        const height = img.height;
-                        const aspectRatio = width / height;
-
-                        // Validate aspect ratio (prevent too wide or too tall)
-                        if (aspectRatio > 1.5) {
-                            (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Image is too wide. Please use a square or near-square image.' }) : window.alert('Image is too wide. Please use a square or near-square image.'));
-                            customIconInput.value = ''; // Clear input
-                            return;
-                        }
-                        if (aspectRatio < 0.67) {
-                            (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Image is too tall. Please use a square or near-square image.' }) : window.alert('Image is too tall. Please use a square or near-square image.'));
-                            customIconInput.value = ''; // Clear input
-                            return;
-                        }
-
-                        // Create canvas to resize and crop
-                        const canvas = document.createElement('canvas');
-                        const ctx = canvas.getContext('2d');
-                        
-                        // Set fixed standard size for all icons
-                        const standardSize = 128;
-                        canvas.width = standardSize;
-                        canvas.height = standardSize;
-
-                        // Calculate center crop
-                        let sourceX;
-                        let sourceY;
-                        let sourceSize;
-
-                        if (width > height) {
-                            sourceSize = height;
-                            sourceX = (width - height) / 2;
-                            sourceY = 0;
-                        } else {
-                            sourceSize = width;
-                            sourceX = 0;
-                            sourceY = (height - width) / 2;
-                        }
-
-                        // Draw cropped and resized image
-                        ctx.drawImage(
-                            img, 
-                            sourceX, sourceY, sourceSize, sourceSize, // Source crop
-                            0, 0, standardSize, standardSize          // Destination resize
-                        );
-                        
-                        // Upload to Firebase Storage if authenticated, otherwise use base64
-                        canvas.toBlob(async (blob) => {
-                            if (!blob) return;
-
-                            // Show loading state
-                            const originalBtnContent = uploadIconBtn.innerHTML;
-                            uploadIconBtn.textContent = 'Uploading...';
-                            uploadIconBtn.disabled = true;
-
-                            try {
-                                let iconUrl;
-                                const user = (typeof firebaseManager !== 'undefined') ? firebaseManager.getCurrentUser() : null;
-
-                                if (user && typeof firebaseManager !== 'undefined' && firebaseManager.uploadCollectionIcon) {
-                                    // Authenticated: Upload to Storage
-                                    try {
-                                        const result = await firebaseManager.uploadCollectionIcon(blob);
-                                        iconUrl = result.iconURL;
-                                    } catch (uploadError) {
-                                        console.error('Upload failed, falling back to base64:', uploadError);
-                                        iconUrl = canvas.toDataURL(file.type, 0.9);
-                                    }
-                                } else {
-                                    // Unauthenticated: Use base64
-                                    iconUrl = canvas.toDataURL(file.type, 0.9);
-                                }
-
-                                customIconData = iconUrl;
-                                selectedIcon = customIconData;
-                                
-                                // Show preview
-                                customIconImg.src = customIconData;
-                                customIconPreview.style.display = 'flex';
-                                
-                                // Deselect all grid icons
-                                const iconButtons = modal.querySelectorAll('.icon-select-btn');
-                                iconButtons.forEach(btn => {
-                                    btn.style.borderColor = 'var(--theme-border)';
-                                    btn.style.background = 'transparent';
-                                    btn.dataset.selected = 'false';
-                                });
-
-                                // Save the new custom icon
-                                if (this.collectionService) {
-                                    this.collectionService.saveCustomIcon(customIconData).then(() => {
-                                        // Refresh grid to show new icon
-                                        renderIconsGrid();
-                                    });
-                                }
-                            } catch (error) {
-                                console.error('Error processing icon:', error);
-                                (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Failed to process icon' }) : window.alert('Failed to process icon'));
-                            } finally {
-                                uploadIconBtn.innerHTML = originalBtnContent;
-                                uploadIconBtn.disabled = false;
-                            }
-                        }, file.type, 0.9);
-                    };
-                    img.src = event.target.result;
-                };
-                reader.readAsDataURL(file);
-            } catch (error) {
-                console.error('Error processing image:', error);
-                (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Failed to process image' }) : window.alert('Failed to process image'));
-            }
-        });
-
-        // Remove custom icon handler
-        removeCustomIconBtn.addEventListener('mousedown', () => {
-            customIconData = null;
-            selectedIcon = defaultIcons[0];
-            customIconPreview.style.display = 'none';
-            customIconInput.value = '';
-            
-            // Select first emoji by default (re-render grid is safer but let's do manual update for now)
-            const firstIconBtn = modal.querySelector('.icon-select-btn');
-            if (firstIconBtn) {
-                firstIconBtn.style.borderColor = 'var(--filter-include-border)';
-                firstIconBtn.style.background = 'var(--filter-include-bg)';
-                firstIconBtn.dataset.selected = 'true';
-            }
-        });
-
         // Function to render icons grid
-        const renderIconsGrid = async () => {
+        const renderIconsGrid = () => {
             const iconsGrid = modal.querySelector('#iconsGrid');
             if (!iconsGrid) return;
 
-            // Get saved custom icons from local storage
-            let savedIcons;
-            if (this.collectionService) {
-                savedIcons = await this.collectionService.getSavedIcons();
-            } else {
-                // Fallback if service not ready
-                const result = await chrome.storage.local.get(['savedCustomIcons']);
-                savedIcons = result.savedCustomIcons || [];
-            }
-
-            // ALSO get custom icons from existing collections (Firebase Storage URLs)
-            const existingCollections = await this.collectionService.getCollections();
-            const customIconsFromCollections = existingCollections
-                .map(c => c.icon)
-                .filter(icon => icon && (icon.startsWith('data:') || icon.startsWith('https://') || icon.startsWith('http://')))
-                .filter((icon, index, self) => self.indexOf(icon) === index); // unique only
-
-            // Merge: prioritize locally saved icons, then add collection icons not already in the list
-            const allCustomIcons = [...savedIcons];
-            customIconsFromCollections.forEach(icon => {
-                if (!allCustomIcons.includes(icon)) {
-                    allCustomIcons.push(icon);
-                }
-            });
-
             let html = '';
 
-            // Render saved custom icons (including Firebase Storage URLs from collections)
-            if (allCustomIcons.length > 0) {
-                html += allCustomIcons.map(icon => `
-                    <button type="button" class="icon-select-btn custom-icon-btn" 
-                            data-icon="${icon}" 
-                            data-selected="${collection && collection.icon === icon ? 'true' : 'false'}"
-                            style="
-                                width: 40px;
-                                height: 40px;
-                                padding: 0;
-                                border: 2px solid ${collection && collection.icon === icon ? 'var(--filter-include-border)' : 'var(--theme-border)'};
-                                background: ${collection && collection.icon === icon ? 'var(--filter-include-bg)' : 'transparent'};
-                                border-radius: 8px;
-                                cursor: pointer;
-                                transition: all 0.2s;
-                                overflow: hidden;
-                                position: relative;
-                            ">
-                        <img src="${icon}" style="width: 100%; height: 100%; object-fit: cover;">
-                    </button>
-                `).join('');
-            }
-
-            // Render default emoji icons
-            html += defaultIcons.map(icon => `
-                <button type="button" class="icon-select-btn emoji-icon-btn" 
-                        data-icon="${this.escapeHtml(icon)}" 
-                        data-selected="${collection && collection.icon === icon ? 'true' : 'false'}"
+            // Buttons point into this list by index: SVG markup does not survive a
+            // round trip through an attribute, which is how collections ended up
+            // saved with a truncated `<svg viewBox=` icon.
+            const franchiseIcons = window.CollectionIcons?.FRANCHISE_ICONS || [];
+            const gridIcons = [...defaultIcons, ...franchiseIcons.map(item => item.svg)];
+            const isSelected = icon => selectedIcon === icon;
+            const glyphButton = (icon, index, className, label = '', { box = 40, inset = 4, size = 28 } = {}) => `
+                <button type="button" class="icon-select-btn ${className}"
+                        data-icon-index="${index}"
+                        data-selected="${isSelected(icon) ? 'true' : 'false'}"
+                        ${label ? `title="${this.escapeHtml(label)}" aria-label="${this.escapeHtml(label)}"` : ''}
                         style="
-                            width: 40px;
-                            height: 40px;
-                            padding: 4px;
-                            border: 2px solid ${collection && collection.icon === icon ? 'var(--filter-include-border)' : 'var(--theme-border)'};
-                            background: ${collection && collection.icon === icon ? 'var(--filter-include-bg)' : 'transparent'};
+                            width: ${box}px;
+                            height: ${box}px;
+                            padding: ${inset}px;
+                            border: 2px solid ${isSelected(icon) ? 'var(--filter-include-border)' : 'var(--theme-border)'};
+                            background: ${isSelected(icon) ? 'var(--filter-include-bg)' : 'transparent'};
                             border-radius: 8px;
                             cursor: pointer;
                             transition: all 0.2s;
@@ -1115,8 +877,28 @@ class BookmarksPageManager {
                             display: flex;
                             align-items: center;
                             justify-content: center;
-                        ">${icon}</button>
-            `).join('');
+                        ">${CollectionService.renderIconHtml(icon, { size })}</button>`;
+            const groupTitle = text => `<div style="flex: 0 0 100%; margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--text-secondary);">${text}</div>`;
+
+            // General icons
+            html += defaultIcons.map((icon, index) => glyphButton(icon, index, 'emoji-icon-btn')).join('');
+
+            // Franchise tiles carry their own colour and corners, so they sit almost
+            // edge to edge and are a little larger; each is named on hover.
+            // With 50 of them they are split under the section's groups (Marvel,
+            // DC, Кино…); an icon from an unknown group still shows, last.
+            if (franchiseIcons.length > 0) {
+                const offset = defaultIcons.length;
+                const groups = window.CollectionIcons?.GROUPS || [];
+                const tile = (item, index) => glyphButton(item.svg, offset + index, 'franchise-icon-btn', item.label, { box: 46, inset: 2, size: 38 });
+                const sections = [...groups, { id: null, label: 'Другие' }].map(group => {
+                    const items = franchiseIcons
+                        .map((item, index) => ({ item, index }))
+                        .filter(({ item }) => group.id ? item.group === group.id : !groups.some(known => known.id === item.group));
+                    return items.length ? groupTitle(`Франшизы · ${group.label}`) + items.map(({ item, index }) => tile(item, index)).join('') : '';
+                });
+                html += sections.join('');
+            }
 
             iconsGrid.innerHTML = html;
 
@@ -1124,11 +906,6 @@ class BookmarksPageManager {
             const iconButtons = iconsGrid.querySelectorAll('.icon-select-btn');
             iconButtons.forEach(btn => {
                 btn.addEventListener('click', () => {
-                    // Clear custom icon preview/input if it was active
-                    customIconData = null;
-                    customIconPreview.style.display = 'none';
-                    customIconInput.value = '';
-                    
                     // Update selection UI
                     iconButtons.forEach(b => {
                         b.style.borderColor = 'var(--theme-border)';
@@ -1140,7 +917,7 @@ class BookmarksPageManager {
                     btn.style.background = 'var(--filter-include-bg)';
                     btn.dataset.selected = 'true';
                     
-                    selectedIcon = btn.dataset.icon;
+                    selectedIcon = gridIcons[Number(btn.dataset.iconIndex)] ?? defaultIcons[0];
                 });
             });
         };
@@ -1198,6 +975,7 @@ class BookmarksPageManager {
 
     setFilter(filter) {
         this.statusFilter = filter;
+        this.closeCollectionMenu();
         
         // Update UI
         // Clear active from standard items
@@ -1222,11 +1000,16 @@ class BookmarksPageManager {
             }
             
             // Set Title
-            this.collectionService.getCollection(collectionId).then(col => {
-                if (this.elements.pageTitle) {
-                    this.elements.pageTitle.textContent = col ? col.name : 'Collection';
-                }
-            });
+            const known = this.availableCollections.find(c => c.id === collectionId);
+            if (known && this.elements.pageTitle) {
+                this.elements.pageTitle.textContent = known.name;
+            } else {
+                this.collectionService.getCollection(collectionId).then(col => {
+                    if (this.statusFilter === filter && this.elements.pageTitle) {
+                        this.elements.pageTitle.textContent = col ? col.name : 'Collection';
+                    }
+                });
+            }
         } else {
             this.activeCollectionId = null;
             
@@ -1268,6 +1051,7 @@ class BookmarksPageManager {
     }
 
     async applyFilters() {
+        const token = ++this.renderToken;
         let filtered = [];
 
         // 1. Status/Collection Filter
@@ -1275,7 +1059,10 @@ class BookmarksPageManager {
             const collectionId = this.statusFilter.split(':')[1];
             if (this.collectionService) {
                 try {
-                    const movieIds = await this.collectionService.getMoviesInCollection(collectionId);
+                    const known = this.availableCollections.find(c => c.id === collectionId);
+                    const movieIds = known
+                        ? (known.movieIds || [])
+                        : await this.collectionService.getMoviesInCollection(collectionId);
                     
                     const collectionMovies = [];
                     // Create a map for fast lookup of existing bookmarks
@@ -1292,9 +1079,9 @@ class BookmarksPageManager {
                     }
 
                     // Fetch missing movies from cache/server
-                    if (missingIds.length > 0 && this.movieCacheService) {
+                    if (missingIds.length > 0) {
                         try {
-                            const cachedMoviesMap = await this.movieCacheService.getBatchCachedMovies(missingIds);
+                            const cachedMoviesMap = await this.loadCardMovies(missingIds);
                             
                             // Process cached movies
                             missingIds.forEach(id => {
@@ -1360,27 +1147,65 @@ class BookmarksPageManager {
             return 0;
         });
 
-        this.renderGrid(filtered);
+        if (token !== this.renderToken) return;
+        this.renderGrid(filtered, token);
     }
 
-    async renderGrid(movies) {
-        const grid = this.elements.moviesGrid;
-        let cachedMovies = {};
+    /**
+     * Cached movie data (ratings, posters) for cards, fetched once per visit and
+     * shared by every list. A film being fetched is waited for, not fetched again.
+     */
+    async loadCardMovies(ids) {
+        const wanted = [...new Set(ids.filter(Boolean).map(String))];
+        const missing = wanted.filter(id => !this.cardMovieCache.has(id) && !this.cardMoviePending.has(id));
+        if (missing.length > 0 && this.movieCacheService) {
+            const request = this.movieCacheService.getBatchCachedMovies(missing)
+                .then(found => {
+                    // An empty answer may be a failed request (the service swallows
+                    // errors), so those films stay unknown and are asked for again.
+                    const answered = Object.keys(found || {}).length > 0;
+                    for (const id of missing) {
+                        if (found?.[id]) this.cardMovieCache.set(id, found[id]);
+                        else if (answered) this.cardMovieCache.set(id, null);
+                    }
+                })
+                .catch(error => console.warn('BookmarksPage: Could not load cached card ratings', error))
+                .finally(() => missing.forEach(id => this.cardMoviePending.delete(id)));
+            missing.forEach(id => this.cardMoviePending.set(id, request));
+        }
+        await Promise.all(new Set(wanted.map(id => this.cardMoviePending.get(id)).filter(Boolean)));
+        const result = {};
+        for (const id of wanted) {
+            const movie = this.cardMovieCache.get(id);
+            if (movie) result[id] = movie;
+        }
+        return result;
+    }
 
-        if (this.movieCacheService) {
-            try {
-                const movieIds = movies.map(movie => movie.movieId || movie.kinopoiskId).filter(Boolean);
-                cachedMovies = await this.movieCacheService.getBatchCachedMovies(movieIds);
-            } catch (error) {
-                console.warn('BookmarksPage: Could not load cached card ratings', error);
-            }
+    /** Watching progress, read once and dropped when a progress key changes. */
+    loadProgress() {
+        if (!this.progressSnapshot) {
+            this.progressSnapshot = this.progressService
+                ? this.progressService.getAllProgress().catch(error => {
+                    console.warn('BookmarksPage: Could not read watching progress', error);
+                    this.progressSnapshot = null;
+                    return {};
+                })
+                : Promise.resolve({});
         }
-        
-        // Fetch all progress data
-        let allProgress = {};
-        if (this.progressService) {
-            allProgress = await this.progressService.getAllProgress();
-        }
+        return this.progressSnapshot;
+    }
+
+    async renderGrid(movies, token = this.renderToken) {
+        const grid = this.elements.moviesGrid;
+        const movieIds = movies.map(movie => movie.movieId || movie.kinopoiskId).filter(Boolean);
+        const [cachedMovies, allProgress] = await Promise.all([this.loadCardMovies(movieIds), this.loadProgress()]);
+
+        // A later switch already owns the grid; drawing this one would replace it.
+        if (token !== this.renderToken) return;
+
+        // Fetch the other bookmarks in the background so the next switch draws at once.
+        void this.loadCardMovies(this.allBookmarks.map(movie => movie.movieId || movie.kinopoiskId));
 
         grid.innerHTML = '';
 
@@ -1394,6 +1219,7 @@ class BookmarksPageManager {
         this.elements.moviesGrid.style.display = 'grid';
         this.elements.moviesGrid.classList.add('anime-grid'); // Enable anime-style grid spacing
 
+        const cards = document.createDocumentFragment();
         movies.forEach(movieData => {
             const movieId = movieData.movieId || movieData.kinopoiskId;
             const cachedMovie = cachedMovies[movieId] || cachedMovies[String(movieId)] || cachedMovies[Number(movieId)];
@@ -1514,39 +1340,49 @@ class BookmarksPageManager {
                 movieCollections: cardData.movieCollections
             });
 
-            grid.appendChild(card);
-            
+            cards.appendChild(card);
+
             // Make the entire card clickable
             card.style.cursor = 'pointer';
             card.setAttribute('data-action', 'view-details');
             card.setAttribute('data-movie-id', cardData.movieId);
         });
+        grid.appendChild(cards);
     }
 
 
 
     // Local showLoading/hideLoading removed in favor of this.page (PageStateManager)
 
+    closeCollectionMenu() {
+        if (!this.collectionMenu) return;
+        this.collectionMenu.remove();
+        this.collectionMenu = null;
+        this.elements.collectionMenuBtn?.setAttribute('aria-expanded', 'false');
+    }
+
     toggleCollectionMenuDropdown() {
-        // Remove existing dropdown
-        const existingDropdown = document.querySelector('.collection-dropdown');
-        if (existingDropdown) {
-            existingDropdown.remove();
+        if (this.collectionMenu) {
+            this.closeCollectionMenu();
             return;
         }
 
-        // Create dropdown
+        // The menu is the button's sibling. It used to be appended inside the
+        // button with a class the styles never open ('show' instead of 'open'), so
+        // it stayed invisible, and a press on an item reached the button first and
+        // removed the menu before the item's click.
         const dropdown = document.createElement('div');
-        dropdown.className = 'collection-dropdown show';
+        dropdown.className = 'collection-dropdown';
+        dropdown.setAttribute('role', 'menu');
         dropdown.innerHTML = `
-            <button class="dropdown-item" data-action="edit-collection">
+            <button type="button" class="dropdown-item" role="menuitem" data-action="edit-collection">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                 </svg>
                 Edit Collection
             </button>
-            <button class="dropdown-item delete" data-action="delete-collection">
+            <button type="button" class="dropdown-item delete" role="menuitem" data-action="delete-collection">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="3 6 5 6 21 6"></polyline>
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -1555,22 +1391,25 @@ class BookmarksPageManager {
             </button>
         `;
 
-        // Position dropdown
         const menuBtn = this.elements.collectionMenuBtn;
-        menuBtn.style.position = 'relative';
-        menuBtn.appendChild(dropdown);
+        menuBtn.after(dropdown);
+        this.collectionMenu = dropdown;
+        menuBtn.setAttribute('aria-expanded', 'true');
+        // Read layout once so the opening transition starts from the closed state.
+        // (requestAnimationFrame would not run while the tab is in the background.)
+        void dropdown.offsetHeight;
+        dropdown.classList.add('open');
 
-        // Add event listeners
         dropdown.querySelector('[data-action="edit-collection"]').addEventListener('click', (e) => {
             e.stopPropagation();
+            this.closeCollectionMenu();
             this.editActiveCollection();
-            dropdown.remove();
         });
 
         dropdown.querySelector('[data-action="delete-collection"]').addEventListener('click', (e) => {
             e.stopPropagation();
+            this.closeCollectionMenu();
             this.deleteActiveCollection();
-            dropdown.remove();
         });
     }
 

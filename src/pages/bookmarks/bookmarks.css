@@ -289,6 +289,50 @@
     transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
 }
 
+/* The collection menu opens under its button, outside it: a menu inside the
+   button would receive the button's own presses. */
+.collection-menu-anchor {
+    position: relative;
+    display: flex;
+}
+
+/* Menu items are buttons; the shared dropdown styles expect plain rows. */
+.collection-menu-anchor .collection-dropdown .dropdown-item {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.collection-menu-anchor .collection-dropdown .dropdown-item:hover,
+.collection-menu-anchor .collection-dropdown .dropdown-item:focus-visible {
+    background: var(--theme-hover-bg);
+    color: var(--theme-text-primary);
+}
+
+.collection-menu-anchor .collection-dropdown .dropdown-item:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: -2px;
+}
+
+/* Deleting is the one destructive item: its icon and label say so as well as the colour. */
+.collection-menu-anchor .collection-dropdown .dropdown-item.delete,
+.collection-menu-anchor .collection-dropdown .dropdown-item.delete:hover {
+    color: var(--ui-color-status-danger);
+}
+
+.collection-menu-btn[aria-expanded="true"] {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--theme-text-primary, #ffffff);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.light-theme .collection-menu-btn[aria-expanded="true"] {
+    background: rgba(9, 9, 11, 0.06);
+    border-color: rgba(9, 9, 11, 0.12);
+}
+
 .collection-menu-btn:hover {
     background: rgba(255, 255, 255, 0.1);
     color: #ffffff;

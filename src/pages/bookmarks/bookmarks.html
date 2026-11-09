@@ -79,13 +79,15 @@
                 <header class="content-header">
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <h1 id="pageTitle" data-i18n="bookmarks.header.all_bookmarks">All Bookmarks</h1>
-                        <button id="collectionMenuBtn" class="collection-menu-btn" style="display: none;" title="Collection options">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="12" cy="12" r="1"></circle>
-                                <circle cx="12" cy="5" r="1"></circle>
-                                <circle cx="12" cy="19" r="1"></circle>
-                            </svg>
-                        </button>
+                        <div class="collection-menu-anchor">
+                            <button type="button" id="collectionMenuBtn" class="collection-menu-btn" style="display: none;" title="Collection options" aria-label="Collection options" aria-haspopup="menu" aria-expanded="false">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <circle cx="12" cy="12" r="1"></circle>
+                                    <circle cx="12" cy="5" r="1"></circle>
+                                    <circle cx="12" cy="19" r="1"></circle>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                     <div class="header-controls">
                         <div class="search-wrapper">
@@ -136,6 +138,7 @@
     <script src="../../shared/services/RatingService.js"></script>
     <script src="../../shared/services/FavoriteService.js"></script>
     <script src="../../shared/services/CollectionService.js"></script>
+    <script src="../../shared/data/collectionIcons.js"></script>
     <script src="../../shared/services/ProgressService.js"></script>
     
     <script src="../../shared/utils/Utils.js"></script>

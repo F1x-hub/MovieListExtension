@@ -101,6 +101,29 @@ async function removeRetiredRatingsPosterCache() {
 
 void removeRetiredRatingsPosterCache();
 
+// Uploaded collection icons were removed; their local history (up to 50 data
+// URLs of 128px pictures) has nothing left to read it. Since 1.2.8 the history
+// was written under the key "undefined" because its key name was lost, so that
+// key goes too, but only while it holds nothing except icon pictures.
+const RETIRED_COLLECTION_ICON_HISTORY_KEY = 'savedCustomIcons';
+const MISNAMED_COLLECTION_ICON_HISTORY_KEY = 'undefined';
+
+async function removeRetiredCollectionIconHistory() {
+    try {
+        const stored = await chrome.storage.local.get(MISNAMED_COLLECTION_ICON_HISTORY_KEY);
+        const misnamed = stored[MISNAMED_COLLECTION_ICON_HISTORY_KEY];
+        const isIconHistory = Array.isArray(misnamed)
+            && misnamed.every(icon => typeof icon === 'string' && /^(?:data:image\/|https:\/\/firebasestorage\.googleapis\.com\/)/.test(icon));
+        await chrome.storage.local.remove(isIconHistory
+            ? [RETIRED_COLLECTION_ICON_HISTORY_KEY, MISNAMED_COLLECTION_ICON_HISTORY_KEY]
+            : RETIRED_COLLECTION_ICON_HISTORY_KEY);
+    } catch (error) {
+        console.warn('[Collections] Failed to remove retired icon history:', error);
+    }
+}
+
+void removeRetiredCollectionIconHistory();
+
 chrome.runtime.onInstalled.addListener((details) => {
     // Capture the update baseline independently of native activation confirmation.
     if (typeof WhatsNewService !== 'undefined') {

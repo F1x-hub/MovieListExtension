@@ -240,21 +240,22 @@ class CollectionPageManager {
         }
     }
 
+    /** Draws the collection icon in a box of `size` pixels; an unreadable icon shows the clapper. */
+    paintCollectionIcon(target, size) {
+        const stored = this.collection.icon;
+        if (typeof CollectionService !== 'undefined' && typeof CollectionService.renderIconHtml === 'function') {
+            const icon = CollectionService.isUsableIcon(stored) ? stored : Icons.MOVIE_CLAPPER;
+            target.innerHTML = CollectionService.renderIconHtml(icon, { size });
+            return;
+        }
+        target.textContent = stored || '';
+    }
+
     updateCollectionHeader() {
         if (!this.collection) return;
         
         if (this.elements.collectionIcon) {
-            const icon = this.collection.icon || Icons.MOVIE_CLAPPER;
-            const isCustomIcon = icon.startsWith('data:') || icon.startsWith('https://') || icon.startsWith('http://');
-            const isSvgIcon = icon.trim().startsWith('<svg');
-            
-            if (isCustomIcon) {
-                this.elements.collectionIcon.innerHTML = `<img src="${icon}" style="width: 32px; height: 32px; object-fit: cover; border-radius: 6px;" alt="Collection icon">`;
-            } else if (isSvgIcon) {
-                this.elements.collectionIcon.innerHTML = icon;
-            } else {
-                this.elements.collectionIcon.textContent = icon;
-            }
+            this.paintCollectionIcon(this.elements.collectionIcon, 32);
         }
         
         if (this.elements.collectionTitle) {
@@ -586,17 +587,7 @@ class CollectionPageManager {
             this.elements.emptyStateText.textContent = `Начните добавлять фильмы в "${this.collection.name}"`;
         }
         if (this.collection && this.elements.emptyStateIcon) {
-            const icon = this.collection.icon || Icons.MOVIE_CLAPPER;
-            const isCustomIcon = icon.startsWith('data:') || icon.startsWith('https://') || icon.startsWith('http://');
-            const isSvgIcon = icon.trim().startsWith('<svg');
-            
-            if (isCustomIcon) {
-                this.elements.emptyStateIcon.innerHTML = `<img src="${icon}" style="width: 48px; height: 48px; object-fit: cover; border-radius: 8px;" alt="Collection icon">`;
-            } else if (isSvgIcon) {
-                this.elements.emptyStateIcon.innerHTML = icon;
-            } else {
-                this.elements.emptyStateIcon.textContent = icon;
-            }
+            this.paintCollectionIcon(this.elements.emptyStateIcon, 48);
         }
     }
 

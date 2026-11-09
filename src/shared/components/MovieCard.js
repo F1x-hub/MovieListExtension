@@ -17,6 +17,14 @@ class MovieCard {
         return Number(value).toFixed(1);
     }
 
+    /** A collection icon in the card menu, at the menu's 16px icon size. */
+    static collectionIconHtml(icon) {
+        if (typeof CollectionService !== 'undefined' && typeof CollectionService.renderIconHtml === 'function') {
+            return CollectionService.renderIconHtml(icon, { size: 16 });
+        }
+        return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>';
+    }
+
     static renderCompactRatingBadges({
         kpRating = 0,
         imdbRating = 0,
@@ -371,17 +379,14 @@ class MovieCard {
                         <div class="mc-menu-collections">
                             ${availableCollections.map(col => {
                                 const isInCollection = movieCollections.includes(col.id);
-                                const isCustomIcon = col.icon && (col.icon.startsWith('data:') || col.icon.startsWith('https://') || col.icon.startsWith('http://'));
-                                const iconHtml = isCustomIcon 
-                                    ? `<img src="${col.icon}" style="width: 16px; height: 16px; object-fit: cover; border-radius: 4px;">`
-                                    : (col.icon || '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>');
+                                const iconHtml = MovieCard.collectionIconHtml(col.icon);
                                     
                                 return `
                                     <button class="mc-menu-item" data-action="toggle-collection"
                                             data-movie-id="${canonicalMovieId || ''}"
                                             data-collection-id="${col.id}">
                                         <span class="mc-menu-item-icon">${iconHtml}</span>
-                                        <span class="mc-menu-item-text" style="${isInCollection ? 'font-weight: 500; color: #fff;' : ''}">
+                                        <span class="mc-menu-item-text" style="${isInCollection ? 'font-weight: 500;' : ''}">
                                             ${col.name}
                                         </span>
                                         ${isInCollection ? '<span style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' : ''}
@@ -530,17 +535,14 @@ class MovieCard {
                         <div class="mc-menu-collections">
                             ${availableCollections.map(col => {
                                 const isInCollection = movieCollections.includes(col.id);
-                                const isCustomIcon = col.icon && (col.icon.startsWith('data:') || col.icon.startsWith('https://') || col.icon.startsWith('http://'));
-                                const iconHtml = isCustomIcon 
-                                    ? `<img src="${col.icon}" style="width: 16px; height: 16px; object-fit: cover; border-radius: 4px;">`
-                                    : (col.icon || '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>'); // Default folder icon if none
+                                const iconHtml = MovieCard.collectionIconHtml(col.icon);
                                     
                                 return `
                                     <button class="mc-menu-item" data-action="toggle-collection"
                                             data-movie-id="${canonicalMovieId || ''}"
                                             data-collection-id="${col.id}">
                                         <span class="mc-menu-item-icon">${iconHtml}</span>
-                                        <span class="mc-menu-item-text" style="${isInCollection ? 'font-weight: 500; color: #fff;' : ''}">
+                                        <span class="mc-menu-item-text" style="${isInCollection ? 'font-weight: 500;' : ''}">
                                             ${col.name}
                                         </span>
                                         ${isInCollection ? '<span style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' : ''}

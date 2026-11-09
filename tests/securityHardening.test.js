@@ -56,8 +56,9 @@ assert.match(reportFiles, /allow update: if false;/);
 assert.match(reportFiles, /allow delete: if isAdmin\(\);/);
 assert.doesNotMatch(storage, /allow write: if true/);
 assert.doesNotMatch(storage, /reports\/\{allPaths=\*\*\}/);
-const icons = block(storage, 'match /collection_icons/{userId}/{allPaths=**}');
-assert.match(icons, /allow create, update: if request\.auth != null && request\.auth\.uid == userId && isValidProfileImage\(\);/);
+// Uploaded collection icons were removed: their path has no rule, so it is closed.
+assert.doesNotMatch(storage, /match \/collection_icons\//);
+assert.doesNotMatch(storage, /match \/\{allPaths=\*\*\}/);
 
 // No credentials in tracked configuration or scripts.
 const spotifyConfig = read('src/shared/config/spotify.config.js');

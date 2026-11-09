@@ -38,12 +38,8 @@ service firebase.storage {
       allow create, update: if request.auth != null && request.auth.uid == userId && isValidProfileImage();
       allow delete: if request.auth != null && request.auth.uid == userId;
     }
-    // Allow anyone to read collection icons, but only owner can write
-    match /collection_icons/{userId}/{allPaths=**} {
-      allow read: if true;
-      allow create, update: if request.auth != null && request.auth.uid == userId && isValidProfileImage();
-      allow delete: if request.auth != null && request.auth.uid == userId;
-    }
+    // collection_icons/ has no rule on purpose: uploaded collection icons were
+    // removed, so nothing may be read from or written to that path.
 
     // Report screenshots. Guests may send reports, so creation stays open but is
     // limited to one new image file per report (reports/{reportId}/photo.<ext>);

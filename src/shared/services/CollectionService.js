@@ -14,58 +14,88 @@ class CollectionService {
         ];
     }
 
+    static FALLBACK_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>';
+    static iconHtmlCache = new Map();
+
+    /**
+     * A picture from the removed icon upload: a data: URL or a Storage URL. Its
+     * Storage files are deleted, so it is drawn as the folder icon instead.
+     */
+    static isUploadedIcon(icon) {
+        return typeof icon === 'string' && /^(?:data:|https?:\/\/)/i.test(icon.trim());
+    }
+
+    /** Whether a stored icon can be drawn as it is (an emoji or whole SVG markup). */
+    static isUsableIcon(icon) {
+        const value = typeof icon === 'string' ? icon.trim() : '';
+        if (!value || CollectionService.isUploadedIcon(value)) return false;
+        if (!value.startsWith('<')) return [...value].length <= 8;
+        return Boolean(CollectionService.parseSvgIcon(value));
+    }
+
+    /**
+     * Parses stored SVG markup strictly. A truncated value, such as the
+     * `<svg viewBox=` left by the old icon picker, returns null instead of being
+     * completed by the HTML parser into an element that swallows its neighbours.
+     */
+    static parseSvgIcon(markup) {
+        if (typeof markup !== 'string' || !/^<svg[\s>]/i.test(markup) || typeof DOMParser === 'undefined') return null;
+        const source = /^<svg\b[^>]*\bxmlns\s*=/i.test(markup)
+            ? markup
+            : markup.replace(/^<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+        const doc = new DOMParser().parseFromString(source, 'image/svg+xml');
+        const svg = doc.documentElement;
+        if (!svg || svg.localName !== 'svg' || svg.namespaceURI !== 'http://www.w3.org/2000/svg'
+            || doc.getElementsByTagName('parsererror').length > 0) return null;
+        svg.querySelectorAll('script, style, foreignObject').forEach(node => node.remove());
+        [svg, ...svg.querySelectorAll('*')].forEach(element => {
+            [...element.attributes].forEach(({ name, value }) => {
+                const lower = name.toLowerCase();
+                const externalLink = (lower === 'href' || lower === 'xlink:href') && !value.trim().startsWith('#');
+                if (lower.startsWith('on') || externalLink) element.removeAttribute(name);
+            });
+        });
+        return svg;
+    }
+
+    /**
+     * Markup for a collection icon in a box of `size` pixels. Every render site
+     * uses it, so an icon never sizes itself from its container and an
+     * unreadable value shows the folder icon instead of breaking the row.
+     */
+    static renderIconHtml(icon, { size = 16 } = {}) {
+        const stored = typeof icon === 'string' ? icon.trim() : '';
+        const value = CollectionService.isUploadedIcon(stored) ? '' : stored;
+        const px = Number(size) > 0 ? Number(size) : 16;
+        const key = `${px}|${value}`;
+        const cache = CollectionService.iconHtmlCache;
+        if (cache.has(key)) return cache.get(key);
+
+        let html;
+        if (value && !value.startsWith('<') && [...value].length <= 8) {
+            const text = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            html = `<span aria-hidden="true" style="display: inline-flex; align-items: center; justify-content: center; width: ${px}px; height: ${px}px; font-size: ${Math.round(px * 0.9)}px; line-height: 1; overflow: hidden;">${text}</span>`;
+        } else {
+            const svg = CollectionService.parseSvgIcon(value) || CollectionService.parseSvgIcon(CollectionService.FALLBACK_ICON);
+            if (svg) {
+                svg.setAttribute('width', String(px));
+                svg.setAttribute('height', String(px));
+                svg.setAttribute('aria-hidden', 'true');
+                svg.setAttribute('focusable', 'false');
+                html = new XMLSerializer().serializeToString(svg);
+            } else {
+                html = CollectionService.FALLBACK_ICON.replace('<svg ', `<svg width="${px}" height="${px}" aria-hidden="true" `);
+            }
+        }
+
+        if (cache.size > 200) cache.clear();
+        cache.set(key, html);
+        return html;
+    }
+
     getCurrentUser() {
         return window.firebaseManager ? window.firebaseManager.getCurrentUser() : null;
     }
-
-    async getSavedIcons() {
-        try {
-            // Local storage fallback (or just return empty if user wants to disable history completely)
-            // Keeping local storage for now as it doesn't affect Firestore settings
-            const result = await chrome.storage.local.get([this.savedIconsKey]);
-            return result[this.savedIconsKey] || [];
-        } catch (error) {
-            console.error('Error getting saved icons:', error);
-            return [];
-        }
-    }
-
-    async saveCustomIcon(iconData) {
-        try {
-            const icons = await this.getSavedIcons();
-            if (!icons.includes(iconData)) {
-                // Add to beginning of array
-                icons.unshift(iconData);
-                // Limit to 50 saved icons
-                if (icons.length > 50) {
-                    icons.pop();
-                }
-
-                // Local storage only
-                await chrome.storage.local.set({ [this.savedIconsKey]: icons });
-            }
-            return true;
-        } catch (error) {
-            console.error('Error saving custom icon:', error);
-            return false;
-        }
-    }
-
-    async deleteSavedIcon(iconData) {
-        try {
-            const icons = await this.getSavedIcons();
-            const newIcons = icons.filter(icon => icon !== iconData);
-            
-            // Local storage only
-            await chrome.storage.local.set({ [this.savedIconsKey]: newIcons });
-            return true;
-        } catch (error) {
-            console.error('Error deleting saved icon:', error);
-            return false;
-        }
-    }
-
-
 
     async getCollections() {
         try {
@@ -214,23 +244,8 @@ class CollectionService {
                 // Firestore
                 const docRef = window.firebaseManager.db.collection('users').doc(user.uid).collection('collections').doc(collectionId);
                 
-                // Get collection to check for custom icon
                 const doc = await docRef.get();
                 if (doc.exists) {
-                    const collection = doc.data();
-                    
-                    // If icon is custom (not in default list/has storage path), try to delete it
-                    if (collection.icon && 
-                        window.firebaseManager && 
-                        typeof window.firebaseManager.deleteCollectionIcon === 'function') {
-                        
-                        // We rely on deleteCollectionIcon to safe-check if it's a storage URL
-                        await window.firebaseManager.deleteCollectionIcon(collection.icon).catch(err => {
-                            console.warn('Failed to delete collection icon from storage:', err);
-                            // Continue with collection deletion even if icon deletion fails
-                        });
-                    }
-
                     await docRef.delete();
                 }
             } else {

@@ -178,27 +178,30 @@ class ProgressService {
      * @returns {Promise<Object>} Map of movieId -> progress object
      */
     async getAllProgress() {
-        return new Promise((resolve, reject) => {
-            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-                chrome.storage.local.get(null, (items) => {
-                    if (chrome.runtime && chrome.runtime.lastError) {
-                        console.error('[ProgressService] getAllProgress FAILED:', chrome.runtime.lastError);
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        const allProgress = {};
-                        Object.keys(items || {}).forEach(key => {
-                            if (key.startsWith(this.STORAGE_PREFIX)) {
-                                const movieId = key.replace(this.STORAGE_PREFIX, '');
-                                allProgress[movieId] = normalizeProgressRecord(items[key]);
-                            }
-                        });
-                        resolve(allProgress);
-                    }
-                });
+        const storage = typeof chrome !== 'undefined' ? chrome.storage?.local : null;
+        if (!storage) return {};
+        try {
+            // Read only the progress keys. Local storage also holds tens of megabytes
+            // of movie and poster caches, and reading all of it took most of a second.
+            let items;
+            if (typeof storage.getKeys === 'function') {
+                const keys = (await storage.getKeys()).filter(key => key.startsWith(this.STORAGE_PREFIX));
+                items = keys.length > 0 ? await storage.get(keys) : {};
             } else {
-                resolve({});
+                items = await storage.get(null);
             }
-        });
+            const allProgress = {};
+            Object.keys(items || {}).forEach(key => {
+                if (key.startsWith(this.STORAGE_PREFIX)) {
+                    const movieId = key.replace(this.STORAGE_PREFIX, '');
+                    allProgress[movieId] = normalizeProgressRecord(items[key]);
+                }
+            });
+            return allProgress;
+        } catch (error) {
+            console.error('[ProgressService] getAllProgress FAILED:', error);
+            throw error;
+        }
     }
 
     /**
