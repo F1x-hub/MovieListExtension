@@ -7,7 +7,7 @@ series, cartoons, and anime.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/VERSION-1.5.3-69b500?style=flat-square" alt="Version 1.5.3">
+  <img src="https://img.shields.io/badge/VERSION-1.5.4-69b500?style=flat-square" alt="Version 1.5.4">
   <img src="https://img.shields.io/badge/JAVASCRIPT-ES6%2B-f0d000?style=flat-square&logo=javascript&logoColor=111827" alt="JavaScript ES6+">
   <img src="https://img.shields.io/badge/VANILLA-ES6%2B-e2c400?style=flat-square" alt="Vanilla ES6+">
   <img src="https://img.shields.io/badge/AUTHOR-FIX-f47721?style=flat-square" alt="Author Fix">
@@ -449,6 +449,15 @@ keeps npm-compatible three-component semver metadata.
 
 <details open>
 <summary><strong>Unreleased</strong></summary>
+
+</details>
+
+<details>
+<summary><strong>1.5.4</strong> — MediaPlayer Suite 0.1.8: a film's converted copy stays on the film's disk</summary>
+
+### Fixes
+
+- MediaPlayer Suite 0.1.8 ships with this release. A film that needed conversion for the browser left its converted copy (13–18 GB per film) in the Suite's own folder on drive C:, even with the film folder on another disk, and the copy was never deleted: a deleted or expired film took it along only while the conversion was still in memory, at most 15 minutes after the player closed. On the owner's machine that folder held 49.6 GB for three films. The copy now lives in the film's own folder, on the disk chosen for films, and is deleted together with the film by hand or by the retention period. Copies made by earlier versions are removed after 7 days without use. Checked by MediaPlayer's tests and its staged-bundle checks; the update itself on an installed Suite was not checked before release.
 
 </details>
 

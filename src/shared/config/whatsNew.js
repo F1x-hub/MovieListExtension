@@ -1,5 +1,11 @@
 export const whatsNew = [
     {
+        id: '1.5.4', version: '1.5.4', date: '2026-11-09', skipAnnouncement: true,
+        highlights: [
+            { id: 'mediaplayer-cache-on-film-disk', title: { ru: 'Медиаплеер не забивает диск C:', en: 'The media player no longer fills drive C:' }, text: { ru: 'Подготовленная для просмотра копия фильма хранится рядом с самим фильмом и удаляется вместе с ним, а не копится на диске C:.', en: 'The copy of a film prepared for watching is kept next to the film and deleted with it instead of piling up on drive C:.' } }
+        ]
+    },
+    {
         id: '1.5.3', version: '1.5.3', date: '2026-11-09',
         highlights: [
             { id: 'downloads-page', title: { ru: 'Страница «Загрузки»', en: 'A Downloads page' }, text: { ru: 'Все торренты медиаплеера в одном месте: фильмы и сериалы с прогрессом, поиском и фильтрами. Загрузки можно ставить на паузу, продолжать и удалять по одной или сразу несколько, а «Смотреть» открывает фильм на этой копии.', en: 'Every media player torrent in one place: films and series with progress, search and filters. Pause, resume or delete one download or several at once, and “Watch” opens the film on that copy.' } },

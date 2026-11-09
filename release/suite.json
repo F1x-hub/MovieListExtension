@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "version": "0.1.7",
+  "version": "0.1.8",
   "apiMajor": 1,
-  "buildId": "ae271dd2cab60bc6fc2b19f50207ab3c61454e95609390999725cb7ddef7853c",
-  "sha256": "cf7e5404ba67dea04430ed097a61ad899a9ab9a0fc0139f56709f95de70e0e15",
-  "size": 485284637,
-  "stagingTag": "suite-v0.1.7",
+  "buildId": "5050887b43c1dced78e854ab8fc35afb2a9a7e6801e6c2d922a0f9a75f742862",
+  "sha256": "b488887d510c4d9e767a256dc6fe0e38e0d696178d7369e9be91ef9da306a565",
+  "size": 485268791,
+  "stagingTag": "suite-v0.1.8",
   "assetName": "MediaPlayerSuiteSetup.exe"
 }
