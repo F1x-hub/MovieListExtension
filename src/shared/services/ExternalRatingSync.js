@@ -2,8 +2,8 @@
  * ExternalRatingSync mirrors extension ratings to the user's accounts on other
  * movie sites (IMDb, Kinopoisk).
  *
- * Neither site has a public rating API: each provider replays the GraphQL
- * mutations the site itself sends (captured from the sites, see README).
+ * Neither site has a public personal rating API: each provider reads the
+ * current score and uses the site's GraphQL mutations to change it.
  * Authentication is the browser's own session on that site; the extension never
  * reads, copies or stores cookie values.
  *
@@ -30,7 +30,7 @@ class ExternalRatingSync {
     constructor({ chromeApi = globalThis.chrome, fetchImpl = (...args) => globalThis.fetch(...args) } = {}) {
         this.chrome = chromeApi;
         this.fetch = fetchImpl;
-        this.queueChain = Promise.resolve();
+        this.syncChain = Promise.resolve();
     }
 
     get keys() {
@@ -43,6 +43,7 @@ class ExternalRatingSync {
     async isSignedIn() { return false; }
     /** Provider title ID for a sync request, or null when unknown. */
     async resolveTitleId() { return null; }
+    async getPersonalRating() { throw new Error('not implemented'); }
     async setRating() { throw new Error('not implemented'); }
     async removeRating() { throw new Error('not implemented'); }
     /** Cookie change that may mean the user just signed in. */
@@ -100,8 +101,10 @@ class ExternalRatingSync {
 
     /** Stops syncing; the site session itself is left untouched. */
     async disconnect() {
-        await this.saveSettings({ enabled: false, pendingConnect: false });
-        await this.chrome.storage.local.remove(this.keys.QUEUE_KEY);
+        await this.serializeSync(async () => {
+            await this.saveSettings({ enabled: false, pendingConnect: false });
+            await this.chrome.storage.local.remove(this.keys.QUEUE_KEY);
+        });
         return this.getStatus();
     }
 
@@ -117,7 +120,18 @@ class ExternalRatingSync {
      * Syncs one rating change. rating === null removes the site rating.
      * @returns {Promise<{status: 'synced'|'skipped'|'queued'|'failed', reason?: string}>}
      */
-    async sync(request = {}) {
+    sync(request = {}) {
+        return this.serializeSync(() => this.syncRating(request));
+    }
+
+    // Keep direct syncs and retries in order while they read and write site state.
+    serializeSync(operation) {
+        const result = this.syncChain.then(operation);
+        this.syncChain = result.catch(() => {});
+        return result;
+    }
+
+    async syncRating(request) {
         const settings = await this.getSettings();
         if (!settings.enabled) return { status: 'skipped', reason: 'disabled' };
 
@@ -130,24 +144,35 @@ class ExternalRatingSync {
 
         const job = { titleId, rating: value, attempts: 0 };
         try {
-            await this.runJob(job);
-            // A newer direct write supersedes any queued attempt for the same title.
+            const result = await this.runJob(job);
+            // The current score supersedes any queued attempt for the same title.
             await this.dropQueued(titleId);
-            return { status: 'synced' };
+            return result;
         } catch (error) {
             console.warn(`[${this.keys.PROVIDER} sync] Rating sync failed:`, error.message);
             if (error.authFailed) {
                 await this.saveSettings({ enabled: false, pendingConnect: false });
                 return { status: 'failed', reason: 'signed_out' };
             }
-            if (error.retryable === false) return { status: 'failed', reason: error.message };
+            if (error.retryable === false) {
+                await this.dropQueued(titleId);
+                return { status: 'failed', reason: error.message };
+            }
             await this.enqueue({ ...job, attempts: 1 });
             return { status: 'queued', reason: error.message };
         }
     }
 
-    runJob(job) {
-        return job.rating === null ? this.removeRating(job.titleId) : this.setRating(job.titleId, job.rating);
+    async runJob({ titleId, rating }) {
+        if (rating === null) {
+            await this.removeRating(titleId);
+        } else {
+            if (await this.getPersonalRating(titleId) === rating) {
+                return { status: 'skipped', reason: 'already_rated' };
+            }
+            await this.setRating(titleId, rating);
+        }
+        return { status: 'synced' };
     }
 
     /** POSTs a GraphQL body and returns `data`, classifying failures for the queue. */
@@ -156,7 +181,8 @@ class ExternalRatingSync {
             method: 'POST',
             credentials: 'include',
             headers: { 'content-type': 'application/json', ...headers },
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(10000)
         });
         if (!response.ok) {
             const error = new Error(`${this.keys.PROVIDER} returned HTTP ${response.status}`);
@@ -185,13 +211,14 @@ class ExternalRatingSync {
         return Array.isArray(stored[this.keys.QUEUE_KEY]) ? stored[this.keys.QUEUE_KEY] : [];
     }
 
-    /** Serializes read-modify-write of the queue inside this worker. */
-    updateQueue(mutator) {
-        this.queueChain = this.queueChain.then(async () => {
+    /** Called from serialized sync operations. */
+    async updateQueue(mutator) {
+        try {
             const next = mutator(await this.readQueue()).slice(-this.keys.MAX_QUEUE);
             await this.chrome.storage.local.set({ [this.keys.QUEUE_KEY]: next });
-        }).catch(error => console.warn(`[${this.keys.PROVIDER} sync] Queue update failed:`, error));
-        return this.queueChain;
+        } catch (error) {
+            console.warn(`[${this.keys.PROVIDER} sync] Queue update failed:`, error);
+        }
     }
 
     async enqueue(job) {
@@ -205,31 +232,34 @@ class ExternalRatingSync {
     }
 
     async flushQueue() {
-        const settings = await this.getSettings();
-        const queue = await this.readQueue();
-        if (!settings.enabled || queue.length === 0) return;
-
-        const remaining = [];
-        for (const job of queue) {
-            try {
-                await this.runJob(job);
-            } catch (error) {
-                if (error.authFailed) {
-                    await this.saveSettings({ enabled: false, pendingConnect: false });
-                    return;
-                }
-                const attempts = (job.attempts || 0) + 1;
-                if (error.retryable !== false && attempts < this.keys.MAX_ATTEMPTS) {
-                    remaining.push({ ...job, attempts });
-                }
-            }
+        for (const job of await this.readQueue()) {
+            await this.serializeSync(() => this.retryJob(job));
         }
-        // Keep jobs queued meanwhile by sync() for titles this pass did not touch.
-        const processed = new Set(queue.map(job => job.titleId));
-        await this.updateQueue(current => [...current.filter(job => !processed.has(job.titleId)), ...remaining]);
-        if (remaining.length > 0) {
+        if ((await this.getSettings()).enabled && (await this.readQueue()).length > 0) {
             this.chrome.alarms?.create(this.keys.RETRY_ALARM, { delayInMinutes: 5 });
         }
+    }
+
+    async retryJob(job) {
+        if (!(await this.getSettings()).enabled) return;
+        // A direct sync may have replaced or removed this job since the snapshot.
+        const current = (await this.readQueue()).find(item => item.titleId === job.titleId);
+        if (!current || current.rating !== job.rating || current.attempts !== job.attempts) return;
+
+        try {
+            await this.runJob(current);
+        } catch (error) {
+            if (error.authFailed) {
+                await this.saveSettings({ enabled: false, pendingConnect: false });
+                return;
+            }
+            const attempts = (current.attempts || 0) + 1;
+            if (error.retryable !== false && attempts < this.keys.MAX_ATTEMPTS) {
+                await this.updateQueue(queue => queue.map(item => item.titleId === current.titleId ? { ...item, attempts } : item));
+                return;
+            }
+        }
+        await this.dropQueued(current.titleId);
     }
 
     // --- Page-side helpers (no network, just messages to the background) ---------
@@ -263,6 +293,7 @@ class ImdbRatingSync extends ExternalRatingSync {
     static SESSION_COOKIES = ['at-main', 'sess-at-main'];
     static ID_MAP_KEY = 'integrations_imdb_ids';
 
+    static PERSONAL_RATING_QUERY = 'query TitleUserRating($titleId: ID!) { title(id: $titleId) { id userRating { value } } }';
     static RATE_MUTATION = 'mutation UpdateTitleRating($rating: Int!, $titleId: ID!) {\n  rateTitle(input: {rating: $rating, titleId: $titleId}) {\n    rating {\n      value\n    }\n  }\n}';
     static DELETE_MUTATION = 'mutation DeleteTitleRating($titleId: ID!) {\n  deleteTitleRating(input: {titleId: $titleId}) {\n    date\n  }\n}';
 
@@ -314,6 +345,12 @@ class ImdbRatingSync extends ExternalRatingSync {
             accept: 'application/graphql+json, application/json',
             'x-imdb-client-name': 'imdb-web-next-localized'
         });
+    }
+
+    async getPersonalRating(titleId) {
+        const data = await this.graphql(ImdbRatingSync.PERSONAL_RATING_QUERY, 'TitleUserRating', { titleId });
+        if (data?.title?.userRating === undefined) throw new Error('IMDb did not return the personal rating');
+        return data.title.userRating?.value ?? null;
     }
 
     async setRating(titleId, rating) {
@@ -394,6 +431,16 @@ class KinopoiskRatingSync extends ExternalRatingSync {
     static checkVoteResult(result) {
         if (!result) throw new Error('Kinopoisk did not confirm the vote');
         if (result.error) throw ExternalRatingSync.graphqlError(result.error.message || 'Kinopoisk vote error');
+    }
+
+    async getPersonalRating(movieId) {
+        const { TOUCH_MOVIE_RATING_QUERY } = typeof module !== 'undefined' && module.exports
+            ? require('./KinopoiskGraphqlService.js')
+            : globalThis.KinopoiskGraphqlService;
+        const data = await this.graphql('TouchMovieRating', TOUCH_MOVIE_RATING_QUERY, { movieId, withUserData: true });
+        const voting = data?.movie?.userData?.voting;
+        if (voting === undefined) throw new Error('Kinopoisk did not return the personal rating');
+        return voting?.value ?? null;
     }
 
     async setRating(movieId, rate) {

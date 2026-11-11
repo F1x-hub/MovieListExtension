@@ -447,6 +447,15 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Fixes
+
+- Rating sync checks the personal score on each connected site before sending an update. Kinopoisk and IMDb each skip the write when the score already matches, including on retries.
+
+</details>
+
 <details>
 <summary><strong>1.5.5</strong> — franchise icons for collections, instant Bookmarks, lighter animated avatars and updates</summary>
 

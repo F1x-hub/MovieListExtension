@@ -6,6 +6,7 @@ try {
     importScripts('../shared/services/UpdateService.js');
     importScripts('../shared/services/WhatsNewService.js');
     importScripts('../shared/services/WhatsNewPlaybackService.js');
+    importScripts('../shared/services/KinopoiskGraphqlService.js');
     importScripts('../shared/services/ExternalRatingSync.js');
     importScripts('../shared/services/player/HdrezkaProtocol.js');
     importScripts('../shared/services/player/HdrezkaSessionService.js');

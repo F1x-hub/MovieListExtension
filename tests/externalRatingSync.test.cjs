@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { ExternalRatingSync, ImdbRatingSync, KinopoiskRatingSync } = require('../src/shared/services/ExternalRatingSync.js');
+const KinopoiskGraphqlService = require('../src/shared/services/KinopoiskGraphqlService.js');
 
 function createChrome({ signedIn = true } = {}) {
     const store = {};
@@ -36,6 +37,8 @@ function createFetch(responder) {
 
 const ok = (data) => ({ ok: true, status: 200, json: async () => ({ data }) });
 const rated = (body) => ok({ rateTitle: { rating: { value: body.variables.rating } } });
+const imdbRating = (value) => ok({ title: { userRating: value === null ? null : { value } } });
+const kpRating = (value) => ok({ movie: { userData: { voting: value === null ? null : { value } } } });
 
 (async () => {
     // --- ID and rating normalization -------------------------------------------
@@ -79,14 +82,23 @@ const rated = (body) => ok({ rateTitle: { rating: { value: body.variables.rating
     // --- Rate, update and delete use the captured IMDb mutations ------------------
     {
         const chrome = createChrome();
-        const { calls, fetchImpl } = createFetch((body) => (body.operationName === 'UpdateTitleRating'
-            ? rated(body)
-            : ok({ deleteTitleRating: { date: '2026-10-18' } })));
+        let currentRating = null;
+        const { calls, fetchImpl } = createFetch((body) => {
+            if (body.operationName === 'TitleUserRating') return imdbRating(currentRating);
+            if (body.operationName === 'UpdateTitleRating') {
+                currentRating = body.variables.rating;
+                return rated(body);
+            }
+            return ok({ deleteTitleRating: { date: '2026-10-18' } });
+        });
         const sync = new ImdbRatingSync({ chromeApi: chrome, fetchImpl });
         await sync.connect();
 
         assert.deepEqual(await sync.sync({ kinopoiskId: '326', imdbId: 'tt0111161', rating: 8 }), { status: 'synced' });
-        const [call] = calls;
+        const [read, call] = calls;
+        assert.equal(read.body.operationName, 'TitleUserRating');
+        assert.match(read.body.query, /userRating\s*\{\s*value\s*\}/);
+        assert.deepEqual(read.body.variables, { titleId: 'tt0111161' });
         assert.equal(call.url, 'https://api.graphql.imdb.com/');
         assert.equal(call.init.method, 'POST');
         assert.equal(call.init.credentials, 'include', 'the browser IMDb session authenticates');
@@ -94,10 +106,22 @@ const rated = (body) => ok({ rateTitle: { rating: { value: body.variables.rating
         assert.match(call.body.query, /rateTitle\(input: \{rating: \$rating, titleId: \$titleId\}\)/);
         assert.deepEqual(call.body.variables, { rating: 8, titleId: 'tt0111161' });
 
+        await sync.enqueue({ titleId: 'tt0111161', rating: 5, attempts: 1 });
+        const [repeat] = await Promise.all([sync.sync({ imdbId: 'tt0111161', rating: '8' }), sync.flushQueue()]);
+        assert.deepEqual(repeat, { status: 'skipped', reason: 'already_rated' });
+        assert.equal(calls.at(-1).body.operationName, 'TitleUserRating');
+        assert.equal(calls.length, 3, 'a matching rating needs only one read');
+        assert.deepEqual(await sync.readQueue(), [], 'a matching rating supersedes an older retry');
+
+        assert.deepEqual(await sync.sync({ imdbId: 'tt0111161', rating: 6 }), { status: 'synced' });
+        assert.equal(calls.at(-1).body.operationName, 'UpdateTitleRating');
+
         // Deletion without an IMDb ID uses the remembered Kinopoisk -> IMDb mapping.
+        const callsBeforeDelete = calls.length;
         assert.deepEqual(await sync.sync({ kinopoiskId: '326', imdbId: null, rating: null }), { status: 'synced' });
-        assert.equal(calls[1].body.operationName, 'DeleteTitleRating');
-        assert.deepEqual(calls[1].body.variables, { titleId: 'tt0111161' });
+        assert.equal(calls.length, callsBeforeDelete + 1);
+        assert.equal(calls.at(-1).body.operationName, 'DeleteTitleRating');
+        assert.deepEqual(calls.at(-1).body.variables, { titleId: 'tt0111161' });
 
         assert.deepEqual(await sync.sync({ kinopoiskId: '999', imdbId: null, rating: 5 }), { status: 'skipped', reason: 'no_title_id' });
     }
@@ -108,7 +132,7 @@ const rated = (body) => ok({ rateTitle: { rating: { value: body.variables.rating
         let failing = true;
         const { calls, fetchImpl } = createFetch((body) => (failing
             ? { ok: false, status: 503, json: async () => ({}) }
-            : rated(body)));
+            : body.operationName === 'TitleUserRating' ? imdbRating(null) : rated(body)));
         const sync = new ImdbRatingSync({ chromeApi: chrome, fetchImpl });
         await sync.connect();
 
@@ -118,12 +142,30 @@ const rated = (body) => ok({ rateTitle: { rating: { value: body.variables.rating
         assert.equal(queue.length, 1, 'one job per title');
         assert.equal(queue[0].rating, 9, 'the newest rating wins');
         assert.equal(chrome.createdAlarms[0].name, ImdbRatingSync.RETRY_ALARM);
+        assert.deepEqual(calls.map(call => call.body.operationName), ['TitleUserRating', 'TitleUserRating']);
 
         failing = false;
         await sync.flushQueue();
         queue = await sync.readQueue();
         assert.equal(queue.length, 0, 'retry drains the queue');
         assert.deepEqual(calls.at(-1).body.variables, { rating: 9, titleId: 'tt0111161' });
+    }
+
+    // A lost response may leave the first write applied on the provider.
+    {
+        const chrome = createChrome();
+        let currentRating = null;
+        const { calls, fetchImpl } = createFetch((body) => {
+            if (body.operationName === 'TitleUserRating') return imdbRating(currentRating);
+            currentRating = body.variables.rating;
+            throw new Error('Connection lost after the write');
+        });
+        const sync = new ImdbRatingSync({ chromeApi: chrome, fetchImpl });
+        await sync.connect();
+        assert.equal((await sync.sync({ imdbId: 'tt0111161', rating: 6 })).status, 'queued');
+        await sync.flushQueue();
+        assert.deepEqual(await sync.readQueue(), []);
+        assert.deepEqual(calls.map(call => call.body.operationName), ['TitleUserRating', 'UpdateTitleRating', 'TitleUserRating']);
     }
 
     // --- A signed-out session turns the integration off ---------------------------
@@ -141,14 +183,27 @@ const rated = (body) => ok({ rateTitle: { rating: { value: body.variables.rating
     {
         const chrome = createChrome();
         let profile = { userProfile: { id: { kpId: 42 } } };
+        let currentRating = 6;
         const { calls, fetchImpl } = createFetch((body) => {
             if (body.operationName === 'UserProfileModerator') return ok(profile);
-            if (body.operationName === 'MovieSetVote') return ok({ movie: { vote: { set: { error: null, status: 'SUCCESS' } } } });
+            if (body.operationName === 'TouchMovieRating') return kpRating(currentRating);
+            if (body.operationName === 'MovieSetVote') {
+                currentRating = body.variables.rate;
+                return ok({ movie: { vote: { set: { error: null, status: 'SUCCESS' } } } });
+            }
             return ok({ movie: { vote: { remove: { error: null, status: 'SUCCESS' } } } });
         });
         const kp = new KinopoiskRatingSync({ chromeApi: chrome, fetchImpl });
         assert.equal(KinopoiskRatingSync.SETTINGS_KEY, 'integrations_kinopoisk', 'providers keep separate settings');
         assert.equal((await kp.connect()).connected, true, 'a signed-in Kinopoisk profile connects at once');
+
+        assert.deepEqual(await kp.sync({ kinopoiskId: '6601550', rating: 6 }), { status: 'skipped', reason: 'already_rated' });
+        const read = calls.at(-1);
+        assert.equal(read.body.operationName, 'TouchMovieRating');
+        assert.equal(read.body.query, KinopoiskGraphqlService.TOUCH_MOVIE_RATING_QUERY);
+        assert.deepEqual(read.body.variables, { movieId: 6601550, withUserData: true });
+        assert.equal(read.init.credentials, 'include');
+        assert.equal(calls.some(call => call.body.operationName === 'MovieSetVote'), false);
 
         assert.deepEqual(await kp.sync({ kinopoiskId: '6601550', rating: 8 }), { status: 'synced' });
         const vote = calls.find(call => call.body.operationName === 'MovieSetVote');
@@ -165,7 +220,8 @@ const rated = (body) => ok({ rateTitle: { rating: { value: body.variables.rating
         // A vote error from Kinopoisk is reported, not retried.
         const failing = new KinopoiskRatingSync({ chromeApi: chrome, fetchImpl: async (url, init) => {
             const body = JSON.parse(init.body);
-            return ok(body.operationName === 'UserProfileModerator' ? profile : { movie: { vote: { set: { error: { message: 'Movie not found' }, status: 'FAIL' } } } });
+            if (body.operationName === 'TouchMovieRating') return kpRating(null);
+            return ok({ movie: { vote: { set: { error: { message: 'Movie not found' }, status: 'FAIL' } } } });
         } });
         assert.deepEqual(await failing.sync({ kinopoiskId: '1', rating: 5 }), { status: 'failed', reason: 'Movie not found' });
 
