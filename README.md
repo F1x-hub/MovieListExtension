@@ -453,6 +453,7 @@ keeps npm-compatible three-component semver metadata.
 ### Fixes
 
 - Rating sync checks the personal score on each connected site before sending an update. Kinopoisk and IMDb each skip the write when the score already matches, including on retries.
+- Player: dragging or clicking the volume slider now shows the volume percentage at the top of the video, like the arrow keys do. The badge stays lit while the slider moves instead of blinking on each step, and hides 1.5 s after the last change.
 
 </details>
 

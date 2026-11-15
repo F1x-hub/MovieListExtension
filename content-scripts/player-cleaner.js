@@ -2367,27 +2367,17 @@
             let volumeIndicatorTimeout = null;
 
             // Show volume indicator with animation
+            // Called on every arrow press and on every pointer move while the
+            // volume slider is dragged, so it keeps the badge lit (no fade-out
+            // between updates) and restarts the 1.5 s hide timer each time.
             const showVolumeIndicator = (volumePercent) => {
-                // Clear existing timeout
-                if (volumeIndicatorTimeout) {
-                    clearTimeout(volumeIndicatorTimeout);
-                    volumeIndicatorTimeout = null;
-                }
-                
-                // Update text
+                clearTimeout(volumeIndicatorTimeout);
                 volumeIndicator.textContent = Math.round(volumePercent) + '%';
-                
-                // Force show
-                volumeIndicator.style.opacity = '0';
-                
-                setTimeout(() => {
-                    volumeIndicator.style.opacity = '1';
-                    
-                    // Hide after 1.5 seconds
-                    volumeIndicatorTimeout = setTimeout(() => {
-                        volumeIndicator.style.opacity = '0';
-                    }, 1500);
-                }, 50);
+                volumeIndicator.style.opacity = '1';
+                volumeIndicatorTimeout = setTimeout(() => {
+                    volumeIndicator.style.opacity = '0';
+                    volumeIndicatorTimeout = null;
+                }, 1500);
             };
 
 
@@ -4708,6 +4698,7 @@
                 percent = Math.max(0, Math.min(1, percent));
                 
                 setVolumeSafe(percent, percent === 0);
+                showVolumeIndicator(percent * 100);
             };
 
             let isDraggingVol = false;
