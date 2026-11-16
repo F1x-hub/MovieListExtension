@@ -5,7 +5,9 @@ const {
   displayNameFromProfile,
   isApprovedProfile,
   normalizeMovie,
+  normalizePoster,
 } = require('../functions/randomMarathon');
+const { PosterUrl } = require('../src/shared/utils/PosterUrl.js');
 
 assert.equal(MAX_MOVIES_PER_USER, 3);
 assert.deepEqual(normalizeMovie({
@@ -31,8 +33,71 @@ assert.throws(() => normalizeMovie({ kpId: 0, title: 'bad' }), /Kinopoisk movie 
 assert.throws(() => normalizeMovie({ kpId: 123, title: 'bad', year: '<img>' }), /year is invalid/);
 assert.throws(() => normalizeMovie({ kpId: 123, title: 'bad', rating: 11 }), /rating is invalid/);
 assert.throws(() => normalizeMovie({ kpId: 123, title: 'x'.repeat(301) }), /title is too long/);
-assert.throws(() => normalizeMovie({ kpId: 123, title: 'bad', poster: 'javascript:alert(1)' }), /poster is invalid/);
-assert.throws(() => normalizeMovie({ kpId: 123, title: 'bad', poster: 'http://example.test/poster.jpg' }), /poster is invalid/);
+
+// Kinopoisk serves posters from Yandex in extensionless sizes; those used to be
+// refused, so a film could not join the marathon («Не удалось проверить данные фильма»).
+const kinopoiskPosters = [
+  'https://image.openmoviedb.com/kinopoisk-images/1599028/637271d5-61b4-4e46-ac83-6d07494c7645/orig',
+  'https://image.openmoviedb.com/kinopoisk-ott-images/1648503/2a000001876d5a7d3f2c9e9f3b0d5f0c2b8b/orig',
+  'https://avatars.mds.yandex.net/get-kinopoisk-image/1599028/637271d5-61b4-4e46-ac83-6d07494c7645/600x900',
+  'https://avatars.mds.yandex.net/get-kinopoisk-image/1599028/637271d5-61b4-4e46-ac83-6d07494c7645/orig',
+];
+for (const poster of kinopoiskPosters) {
+  assert.equal(normalizeMovie({ kpId: 301, title: 'Матрица', year: 1999, rating: 8.5, poster }).poster, poster,
+    `${poster} is kept`);
+}
+assert.equal(normalizeMovie({ kpId: 301, poster: { url: kinopoiskPosters[2], previewUrl: 'x' } }).poster, kinopoiskPosters[2],
+  'a raw Kinopoisk poster object gives its URL');
+assert.equal(normalizePoster('//avatars.mds.yandex.net/get-kinopoisk-image/1/x/orig'),
+  'https://avatars.mds.yandex.net/get-kinopoisk-image/1/x/orig', 'a protocol-relative poster becomes https');
+
+// A poster that does not qualify is dropped; the movie still joins and the page
+// falls back to the Kinopoisk poster by ID.
+for (const poster of [
+  'javascript:alert(1)',
+  'http://example.test/poster.jpg',
+  'https://image.tmdb.org/other/poster.jpg',
+  'https://st.kp.yandex.net/robots.txt',
+  'https://user:pass@avatars.mds.yandex.net/get-kinopoisk-image/1/x/orig',
+  'https://avatars.mds.yandex.net:8443/get-kinopoisk-image/1/x/orig',
+  'https://avatars.mds.yandex.net:443/get-kinopoisk-image/1/x/orig',
+  'https://image.openmoviedb.com/a\nb',
+  `https://image.openmoviedb.com/${'x'.repeat(2048)}`,
+  42,
+  null,
+]) {
+  const movie = normalizeMovie({ kpId: 123, title: 'Movie', poster });
+  assert.equal(movie.poster, null, `${String(poster).slice(0, 60)} is dropped`);
+  assert.equal(movie.kpId, 123);
+}
+
+// The server accepts exactly the posters the Random page sends (PosterUrl.safe),
+// so the two lists cannot drift apart again.
+const posterSamples = [
+  ...kinopoiskPosters,
+  'https://image.tmdb.org/t/p/w500/abc.jpg',
+  'http://st.kp.yandex.net/images/film_iphone/iphone360_289.jpg?d=old',
+  'https://st.kp.yandex.net/images/film_big/278217.jpg',
+  'https://st.kp.yandex.net/301.jpg',
+  'https://image.openmoviedb.com/poster',
+  'https://unsupported.example/poster.jpg',
+  'ftp://image.tmdb.org/t/p/w500/abc.jpg',
+  'https://avatars.mds.yandex.net:8443/get-kinopoisk-image/1/x/orig',
+  'https://avatars.mds.yandex.net/get-kinopoisk-image/1/x/orig#frag',
+  'not a url',
+  '',
+];
+for (const sample of posterSamples) {
+  const client = PosterUrl.safe(sample);
+  const server = normalizePoster(sample);
+  assert.equal(Boolean(server), Boolean(client), `server and page agree on ${sample || '(empty)'}`);
+  if (client) {
+    const withoutQuery = new URL(client);
+    withoutQuery.search = '';
+    withoutQuery.hash = '';
+    assert.equal(server, withoutQuery.href, `the stored poster is the page's URL without query: ${sample}`);
+  }
+}
 
 assert.equal(isApprovedProfile({ approvalStatus: 'approved' }), true);
 assert.equal(isApprovedProfile({}), true);
@@ -79,7 +144,7 @@ class FakeQuery {
   async get() {
     const snapshot = new FakeSnapshot(new FakeRef(this.collection.db, this.collection.path), undefined);
     snapshot.docs = [...this.collection.db.store.entries()]
-      .filter(([path, data]) => path.startsWith(`${this.collection.path}/`) && path.split('/').length === this.collection.path.split('/').length + 1)
+      .filter(([path]) => path.startsWith(`${this.collection.path}/`) && path.split('/').length === this.collection.path.split('/').length + 1)
       .filter(([, data]) => data?.[this.field] === this.value)
       .map(([path, data]) => {
         const ref = new FakeRef(this.collection.db, path);
@@ -164,7 +229,13 @@ class FakeDb {
   await fakeService.addMovie({ actorUid: 'admin-1', profile: { isAdmin: true }, movie: { kpId: 7, title: 'Movie 7' } });
   await fakeService.addMovie({ actorUid: 'admin-1', profile: { isAdmin: true }, movie: { kpId: 8, title: 'Movie 8' } });
   await fakeService.removeMovie({ actorUid: 'viewer-1', profile: participant, itemId: '1_1' });
-  await fakeService.addMovie({ actorUid: 'viewer-1', profile: participant, movie: { kpId: 5, title: 'Movie 5' } });
+  // The film from the report: a Kinopoisk poster in a Yandex size joins the round.
+  await fakeService.addMovie({
+    actorUid: 'viewer-1',
+    profile: participant,
+    movie: { kpId: 5, title: 'Movie 5', year: 2021, rating: 7.4, poster: kinopoiskPosters[0] },
+  });
+  assert.equal(fakeDb.store.get('randomMarathons/current/items/1_5').poster, kinopoiskPosters[0]);
 
   const raceDb = new FakeDb();
   raceDb.store.set('randomMarathons/current', {

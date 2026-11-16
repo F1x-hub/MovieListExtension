@@ -2,10 +2,15 @@ const EXTENSION_ORIGIN = "chrome-extension://dgdejomdgiabgcfijcdhjefijdfiemhd";
 const MAX_MOVIES_PER_USER = 3;
 const ROUND_STATUSES = new Set(["collecting", "active", "completed", "cancelled"]);
 const ITEM_STATES = new Set(["queued", "selected", "watched", "removed"]);
-const SAFE_POSTER_HOSTS = new Set([
-  "image.tmdb.org",
-  "image.openmoviedb.com",
-  "st.kp.yandex.net",
+// The same hosts and path prefixes as src/shared/utils/PosterUrl.js, which picks
+// the poster the Random page sends. Kinopoisk serves its posters from Yandex in
+// extensionless sizes (".../orig", ".../600x900"), so no file extension is asked
+// for; tests/randomMarathonFunction.test.cjs keeps the two lists in step.
+const POSTER_PATH_PREFIXES = new Map([
+  ["avatars.mds.yandex.net", "/"],
+  ["st.kp.yandex.net", "/images/"],
+  ["image.tmdb.org", "/t/p/"],
+  ["image.openmoviedb.com", "/"],
 ]);
 
 function createMarathonError(code, message, statusCode = 400) {
@@ -53,6 +58,35 @@ function normalizeString(value, field, maxLength, { required = false } = {}) {
   return normalized || null;
 }
 
+/**
+ * A poster URL that is safe to store and show to other participants, or null.
+ * The poster only decorates the item, so one that does not qualify is dropped
+ * rather than refusing the movie; the page then shows the Kinopoisk poster by ID.
+ */
+function normalizePoster(value) {
+  const raw = value && typeof value === "object" ? value.url ?? value.previewUrl : value;
+  if (typeof raw !== "string") return null;
+  const input = raw.trim();
+  // eslint-disable-next-line no-control-regex -- control characters are exactly what is refused
+  if (!input || input.length > 2048 || /[\u0000-\u001f\u007f]/.test(input)) return null;
+  let url;
+  try {
+    url = new URL(input.startsWith("//") ? `https:${input}` : input);
+  } catch {
+    return null;
+  }
+  const prefix = POSTER_PATH_PREFIXES.get(url.hostname.toLowerCase());
+  if (!prefix || url.username || url.password || url.port) return null;
+  // URL.port hides a default port written out explicitly; refuse that as well.
+  const authority = input.replace(/^(?:https?:)?\/\//i, "").split(/[/?#]/, 1)[0];
+  if (/:\d+$/.test(authority)) return null;
+  if (url.protocol === "http:") url.protocol = "https:";
+  if (url.protocol !== "https:" || !url.pathname.startsWith(prefix)) return null;
+  url.search = "";
+  url.hash = "";
+  return url.href;
+}
+
 function normalizeMovie(movie = {}) {
   const rawId = movie.kinopoiskId ?? movie.kpId ?? movie.movieId ?? movie.id;
   const kpId = Number(rawId);
@@ -78,29 +112,7 @@ function normalizeMovie(movie = {}) {
     rating = parsedRating;
   }
 
-  let poster = normalizeString(movie.posterUrl ?? movie.poster ?? movie.posterPath, "poster", 2048);
-  if (poster) {
-    let posterUrl;
-    try {
-      posterUrl = new URL(poster);
-    } catch {
-      throw createMarathonError("INVALID_MOVIE", "poster is invalid");
-    }
-
-    const host = posterUrl.hostname.toLowerCase();
-    if (posterUrl.protocol === "http:" && SAFE_POSTER_HOSTS.has(host)) posterUrl.protocol = "https:";
-    const isImagePath = /\.(?:jpe?g|png|webp)$/i.test(posterUrl.pathname);
-    const isKnownImagePath = (host !== "image.tmdb.org" || posterUrl.pathname.startsWith("/t/p/"))
-      && (host !== "st.kp.yandex.net" || posterUrl.pathname.startsWith("/images/"));
-    if (posterUrl.protocol !== "https:" || posterUrl.port || posterUrl.username || posterUrl.password
-      || !SAFE_POSTER_HOSTS.has(host) || !isImagePath || !isKnownImagePath) {
-      throw createMarathonError("INVALID_MOVIE", "poster is invalid");
-    }
-
-    posterUrl.search = "";
-    posterUrl.hash = "";
-    poster = posterUrl.href;
-  }
+  const poster = normalizePoster(movie.posterUrl ?? movie.poster ?? movie.posterPath);
 
   return {
     kpId,
@@ -500,5 +512,6 @@ module.exports = {
   displayNameFromProfile,
   isApprovedProfile,
   normalizeMovie,
+  normalizePoster,
   setMarathonCors,
 };
