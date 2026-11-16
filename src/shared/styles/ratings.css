@@ -634,6 +634,32 @@
     backdrop-filter: blur(12px);
 }
 
+/* The rating dialog is a native <dialog> opened with showModal() that covers the
+   viewport and draws the overlay itself, so the shared .modal-overlay shell keeps
+   its look: reset the UA dialog box, leave ::backdrop clear, and hide it while
+   closed (.modal-overlay sets display: flex unconditionally). */
+dialog.ratings-modal-overlay {
+    width: auto;
+    height: auto;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    color: inherit;
+    overscroll-behavior: contain;
+}
+
+dialog.ratings-modal-overlay:not([open]) {
+    display: none;
+}
+
+dialog.ratings-modal-overlay::backdrop {
+    background: transparent;
+    overflow: hidden;
+    overscroll-behavior: contain;
+}
+
 /* Edit Rating Form Control styling */
 .form-group {
     display: flex;

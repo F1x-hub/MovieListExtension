@@ -41,7 +41,9 @@ for (const selector of ['modal-overlay', 'modal-content', 'modal-header', 'modal
 
 assert.match(ratingsHtml, /class="modal-overlay ratings-modal-overlay"/);
 // The unused movie-details modal was removed; the rating modal is the page's dialog.
-assert.match(ratingsHtml, /id="ratingModal"[^>]*role="dialog"[^>]*aria-modal="true"/);
+// It is a native <dialog>: showModal() supplies the semantics, so no ARIA role or aria-modal.
+assert.match(ratingsHtml, /<dialog id="ratingModal"[^>]*aria-labelledby="ratingModalTitle"/);
+assert.doesNotMatch(ratingsHtml, /id="ratingModal"[^>]*(role="dialog"|aria-modal)/);
 assert.doesNotMatch(ratingsHtml, /ratings-detail-modal|id="movieModal"/);
 assert.doesNotMatch(ratingsStyles, /\.ratings-detail-modal/);
 

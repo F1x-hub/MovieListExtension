@@ -454,6 +454,11 @@ keeps npm-compatible three-component semver metadata.
 
 - Rating sync checks the personal score on each connected site before sending an update. Kinopoisk and IMDb each skip the write when the score already matches, including on retries.
 - Player: dragging or clicking the volume slider now shows the volume percentage at the top of the video, like the arrow keys do. The badge stays lit while the slider moves instead of blinking on each step, and hides 1.5 s after the last change.
+- Rated: the edit-rating dialog is a native `<dialog>` opened with `showModal()`. The browser now makes the page behind it inert, keeps Tab inside it, closes it on Escape and returns focus to the button that opened it, replacing the hand-written focus trap and Escape handler; the slider still takes focus on open, and a press on the dimmed background or Cancel still closes it. It looks the same in both themes. `tests/ratingsDialogBrowser.cjs` (part of `npm run test:ratings-page`) checks this in Chromium.
+
+### Docs
+
+- `AGENTS.md` states the browser-support policy (current stable Chrome only, no cross-browser fallbacks, no origin-trial or flag-gated features) and points agents to Google's Modern Web Guidance skills (`modern-web-guidance`, `chrome-extensions`) for web UI, CSS, client-side JS and Manifest V3 work.
 
 </details>
 

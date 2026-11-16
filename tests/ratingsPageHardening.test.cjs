@@ -163,7 +163,9 @@ function createFakeDb(collections, { failWhen = () => false } = {}) {
     assert.match(ratingsJs, /window\.SortControl\?\.enhance\(this\.elements\[id\]\)/, 'Filter and sort selects use the shared control');
     assert.match(sortControlJs, /'ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '/, 'Shared selects support keyboard navigation');
     assert.match(sortControlJs, /key === 'Escape'[\s\S]*?this\.close\(\)[\s\S]*?this\.trigger\.focus\(\)/, 'Escape closes the shared menu and returns focus');
-    assert.match(ratingsJs, /handleRatingModalKeydown\(e\)/, 'The rating dialog handles Escape and Tab');
+    assert.match(ratingsJs, /modal\.showModal\(\)/, 'The rating dialog opens as a native modal, which handles Escape, Tab and focus return');
+    assert.doesNotMatch(ratingsJs, /handleRatingModalKeydown|getRatingModalFocusables|modalReturnFocus/, 'No hand-written focus trap next to the native modal');
+    assert.match(ratingsHtml, /id="ratingSlider"[^>]*autofocus/, 'The slider gets focus when the dialog opens');
     assert.match(ratingsJs, /removeEl = document\.createElement\('button'\)/, 'Filter tag removal is a real button');
     assert.match(ratingsHtml, /fonts\.googleapis\.com[^>]*media="print" data-async-style/, 'Font CSS does not block the first paint');
     assert.match(ratingsHtml, /<script src="\.\.\/\.\.\/shared\/utils\/asyncStyles\.js"><\/script>/);

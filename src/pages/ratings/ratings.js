@@ -51,7 +51,6 @@ class RatingsPageManager {
         this.CLIENT_SORT_BATCH_SIZE = 40;
         this.bulkLoading = false;
         this.isSavingRating = false;
-        this.modalReturnFocus = null;
         this._moviesLoadTriggered = false;
         this.init();
     }
@@ -402,16 +401,18 @@ class RatingsPageManager {
         
         this.elements.saveRatingBtn?.addEventListener('click', () => this.saveRating());
         this.elements.cancelRatingBtn?.addEventListener('click', () => this.closeRatingModal());
-        // Escape closes the dialog; Tab stays inside it while it is open
-        this.elements.ratingModal?.addEventListener('keydown', (e) => this.handleRatingModalKeydown(e));
+        // Escape closes the native dialog itself; this runs for every way it closes
+        this.elements.ratingModal?.addEventListener('close', () => {
+            if (!this.elements.ratingModal.open) this.selectedMovie = null;
+        });
         // Enter in the form saves instead of submitting the page
         document.getElementById('ratingForm')?.addEventListener('submit', (e) => {
             e.preventDefault();
             this.saveRating();
         });
         
-        // Close modals on background click
-        
+        // The dialog covers the viewport, so a press on the dialog itself (not on
+        // the .modal surface inside it) is a press on the dimmed background
         this.elements.ratingModal?.addEventListener('mousedown', (e) => {
             if (e.target === this.elements.ratingModal) this.closeRatingModal();
         });
@@ -3030,48 +3031,16 @@ class RatingsPageManager {
     openRatingModal() {
         const modal = this.elements.ratingModal;
         if (!modal) return;
-        this.modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        modal.style.display = 'flex';
-        // Move focus into the dialog so the keyboard and screen readers land on it
-        this.elements.ratingSlider?.focus();
+        // showModal() makes the page inert, keeps Tab inside the dialog, focuses the
+        // autofocus slider and returns focus to the opener on close
+        if (!modal.open) modal.showModal();
     }
 
     closeRatingModal() {
-        const wasOpen = this.elements.ratingModal.style.display !== 'none';
-        this.elements.ratingModal.style.display = 'none';
+        // Cleared synchronously: saveRating() reads the film before it closes the dialog
         this.selectedMovie = null;
-        const returnTo = this.modalReturnFocus;
-        this.modalReturnFocus = null;
-        if (wasOpen && returnTo?.isConnected) returnTo.focus();
-    }
-
-    getRatingModalFocusables() {
         const modal = this.elements.ratingModal;
-        if (!modal) return [];
-        return Array.from(modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
-            .filter(el => !el.disabled && el.offsetParent !== null);
-    }
-
-    /** Escape closes the rating dialog; Tab and Shift+Tab cycle inside it. */
-    handleRatingModalKeydown(e) {
-        if (this.elements.ratingModal?.style.display === 'none') return;
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            this.closeRatingModal();
-            return;
-        }
-        if (e.key !== 'Tab') return;
-        const focusables = this.getRatingModalFocusables();
-        if (focusables.length === 0) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
-            e.preventDefault();
-            last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-            e.preventDefault();
-            first.focus();
-        }
+        if (modal?.open) modal.close();
     }
 
     showEmptyState() {
