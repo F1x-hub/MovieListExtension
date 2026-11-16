@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="games.battleship.page_title">Морской бой</title>
+    <link rel="stylesheet" href="../../shared/styles/common.css">
+    <script defer src="../../shared/components/NumberStepper.js"></script>
+    <link rel="stylesheet" href="../../shared/styles/theme.css">
+    <link rel="stylesheet" href="../../shared/styles/components.css">
+    <link rel="stylesheet" href="../../shared/styles/navigation.css">
+    <link rel="stylesheet" href="battleship.css">
+    <script src="../../shared/services/ThemeService.js"></script>
+    <script src="../../shared/services/SeasonalThemeService.js"></script>
+    <link rel="icon" type="image/png" sizes="16x16" href="../../shared/assets/icons/app/favicon16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="../../shared/assets/icons/app/favicon32.png">
+</head>
+<body class="dark-theme">
+    <main class="main-content battleship-page" id="battleshipPage">
+        <div class="bs-shell">
+            <header class="bs-header">
+                <div class="bs-header__copy">
+                    <h1 class="bs-title" id="bsTitle" data-i18n="games.battleship.title">Морской бой</h1>
+                    <p class="bs-subtitle" data-i18n="games.battleship.subtitle">Сыграйте с другим пользователем расширения</p>
+                </div>
+                <button class="bs-icon-btn" id="bsMuteBtn" type="button" aria-pressed="false">
+                    <svg class="bs-icon-sound-on" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+                    <svg class="bs-icon-sound-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+                    <span class="sr-only" id="bsMuteLabel"></span>
+                </button>
+            </header>
+
+            <div class="bs-toast" id="bsToast" role="status" aria-live="polite" hidden></div>
+
+            <section class="bs-view bs-view--center" id="bsLoading" aria-busy="true">
+                <div class="app-loader app-loader--section" role="status">
+                    <div class="app-loader__indicator" aria-hidden="true"></div>
+                    <span class="app-loader__label" data-i18n="games.battleship.loading">Загружаем…</span>
+                </div>
+            </section>
+
+            <section class="bs-view bs-view--center" id="bsGuest" hidden>
+                <div class="bs-panel bs-panel--message">
+                    <h2 data-i18n="games.battleship.guest.title">Войдите, чтобы играть</h2>
+                    <p data-i18n="games.battleship.guest.text">Морской бой идёт между пользователями расширения, поэтому нужен аккаунт.</p>
+                    <button class="btn btn-primary" id="bsSignInBtn" type="button" data-i18n="games.battleship.guest.sign_in">Войти</button>
+                </div>
+            </section>
+
+            <section class="bs-view" id="bsLobby" hidden>
+                <div class="bs-lobby">
+                    <div class="bs-lobby__main">
+                        <section class="bs-panel" aria-labelledby="bsNewGameTitle">
+                            <h2 class="bs-panel__title" id="bsNewGameTitle" data-i18n="games.battleship.lobby.new_title">Новая игра</h2>
+                            <div class="bs-start-grid">
+                                <button class="bs-start-card" type="button" data-action="create-public">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                                    <span class="bs-start-card__copy">
+                                        <strong data-i18n="games.battleship.lobby.create_public">Открытая игра</strong>
+                                        <small data-i18n="games.battleship.lobby.create_public_hint">Её увидят все, присоединиться может любой</small>
+                                    </span>
+                                </button>
+                                <button class="bs-start-card" type="button" data-action="create-private">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                                    <span class="bs-start-card__copy">
+                                        <strong data-i18n="games.battleship.lobby.create_private">Игра по коду</strong>
+                                        <small data-i18n="games.battleship.lobby.create_private_hint">Получите код и отправьте его другу</small>
+                                    </span>
+                                </button>
+                            </div>
+
+                            <form class="bs-field-row" id="bsJoinForm" novalidate>
+                                <label class="bs-field">
+                                    <span class="bs-field__label" data-i18n="games.battleship.lobby.join_label">Код игры</span>
+                                    <input class="bs-input bs-input--code" id="bsJoinCode" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="80" aria-describedby="bsJoinError" data-i18n="[placeholder]games.battleship.lobby.join_placeholder">
+                                </label>
+                                <button class="btn btn-secondary" type="submit" data-i18n="games.battleship.lobby.join_button">Войти в игру</button>
+                                <p class="bs-field-error" id="bsJoinError" role="alert" hidden></p>
+                            </form>
+
+                            <div class="bs-challenge">
+                                <label class="bs-field">
+                                    <span class="bs-field__label" data-i18n="games.battleship.lobby.challenge_label">Вызвать игрока</span>
+                                    <input class="bs-input" id="bsPlayerSearch" type="search" autocomplete="off" spellcheck="false" maxlength="40" aria-describedby="bsPlayerSearchHint" aria-controls="bsPlayerResults" data-i18n="[placeholder]games.battleship.lobby.challenge_placeholder">
+                                </label>
+                                <p class="bs-hint" id="bsPlayerSearchHint" data-i18n="games.battleship.lobby.challenge_hint">Имя или @username, хотя бы две буквы</p>
+                                <ul class="bs-player-list" id="bsPlayerResults" aria-live="polite"></ul>
+                            </div>
+                        </section>
+
+                        <section class="bs-panel" id="bsInvitesPanel" aria-labelledby="bsInvitesTitle" hidden>
+                            <h2 class="bs-panel__title" id="bsInvitesTitle" data-i18n="games.battleship.lobby.invites_title">Вам бросили вызов</h2>
+                            <ul class="bs-list" id="bsInvites"></ul>
+                        </section>
+
+                        <section class="bs-panel" aria-labelledby="bsMyGamesTitle">
+                            <h2 class="bs-panel__title" id="bsMyGamesTitle" data-i18n="games.battleship.lobby.my_games_title">Ваши игры</h2>
+                            <ul class="bs-list" id="bsMyGames"></ul>
+                        </section>
+                    </div>
+
+                    <aside class="bs-lobby__side">
+                        <section class="bs-panel" aria-labelledby="bsOpenGamesTitle">
+                            <h2 class="bs-panel__title" id="bsOpenGamesTitle" data-i18n="games.battleship.lobby.open_title">Открытые игры</h2>
+                            <ul class="bs-list" id="bsOpenGames" aria-live="polite"></ul>
+                        </section>
+                        <section class="bs-panel" aria-labelledby="bsRecentTitle">
+                            <h2 class="bs-panel__title" id="bsRecentTitle" data-i18n="games.battleship.lobby.recent_title">Последние партии</h2>
+                            <dl class="bs-stats" id="bsStats"></dl>
+                            <ul class="bs-list" id="bsRecent"></ul>
+                        </section>
+                    </aside>
+                </div>
+            </section>
+
+            <section class="bs-view" id="bsGame" hidden></section>
+        </div>
+    </main>
+
+    <script src="../../../libs/firebase-app-compat.js"></script>
+    <script src="../../../libs/firebase-auth-compat.js"></script>
+    <script src="../../../libs/firebase-firestore-compat.js"></script>
+    <script src="../../shared/firestore.js"></script>
+    <script src="../../shared/services/UserService.js"></script>
+    <script src="../../shared/utils/Utils.js"></script>
+    <script src="../../shared/utils/IconUtils.js"></script>
+    <script src="../../shared/utils/Icons.js"></script>
+    <script src="../../shared/components/BackToTop.js"></script>
+    <script src="../../shared/components/ConfirmDialog.js"></script>
+    <script src="../../shared/components/Navigation.js"></script>
+    <script src="../../shared/games/battleship/BattleshipRules.js"></script>
+    <script src="battleship.js" type="module"></script>
+</body>
+</html>

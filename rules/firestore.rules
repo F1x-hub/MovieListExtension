@@ -745,6 +745,31 @@ service cloud.firestore {
       }
     }
 
+    // Networked Battleship. Every write goes through the server-owned `battleship`
+    // function (Admin SDK), which checks approval, turns and fleets; clients only
+    // read. A game is readable by its players, a fleet only by its owner, so the
+    // opponent never sees it before the game is over, a player document only by
+    // that player and the lobby of open games by approved users.
+    match /battleshipGames/{gameId} {
+      allow get: if isAuthenticated() && (request.auth.uid in resource.data.players || isAdmin());
+      allow list, create, update, delete: if false;
+
+      match /fleets/{fleetUid} {
+        allow get: if isOwner(fleetUid);
+        allow list, create, update, delete: if false;
+      }
+    }
+
+    match /battleshipPlayers/{playerUid} {
+      allow get: if isOwner(playerUid);
+      allow list, create, update, delete: if false;
+    }
+
+    match /battleshipLobby/{lobbyId} {
+      allow get: if isApprovedUser() || isAdmin();
+      allow list, create, update, delete: if false;
+    }
+
     // Users collection
     match /users/{userId} {
       // Everyone reads their own profile (the approval check on login runs while

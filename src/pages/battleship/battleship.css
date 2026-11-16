@@ -1,0 +1,1373 @@
+/**
+ * Battleship page. The chrome (panels, lists, buttons, the status banner) is
+ * neutral. The boards are a game surface (docs/design-system.md, exception 3):
+ * ships take the content colour and hits the semantic danger red, always drawn
+ * as a cross; misses are dots and sunk ships are dimmed hulls, so no state is
+ * carried by colour alone.
+ */
+
+.battleship-page {
+    --bs-surface: var(--ui-color-surface-card);
+    --bs-overlay: rgba(var(--theme-ink-rgb), 0.045);
+    --bs-overlay-strong: rgba(var(--theme-ink-rgb), 0.09);
+    --bs-label: 22px;
+    --bs-cell: clamp(24px, 2.9vw, 40px);
+    --bs-water: rgba(var(--theme-ink-rgb), 0.03);
+    --bs-water-line: rgba(var(--theme-ink-rgb), 0.1);
+    --bs-ship: var(--ui-color-content);
+    --bs-ship-sunk: rgba(var(--theme-ink-rgb), 0.34);
+    --bs-hit: var(--ui-color-status-danger);
+    --bs-hit-wash: color-mix(in srgb, var(--ui-color-status-danger) 16%, transparent);
+    --bs-miss: rgba(var(--theme-ink-rgb), 0.5);
+    --bs-clear: rgba(var(--theme-ink-rgb), 0.18);
+    min-height: calc(100vh - 60px);
+    color: var(--ui-color-content);
+}
+
+.light-theme .battleship-page {
+    --bs-surface: var(--ui-color-surface);
+    --bs-water: rgba(var(--theme-ink-rgb), 0.025);
+}
+
+.battleship-page [hidden] {
+    display: none !important;
+}
+
+.battleship-page .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.bs-shell {
+    box-sizing: border-box;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 24px 96px;
+}
+
+/* ---------- Header ---------- */
+
+.bs-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 22px;
+}
+
+.bs-title {
+    margin: 0;
+    color: var(--ui-color-content);
+    font-size: clamp(1.6rem, 2.6vw, 2.1rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.bs-subtitle {
+    margin: 6px 0 0;
+    color: var(--ui-color-content-muted);
+    font-size: 0.95rem;
+}
+
+.bs-icon-btn {
+    display: inline-grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    color: var(--ui-color-content-muted);
+    background: var(--bs-surface);
+    border: 1px solid var(--ui-color-border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
+}
+
+.bs-icon-btn:hover {
+    color: var(--ui-color-content);
+    border-color: var(--ui-color-border-hover);
+}
+
+.bs-icon-btn svg {
+    display: block;
+}
+
+.bs-icon-btn .bs-icon-sound-off,
+.bs-icon-btn.is-muted .bs-icon-sound-on {
+    display: none;
+}
+
+.bs-icon-btn.is-muted .bs-icon-sound-off {
+    display: block;
+}
+
+/* ---------- Toast ---------- */
+
+/* Bottom right, away from the boards and the placement tools. */
+.bs-toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: var(--z-modal, 10000);
+    box-sizing: border-box;
+    max-width: min(calc(100vw - 32px), 420px);
+    padding: 11px 16px;
+    color: var(--ui-color-page);
+    font-size: 0.92rem;
+    font-weight: 500;
+    line-height: 1.4;
+    background: var(--ui-color-content);
+    border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+    animation: bs-toast-in var(--motion-duration-base, 180ms) var(--motion-ease-out, ease-out);
+}
+
+.bs-toast[data-tone="error"] {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--ui-color-content);
+    background: var(--ui-color-surface);
+    border: 1px solid var(--bs-hit);
+}
+
+.bs-toast[data-tone="error"]::before {
+    content: '!';
+    display: inline-grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 800;
+    background: var(--bs-hit);
+    border-radius: 50%;
+}
+
+@keyframes bs-toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(var(--motion-distance-enter, 6px));
+    }
+}
+
+/* ---------- Shared panels ---------- */
+
+.bs-view--center {
+    display: grid;
+    place-items: center;
+    min-height: 320px;
+}
+
+.bs-panel {
+    box-sizing: border-box;
+    padding: 20px;
+    background: var(--bs-surface);
+    border: 1px solid var(--ui-color-border);
+    border-radius: 16px;
+}
+
+.bs-panel__title {
+    margin: 0 0 14px;
+    color: var(--ui-color-content);
+    font-size: 1.05rem;
+    font-weight: 650;
+}
+
+.bs-panel--message {
+    width: min(100%, 480px);
+    padding: 32px 28px;
+    text-align: center;
+}
+
+.bs-panel--message h2,
+.bs-panel--waiting h2 {
+    margin: 0 0 8px;
+    font-size: 1.3rem;
+    font-weight: 700;
+}
+
+.bs-panel--message p,
+.bs-panel--waiting p {
+    margin: 0;
+    color: var(--ui-color-content-muted);
+    line-height: 1.5;
+}
+
+.bs-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.bs-actions--end {
+    justify-content: flex-end;
+}
+
+.bs-hint {
+    margin: 8px 0 0;
+    color: var(--ui-color-content-subtle);
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+/* ---------- Lobby ---------- */
+
+.bs-lobby {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+}
+
+.bs-lobby__main,
+.bs-lobby__side {
+    display: grid;
+    gap: 20px;
+    min-width: 0;
+}
+
+.bs-start-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.bs-start-card {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+    padding: 14px;
+    color: var(--ui-color-content);
+    font: inherit;
+    text-align: left;
+    background: var(--bs-overlay);
+    border: 1px solid var(--ui-color-border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform var(--motion-duration-fast, 120ms) var(--motion-ease-out, ease-out),
+        background-color 140ms ease, border-color 140ms ease;
+}
+
+.bs-start-card svg {
+    margin-top: 1px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .bs-start-card:hover:not(:disabled) {
+        background: var(--bs-overlay-strong);
+        border-color: var(--ui-color-border-hover);
+        transform: translateY(-1px);
+    }
+}
+
+.bs-start-card:active:not(:disabled) {
+    transform: scale(var(--motion-scale-press, 0.98));
+}
+
+.bs-start-card.is-pending {
+    cursor: progress;
+}
+
+.bs-start-card__copy strong {
+    display: block;
+    font-size: 0.95rem;
+    font-weight: 650;
+}
+
+.bs-start-card__copy small {
+    display: block;
+    margin-top: 3px;
+    color: var(--ui-color-content-muted);
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+.bs-field-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.bs-field-row .btn {
+    min-height: 40px;
+}
+
+.bs-field {
+    display: grid;
+    flex: 1 1 200px;
+    gap: 6px;
+    min-width: 0;
+}
+
+.bs-field__label {
+    color: var(--ui-color-content-muted);
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.bs-input {
+    box-sizing: border-box;
+    width: 100%;
+    height: 40px;
+    padding: 0 12px;
+    color: var(--theme-input-text);
+    font: inherit;
+    font-size: 0.95rem;
+    background: var(--theme-input-bg);
+    border: 1px solid var(--theme-input-border);
+    border-radius: 10px;
+}
+
+.bs-input:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 1px;
+}
+
+.bs-input--code {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.bs-input--code::placeholder {
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+.bs-input[aria-invalid="true"] {
+    border-color: var(--bs-hit);
+}
+
+.bs-field-error {
+    display: flex;
+    flex-basis: 100%;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--ui-color-content);
+    font-size: 0.85rem;
+}
+
+.bs-field-error::before {
+    content: '!';
+    display: inline-grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    background: var(--bs-hit);
+    border-radius: 50%;
+}
+
+.bs-challenge .bs-hint {
+    margin-bottom: 10px;
+}
+
+.bs-list,
+.bs-player-list {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.bs-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--bs-overlay);
+    border: 1px solid transparent;
+    border-radius: 12px;
+}
+
+.bs-row--compact {
+    padding: 8px 10px;
+}
+
+.bs-row.is-attention {
+    background: var(--bs-overlay-strong);
+    border-color: var(--ui-color-border-hover);
+}
+
+.bs-row__copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.bs-row__copy strong {
+    overflow: hidden;
+    font-size: 0.92rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bs-row__copy small {
+    overflow: hidden;
+    color: var(--ui-color-content-muted);
+    font-size: 0.8rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bs-row__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.bs-row__actions .btn-sm {
+    min-height: 32px;
+    padding: 6px 12px;
+}
+
+.bs-empty {
+    padding: 14px;
+    color: var(--ui-color-content-subtle);
+    font-size: 0.88rem;
+    line-height: 1.45;
+    text-align: center;
+    border: 1px dashed var(--ui-color-border-hover);
+    border-radius: 12px;
+}
+
+.bs-avatar {
+    display: inline-grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    overflow: hidden;
+    color: var(--ui-color-content);
+    font-size: 0.9rem;
+    font-weight: 700;
+    background: var(--bs-overlay-strong);
+    border-radius: 50%;
+}
+
+.bs-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.bs-status-dot {
+    display: inline-block;
+    box-sizing: border-box;
+    width: 8px;
+    height: 8px;
+    margin-right: 6px;
+    vertical-align: 1px;
+    border: 1.5px solid var(--ui-color-content-subtle);
+    border-radius: 50%;
+}
+
+.bs-status-dot.is-active {
+    background: var(--ui-color-content);
+    border-color: var(--ui-color-content);
+}
+
+.bs-result {
+    min-width: 76px;
+    padding: 4px 8px;
+    box-sizing: border-box;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-align: center;
+    border: 1px solid var(--ui-color-border-hover);
+    border-radius: 6px;
+}
+
+.bs-result.is-win {
+    color: var(--ui-color-page);
+    background: var(--ui-color-content);
+    border-color: var(--ui-color-content);
+}
+
+.bs-result.is-loss {
+    color: var(--ui-color-content-muted);
+    border-style: dashed;
+}
+
+.bs-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0 0 14px;
+}
+
+.bs-stats div {
+    padding: 10px 12px;
+    background: var(--bs-overlay);
+    border-radius: 10px;
+}
+
+.bs-stats dt {
+    color: var(--ui-color-content-muted);
+    font-size: 0.78rem;
+}
+
+.bs-stats dd {
+    margin: 2px 0 0;
+    font-size: 1.35rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Waiting room ---------- */
+
+.bs-waiting {
+    display: grid;
+    gap: 14px;
+}
+
+.bs-panel--waiting {
+    justify-self: center;
+    width: min(100%, 520px);
+    padding: 30px 28px;
+    text-align: center;
+}
+
+.bs-radar {
+    position: relative;
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 16px;
+    overflow: hidden;
+    background:
+        radial-gradient(circle, transparent 0 31%, var(--bs-water-line) 31% 32%, transparent 32% 63%, var(--bs-water-line) 63% 64%, transparent 64%),
+        var(--bs-overlay);
+    border: 1px solid var(--ui-color-border-hover);
+    border-radius: 50%;
+}
+
+.bs-radar span {
+    position: absolute;
+    inset: 0;
+    background: conic-gradient(from 0deg, transparent 0 300deg, rgba(var(--theme-ink-rgb), 0.28) 360deg);
+    border-radius: 50%;
+    animation: bs-radar-sweep 2.6s linear infinite;
+}
+
+@keyframes bs-radar-sweep {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.bs-code {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    margin: 18px auto 0;
+    padding: 14px 22px;
+    background: var(--bs-overlay);
+    border: 1px dashed var(--ui-color-border-hover);
+    border-radius: 12px;
+}
+
+.bs-code__label {
+    color: var(--ui-color-content-muted);
+    font-size: 0.78rem;
+}
+
+.bs-code__value {
+    color: var(--ui-color-content);
+    font-size: clamp(1.6rem, 5vw, 2.1rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.18em;
+    user-select: all;
+}
+
+.bs-invite-from .bs-avatar {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 14px;
+    font-size: 1.5rem;
+}
+
+/* ---------- Game ---------- */
+
+.bs-game {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+}
+
+.bs-game__top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.bs-back {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    gap: 6px;
+    padding: 6px 10px 6px 6px;
+    color: var(--ui-color-content-muted);
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 600;
+    line-height: 1.2;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: color 140ms ease, background-color 140ms ease;
+}
+
+.bs-back:hover {
+    color: var(--ui-color-content);
+    background: var(--bs-overlay);
+}
+
+.bs-versus {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.bs-versus__player {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 260px;
+    padding: 4px 12px 4px 4px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    border-radius: 12px;
+}
+
+.bs-versus__player > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bs-versus__player .bs-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 0.8rem;
+}
+
+.bs-versus__player.is-turn {
+    border-color: var(--ui-color-content);
+}
+
+.bs-versus__vs {
+    color: var(--ui-color-content-subtle);
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.bs-code-chip {
+    color: var(--ui-color-content-muted);
+    font-size: 0.84rem;
+}
+
+.bs-code-chip strong {
+    color: var(--ui-color-content);
+    letter-spacing: 0.08em;
+}
+
+.bs-banner {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    background: var(--bs-surface);
+    border: 1px solid var(--ui-color-border);
+    border-radius: 14px;
+    transition: background-color var(--motion-duration-slow, 240ms) ease, color var(--motion-duration-slow, 240ms) ease,
+        border-color var(--motion-duration-slow, 240ms) ease;
+}
+
+.bs-banner__icon {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    background: var(--bs-overlay-strong);
+    border-radius: 10px;
+}
+
+.bs-banner__icon svg {
+    display: block;
+}
+
+.bs-banner__copy {
+    min-width: 0;
+}
+
+.bs-banner__title {
+    display: block;
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.bs-banner__text {
+    display: block;
+    margin-top: 2px;
+    color: var(--ui-color-content-muted);
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.bs-banner__timer {
+    display: block;
+    margin-top: 2px;
+    color: var(--ui-color-content-muted);
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.bs-banner__timer:empty {
+    display: none;
+}
+
+.bs-banner__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.bs-banner__actions:empty {
+    display: none;
+}
+
+/* The two moments that need the player stand out by inverting the pole. */
+.bs-banner[data-tone="turn"],
+.bs-banner[data-tone="win"] {
+    color: var(--ui-color-page);
+    background: var(--ui-color-content);
+    border-color: var(--ui-color-content);
+}
+
+.bs-banner[data-tone="turn"] .bs-banner__text,
+.bs-banner[data-tone="win"] .bs-banner__text,
+.bs-banner[data-tone="turn"] .bs-banner__timer {
+    color: color-mix(in srgb, var(--ui-color-page) 78%, transparent);
+}
+
+.bs-banner[data-tone="turn"] .bs-banner__icon,
+.bs-banner[data-tone="win"] .bs-banner__icon {
+    background: color-mix(in srgb, var(--ui-color-page) 14%, transparent);
+}
+
+.bs-banner[data-tone="turn"] .btn,
+.bs-banner[data-tone="win"] .btn {
+    color: var(--ui-color-content);
+    background: var(--ui-color-page);
+    border-color: transparent;
+}
+
+.bs-banner[data-tone="loss"] {
+    border-style: dashed;
+    border-color: var(--ui-color-border-hover);
+}
+
+/* Every column has a definite width (a board, or the tools panel), so long text
+   inside can never widen the arena past the page. */
+.bs-arena {
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    justify-content: center;
+    align-items: start;
+    gap: 28px;
+}
+
+.bs-side {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+}
+
+.bs-side--own,
+.bs-side--enemy {
+    width: calc(var(--bs-label) + 10 * var(--bs-cell));
+}
+
+.bs-side__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.bs-side__head h2 {
+    margin: 0;
+    overflow: hidden;
+    font-size: 1rem;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bs-side__meta {
+    flex: 0 0 auto;
+    color: var(--ui-color-content-muted);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.bs-game__footer {
+    display: flex;
+    justify-content: center;
+}
+
+/* ---------- Board ---------- */
+
+.bs-board {
+    display: grid;
+    width: max-content;
+    user-select: none;
+    touch-action: manipulation;
+}
+
+.bs-arena[data-phase="placing"] .bs-board {
+    touch-action: none;
+}
+
+.bs-board__row {
+    display: grid;
+    grid-template-columns: var(--bs-label) repeat(10, var(--bs-cell));
+}
+
+.bs-board__row--head {
+    grid-template-rows: var(--bs-label);
+}
+
+.bs-board__label {
+    display: grid;
+    place-items: center;
+    color: var(--ui-color-content-subtle);
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.bs-cell {
+    position: relative;
+    box-sizing: border-box;
+    width: var(--bs-cell);
+    height: var(--bs-cell);
+    background: var(--bs-water);
+    border-right: 1px solid var(--bs-water-line);
+    border-bottom: 1px solid var(--bs-water-line);
+    outline: none;
+    transition: background-color var(--motion-duration-fast, 120ms) ease;
+}
+
+.bs-board__label--row + .bs-cell {
+    border-left: 1px solid var(--bs-water-line);
+}
+
+.bs-board__row--head + .bs-board__row .bs-cell {
+    border-top: 1px solid var(--bs-water-line);
+}
+
+.bs-cell:focus-visible {
+    z-index: 2;
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: -2px;
+}
+
+/* The sight belongs to the board being shot at; placement uses plain pointers. */
+.bs-side--enemy .bs-board.is-interactive .bs-cell.is-target {
+    cursor: crosshair;
+}
+
+.bs-side--own .bs-board.is-interactive .bs-cell {
+    cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .bs-side--enemy .bs-board.is-interactive .bs-cell.is-target:hover {
+        background: var(--bs-overlay-strong);
+    }
+
+    .bs-side--enemy .bs-board.is-interactive .bs-cell.is-target:hover::after {
+        content: '';
+        position: absolute;
+        inset: 26%;
+        border: 1.5px solid var(--ui-color-content-muted);
+        border-radius: 50%;
+    }
+}
+
+/* Ship hulls: segments reach over the grid line so the decks join. */
+.bs-cell[data-ship]::before {
+    content: '';
+    position: absolute;
+    z-index: 0;
+    background: var(--bs-ship);
+}
+
+.bs-cell[data-ship^="h-"]::before {
+    top: 4px;
+    right: -1px;
+    bottom: 4px;
+    left: 0;
+}
+
+.bs-cell[data-ship="h-start"]::before {
+    left: 4px;
+    border-radius: 6px 0 0 6px;
+}
+
+.bs-cell[data-ship="h-end"]::before {
+    right: 4px;
+    border-radius: 0 6px 6px 0;
+}
+
+.bs-cell[data-ship^="v-"]::before {
+    top: 0;
+    right: 4px;
+    bottom: -1px;
+    left: 4px;
+}
+
+.bs-cell[data-ship="v-start"]::before {
+    top: 4px;
+    border-radius: 6px 6px 0 0;
+}
+
+.bs-cell[data-ship="v-end"]::before {
+    bottom: 4px;
+    border-radius: 0 0 6px 6px;
+}
+
+.bs-cell[data-ship$="-single"]::before {
+    inset: 4px;
+    border-radius: 6px;
+}
+
+.bs-cell[data-ship][data-mark="sunk"]::before {
+    background: var(--bs-ship-sunk);
+}
+
+/* A fleet revealed at the end: decks that were never hit are drawn as one
+   outline per ship, so the inner edges between decks stay open. */
+.bs-board.is-revealed .bs-cell.is-intact::before {
+    box-sizing: border-box;
+    background: transparent;
+    border: 2px solid var(--bs-ship);
+}
+
+.bs-board.is-revealed .bs-cell.is-intact:is([data-ship="h-start"], [data-ship="h-middle"])::before {
+    border-right: 0;
+}
+
+.bs-board.is-revealed .bs-cell.is-intact:is([data-ship="h-middle"], [data-ship="h-end"])::before {
+    border-left: 0;
+}
+
+.bs-board.is-revealed .bs-cell.is-intact:is([data-ship="v-start"], [data-ship="v-middle"])::before {
+    border-bottom: 0;
+}
+
+.bs-board.is-revealed .bs-cell.is-intact:is([data-ship="v-middle"], [data-ship="v-end"])::before {
+    border-top: 0;
+}
+
+/* Shots */
+.bs-cell[data-mark="hit"]:not([data-ship]) {
+    background: var(--bs-hit-wash);
+}
+
+.bs-cell[data-mark="hit"]::after,
+.bs-cell[data-mark="sunk"]::after {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    inset: 20%;
+    background:
+        linear-gradient(45deg, transparent 43%, var(--bs-hit) 43% 57%, transparent 57%),
+        linear-gradient(-45deg, transparent 43%, var(--bs-hit) 43% 57%, transparent 57%);
+}
+
+.bs-cell[data-mark="miss"]::after,
+.bs-cell[data-mark="clear"]::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 1;
+    width: 22%;
+    height: 22%;
+    background: var(--bs-miss);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.bs-cell[data-mark="clear"]::after {
+    width: 12%;
+    height: 12%;
+    background: var(--bs-clear);
+}
+
+.bs-cell.is-last {
+    box-shadow: inset 0 0 0 2px var(--ui-color-content);
+}
+
+.bs-cell.is-pending::after {
+    content: '';
+    position: absolute;
+    inset: 22%;
+    z-index: 1;
+    border: 2px solid var(--ui-color-content);
+    border-radius: 50%;
+    animation: bs-pending 700ms ease-in-out infinite alternate;
+}
+
+@keyframes bs-pending {
+    from {
+        opacity: 0.35;
+        transform: scale(0.7);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.bs-cell.is-fresh[data-mark="miss"]::after {
+    animation: bs-splash 420ms var(--motion-ease-out, ease-out);
+}
+
+.bs-cell.is-fresh[data-mark="hit"]::after,
+.bs-cell.is-fresh[data-mark="sunk"]::after {
+    animation: bs-hit 360ms var(--motion-ease-spring, ease-out);
+}
+
+@keyframes bs-splash {
+    from {
+        opacity: 0;
+        box-shadow: 0 0 0 0 var(--bs-miss);
+        transform: translate(-50%, -50%) scale(2.4);
+    }
+}
+
+@keyframes bs-hit {
+    from {
+        opacity: 0;
+        transform: scale(0.4) rotate(-25deg);
+    }
+}
+
+/* Placement preview */
+.bs-cell[data-preview="valid"] {
+    background: color-mix(in srgb, var(--ui-color-content) 24%, transparent);
+    box-shadow: inset 0 0 0 1px var(--ui-color-content);
+}
+
+.bs-cell[data-preview="invalid"] {
+    background: repeating-linear-gradient(45deg, var(--bs-hit-wash) 0 4px, transparent 4px 8px);
+    box-shadow: inset 0 0 0 1px var(--bs-hit);
+}
+
+.bs-board.is-dragging,
+.bs-board.is-dragging .bs-cell {
+    cursor: grabbing;
+}
+
+.bs-arena[data-phase="placing"] .bs-cell[data-ship] {
+    cursor: grab;
+}
+
+/* ---------- Fleet status ---------- */
+
+.bs-fleet {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+}
+
+.bs-fleet:empty {
+    display: none;
+}
+
+.bs-fleet__label {
+    color: var(--ui-color-content-muted);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.bs-fleet__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.bs-ship-blocks {
+    display: inline-flex;
+    gap: 2px;
+}
+
+.bs-ship-blocks__deck {
+    box-sizing: border-box;
+    width: 9px;
+    height: 9px;
+    background: var(--ui-color-content);
+    border-radius: 2px;
+}
+
+.bs-fleet__ship.is-sunk .bs-ship-blocks__deck {
+    background: transparent;
+    border: 1px solid var(--bs-ship-sunk);
+}
+
+/* ---------- Placement tools ---------- */
+
+.bs-tools {
+    box-sizing: border-box;
+    width: 340px;
+    padding: 18px;
+    background: var(--bs-surface);
+    border: 1px solid var(--ui-color-border);
+    border-radius: 16px;
+}
+
+.bs-tools .bs-side__head .btn {
+    flex: 0 0 auto;
+    min-height: 30px;
+    padding: 4px 10px;
+}
+
+.bs-dock {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.bs-dock__ship {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 38px;
+    padding: 7px 10px;
+    color: var(--ui-color-content);
+    font: inherit;
+    font-size: 0.88rem;
+    text-align: left;
+    background: var(--bs-overlay);
+    border: 1px solid var(--ui-color-border);
+    border-radius: 10px;
+    cursor: grab;
+    touch-action: none;
+    transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.bs-dock__ship .bs-ship-blocks__deck {
+    width: 13px;
+    height: 13px;
+}
+
+.bs-dock__ship .bs-ship-blocks.is-vertical {
+    flex-direction: column;
+}
+
+.bs-dock__ship.is-selected {
+    background: var(--bs-overlay-strong);
+    border-color: var(--ui-color-content);
+    box-shadow: inset 0 0 0 1px var(--ui-color-content);
+}
+
+.bs-dock__ship:disabled {
+    color: var(--ui-color-content-subtle);
+    background: transparent;
+    border-style: dashed;
+    cursor: default;
+    opacity: 1;
+}
+
+.bs-dock__ship:disabled .bs-ship-blocks__deck {
+    background: transparent;
+    border: 1px solid var(--ui-color-content-subtle);
+}
+
+.bs-dock__check {
+    color: var(--ui-color-content);
+}
+
+.bs-tools__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.bs-tools .btn svg {
+    flex: 0 0 auto;
+}
+
+.bs-placement-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 1.4em;
+    margin: 0;
+    color: var(--ui-color-content-muted);
+    font-size: 0.88rem;
+}
+
+.bs-placement-status.is-warning {
+    color: var(--ui-color-content);
+}
+
+.bs-placement-status.is-warning::before {
+    content: '!';
+    display: inline-grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    background: var(--bs-hit);
+    border-radius: 50%;
+}
+
+.bs-ready-btn {
+    width: 100%;
+    min-height: 44px;
+    font-size: 1rem;
+}
+
+/* ---------- Narrow screens ---------- */
+
+@media (max-width: 960px) {
+    .bs-lobby {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 860px) {
+    .battleship-page {
+        --bs-cell: clamp(24px, calc((100vw - 64px - var(--bs-label)) / 10), 40px);
+    }
+
+    .bs-arena {
+        grid-template-columns: minmax(0, 1fr);
+        justify-items: center;
+    }
+
+    .bs-arena[data-phase="playing"] .bs-side--enemy {
+        order: -1;
+    }
+
+    .bs-tools {
+        width: 100%;
+        max-width: 520px;
+    }
+}
+
+@media (max-width: 560px) {
+    .bs-shell {
+        padding: 20px 14px 80px;
+    }
+
+    .bs-toast {
+        right: 16px;
+        bottom: 16px;
+        left: 16px;
+        max-width: none;
+    }
+
+    .bs-start-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .bs-banner {
+        grid-template-columns: auto minmax(0, 1fr);
+        padding: 12px 14px;
+    }
+
+    .bs-banner__actions {
+        grid-column: 1 / -1;
+        justify-content: stretch;
+    }
+
+    .bs-banner__actions .btn {
+        flex: 1 1 auto;
+    }
+
+    .bs-row {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .bs-row__actions {
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+    }
+
+    .bs-game__top {
+        justify-content: flex-start;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bs-radar span,
+    .bs-cell.is-pending::after,
+    .bs-cell.is-fresh::after,
+    .bs-toast {
+        animation: none;
+    }
+
+    .bs-start-card,
+    .bs-banner,
+    .bs-cell {
+        transition: none;
+    }
+
+    .bs-start-card:hover:not(:disabled),
+    .bs-start-card:active:not(:disabled) {
+        transform: none;
+    }
+}

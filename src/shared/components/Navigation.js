@@ -501,6 +501,9 @@ class Navigation {
                     if (btn) {
                         btn.style.display = changes.showGames.newValue ? 'inline-flex' : 'none';
                     }
+                    this.showGames = Boolean(changes.showGames.newValue);
+                    if (this.showGames && this.user) this.startBattleshipNotifier(this.user);
+                    else this.stopBattleshipNotifier();
                 }
                 if (area === 'local' && (changes.mediaPlayerEnabled || changes[Navigation.MEDIA_PLAYER_SETUP_KEY])) {
                     void this.refreshDownloadsEntry();
@@ -1395,6 +1398,48 @@ class Navigation {
         }
     }
 
+    /**
+     * Battleship challenges and turns on every page but the game's own. Only
+     * with mini-games switched on: it holds one listener on the player's own
+     * document, so nobody who never plays pays for it.
+     * @param {Object} user - Firebase user
+     */
+    startBattleshipNotifier(user) {
+        const uid = user?.uid;
+        const onGamePage = typeof location !== 'undefined' && location.pathname.includes('/src/pages/battleship/');
+        if (!uid || !this.showGames || onGamePage) {
+            this.stopBattleshipNotifier();
+            return;
+        }
+        if (this._battleshipNotifierUid === uid) return;
+        this.stopBattleshipNotifier();
+        this._battleshipNotifierUid = uid;
+        const token = this._battleshipNotifierToken;
+        const manager = typeof firebaseManager !== 'undefined' ? firebaseManager : null;
+        (async () => {
+            // Like the reaction inbox: wait until Firebase itself is signed in as this uid.
+            await manager?.waitForAuthReady?.(10000);
+            if (token !== this._battleshipNotifierToken || manager?.auth?.currentUser?.uid !== uid || !manager.db) {
+                if (token === this._battleshipNotifierToken) this._battleshipNotifierUid = null;
+                return;
+            }
+            const { BattleshipNotifier } = await import('./BattleshipNotifier.js');
+            if (token !== this._battleshipNotifierToken) return;
+            this.battleshipNotifier = new BattleshipNotifier({ db: manager.db, uid });
+            this.battleshipNotifier.start();
+        })().catch(error => {
+            if (token === this._battleshipNotifierToken) this._battleshipNotifierUid = null;
+            console.warn('Navigation: Battleship notifications unavailable', error);
+        });
+    }
+
+    stopBattleshipNotifier() {
+        this._battleshipNotifierToken = (this._battleshipNotifierToken || 0) + 1;
+        this._battleshipNotifierUid = null;
+        this.battleshipNotifier?.stop();
+        this.battleshipNotifier = null;
+    }
+
     async updateUserDisplay(user) {
         // Prevent multiple simultaneous updates (race condition protection)
         if (this._updateInProgress) {
@@ -1423,6 +1468,7 @@ class Navigation {
 
                 // Non-blocking: unread reactions on the user's ratings.
                 this.checkReactionNotifications(user);
+                this.startBattleshipNotifier(user);
 
                 // Get display name based on user preference
                 let displayText = Navigation.displayTextFor(null, user);
@@ -1534,6 +1580,7 @@ class Navigation {
                 this.updateWatchlistCount();
                 this.updateFavoritesCount();
             } else {
+                this.stopBattleshipNotifier();
                 // Hide user profile, show sign in button
                 if (userProfile) userProfile.style.display = 'none';
                 if (signInBtn) signInBtn.style.display = 'flex';

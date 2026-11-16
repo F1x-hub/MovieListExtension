@@ -35,7 +35,9 @@ Color is allowed only when it carries content or an unavoidable semantic:
 
 1. posters, photos, thumbnails, avatars, and title artwork;
 2. external provider or brand marks such as IMDb, Kinopoisk, Telegram, or Google;
-3. game boards, pieces, and game-specific feedback;
+3. game boards, pieces, and game-specific feedback (the Battleship board draws
+   hulls in the content colour and hits in the semantic danger red, always as a
+   cross, with misses as dots; its page chrome stays neutral);
 4. essential success, warning, or danger feedback;
 5. seasonal decoration owned by `SeasonalThemeService` (see below);
 6. collection icons: the franchise tiles from

@@ -37,6 +37,9 @@ lists, provider-aware playback, and Firebase synchronization in one interface.
   film's player.
 - Use HLS and direct-video playback, AniSkip integration, and the built-in anime
   radio.
+- Take a break with the mini-games, among them networked Battleship against other
+  extension users: an open game, a code for a friend or a challenge by name, with
+  every shot refereed on the server.
 - Preview frames and their timestamps while hovering over the custom player's
   timeline when a direct video or HLS preview source is available.
   This includes native Rutube and torrent streams and supported Ex-FS/KinoGo
@@ -270,6 +273,7 @@ settings and pairing. See the
 | `npm run test:rating-integrity` | Verify rating ingress and legacy-record deduplication |
 | `npm run test-word-guess` | Run WordGuess data, controller, and persistence tests |
 | `npm run test-games-modal` | Run mini-games launcher, Rubik's Cube, and games regression tests |
+| `npm run test:battleship` | Verify the Battleship rules, the `battleship` Cloud Function on an in-memory Firestore, fleet placement, the client and the cross-page notices; the two-browser game is `npm run test:e2e -- battleship` |
 | `npm run vendor:three` | Rebuild the three.js subset in `libs/three.rubiks.min.js` used by the Rubik's Cube (after upgrading `three`) |
 | `npm run test:visual-design` | Verify the monochrome palette and shared UI token contract |
 | `npm run test:seasonal-theme` | Check seasonal decor dates, opt-out, Settings preview and the Home season banner |
@@ -449,6 +453,10 @@ keeps npm-compatible three-component semver metadata.
 
 <details open>
 <summary><strong>Unreleased</strong></summary>
+
+### Features
+
+- Networked Battleship («Морской бой») between extension users. An «Онлайн» card under the mini-games menu opens its own page: start an open game that everyone sees in the lobby, a private game a friend joins with a six-character code or link, or challenge a player found by name or @username (recent opponents can be challenged again from the results). The fleet follows the classic rules (10×10, one 4-deck, two 3-deck, three 2-deck and four 1-deck ships that may not touch, even at a corner) and is placed by click, drag, R or right click to turn, keyboard, or at random. The battle shows both boards with hits as red crosses, misses as dots and the cleared outline of sunk ships, the fleet still afloat, accuracy, a turn banner, short sound cues and a page title that marks your turn; at the end the opponent's fleet is revealed and either player can offer a rematch. The new `battleship` Cloud Function is the referee: fleets never reach the opponent before the end, every shot is resolved on the server, and a player who stays idle for 5 minutes can be claimed. With mini-games switched on, other extension pages show a notice for a challenge, an opponent who joined and your turn. Checked with two browsers against the Firebase emulators, the real handler and the real rules (`npm run test:e2e -- battleship`); not yet played between two real accounts. The Firestore rules and the `battleship` function were deployed to `movielistdb-13208` on 2026-11-16: the published rules were read back and match the project file, and the live function answers CORS, missing sign-in, foreign origins and wrong methods as tested.
 
 ### Fixes
 

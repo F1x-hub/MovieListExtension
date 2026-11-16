@@ -47,7 +47,11 @@ Everything else is unreachable: the browser's proxy and host rules from
 under a `demo-` project, and a test refuses to start if the page reports any
 other project, so a run cannot touch production data.
 
-Not covered here: the toolbar popup and side panel, Cloud Functions. Live video
+Not covered here: the toolbar popup and side panel, Cloud Functions. The one
+exception is `specs/battleship.spec.cjs`: it answers the pages' calls to the
+`battleship` function with the real `functions/battleship.js` handler, run in the
+test process through firebase-admin on the same emulators, and plays a whole game
+between two Chromium profiles (a second test user, `e2e-user-2`). Live video
 players have their own specs: see [The player on real sources](#the-player-on-real-sources).
 
 ## What it checks

@@ -23,6 +23,7 @@ const { createWatchRoomService } = require("./watchRoomService");
 const { createWatchRoomsStagingHandler } = require("./watchRoomsStaging");
 const { createExpiredWatchRoomCleanup } = require("./watchRoomCleanup");
 const { createRandomMarathonHandler } = require("./randomMarathon");
+const { createBattleshipHandler } = require("./battleship");
 const {
   buildMovieRatingProjection,
   isAggregateRelevantRatingChange,
@@ -272,6 +273,23 @@ exports.randomMarathon = onRequest(
     db,
     auth: getAuth(app),
     FieldValue,
+  })
+);
+
+/**
+ * Referee for networked Battleship between extension users. Firestore is the
+ * read/subscription surface; this endpoint owns every game change, keeps each
+ * fleet away from the opponent and resolves every shot.
+ */
+exports.battleship = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+  },
+  createBattleshipHandler({
+    db,
+    auth: getAuth(app),
   })
 );
 

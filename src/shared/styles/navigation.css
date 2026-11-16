@@ -1068,3 +1068,119 @@
 @media (prefers-reduced-motion: reduce) {
     .reaction-inbox { animation: none; }
 }
+
+/* Battleship news (BattleshipNotifier): a small stack in the bottom corner. */
+.battleship-notices {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1002;
+    display: grid;
+    gap: 8px;
+    width: min(380px, calc(100vw - 32px));
+    pointer-events: none;
+}
+
+.battleship-notice {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 10px 10px 12px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-control-radius);
+    background: var(--ui-color-surface-card);
+    color: var(--ui-color-content);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    pointer-events: auto;
+    animation: battleship-notice-in 180ms ease-out;
+}
+
+.battleship-notice[data-kind="invite"],
+.battleship-notice[data-kind="rematch"] {
+    border-color: var(--ui-color-content);
+}
+
+.battleship-notice__avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--ui-color-surface-muted);
+    color: var(--ui-color-content);
+    font-weight: 600;
+}
+
+.battleship-notice__avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.battleship-notice__copy {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.battleship-notice__copy strong {
+    color: var(--ui-color-content-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.battleship-notice__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.battleship-notice__open {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: var(--ui-control-radius);
+    background: var(--ui-color-content);
+    color: var(--ui-color-page);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-decoration: none;
+}
+
+.battleship-notice__close {
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: var(--ui-control-radius);
+    background: transparent;
+    color: var(--ui-color-content-muted);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.battleship-notice__close:hover {
+    background: var(--ui-color-surface-muted);
+    color: var(--ui-color-content);
+}
+
+.battleship-notice__open:focus-visible,
+.battleship-notice__close:focus-visible {
+    outline: 2px solid var(--ui-color-content);
+    outline-offset: 2px;
+}
+
+@keyframes battleship-notice-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .battleship-notice { animation: none; }
+}
