@@ -800,6 +800,11 @@
     outline-offset: 2px;
 }
 
+/* alert() hides Cancel with the hidden attribute, which .btn's display would override. */
+.confirm-dialog__footer [hidden] {
+    display: none !important;
+}
+
 @media (max-width: 480px) {
     .confirm-dialog__footer {
         flex-direction: column-reverse;

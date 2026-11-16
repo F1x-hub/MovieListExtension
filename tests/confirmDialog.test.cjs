@@ -87,6 +87,9 @@ async function main() {
     const components = read('src/shared/styles/components.css');
     assert.match(components, /\.modal-overlay\.confirm-dialog-overlay\[hidden\]\s*\{\s*display:\s*none;/);
     assert.match(components, /\.confirm-dialog__footer\s*\{/);
+    // alert() hides Cancel through the hidden attribute; .btn sets display, so the
+    // footer needs its own rule or the one-button alert shows two buttons.
+    assert.match(components, /\.confirm-dialog__footer \[hidden\]\s*\{\s*display:\s*none !important;/);
 
     console.log('✅ ConfirmDialog tests passed');
 }
