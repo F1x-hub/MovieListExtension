@@ -24,6 +24,8 @@
     /* Game boards stay dark in both themes: they are game content. */
     --games-board: #090b10;
     --games-board-border: rgba(255, 255, 255, 0.1);
+    /* The tallest view (Rubik's Cube) fits; shorter views keep the same top edge. */
+    --games-modal-max-height: 800px;
 
     position: fixed;
     top: 0;
@@ -35,8 +37,12 @@
     -webkit-backdrop-filter: blur(12px);
     z-index: var(--z-modal, 10000);
     display: flex;
-    align-items: center;
+    /* Every view keeps its top edge where the tallest one would be centred, so the
+       header and tabs stay put when a game of another height is opened. */
+    align-items: flex-start;
     justify-content: center;
+    padding-top: max(3vh, calc((100vh - var(--games-modal-max-height)) / 2));
+    box-sizing: border-box;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -54,11 +60,11 @@
     transition-timing-function: var(--motion-ease-out), linear;
 }
 
+/* One width for the menu and every game, so switching never resizes the window sideways. */
 .games-modal-container {
     position: relative;
-    width: min(94vw, 720px);
-    max-width: 720px;
-    max-height: min(760px, 94vh);
+    width: min(94vw, 940px);
+    max-height: min(var(--games-modal-max-height), 94vh);
     overflow-x: hidden;
     overflow-y: auto;
     background: var(--games-surface);
@@ -80,10 +86,6 @@
 .games-modal-container[hidden],
 .games-modal-container [hidden] {
     display: none !important;
-}
-
-.games-modal-container.menu-mode {
-    width: min(90vw, 620px);
 }
 
 .games-modal-container.menu-mode .games-tab-bar {
@@ -121,7 +123,7 @@
 
 .games-menu-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 10px;
 }
 
@@ -232,11 +234,6 @@ a.game-menu-card {
     transform: translateX(-2px);
 }
 
-.games-modal-container.square-game {
-    width: min(92vw, 640px);
-    max-width: 640px;
-}
-
 /* Header */
 .games-modal-header {
     display: flex;
@@ -338,6 +335,16 @@ a.game-menu-card {
     flex: 0 0 auto;
     align-items: center;
     gap: 8px;
+    /* Stays at the right edge in the menu too, where the tab bar is hidden. */
+    margin-left: auto;
+}
+
+@media (min-width: 641px) {
+    /* As tall as the tab bar, so the menu header is as high as a game's and the
+       buttons do not shift when a game opens. */
+    .games-modal-controls {
+        min-height: 42px;
+    }
 }
 
 .games-icon-btn {
@@ -410,11 +417,6 @@ a.game-menu-card {
 /* Only the active game's panel takes space in the body. */
 .games-modal-container.word-guess-game-mode .word-guess-game {
     display: block;
-}
-
-.games-modal-container.quiz-game {
-    width: min(94vw, 940px);
-    max-width: 940px;
 }
 
 .games-modal-container.quiz-game .game-canvas-wrapper {
@@ -534,6 +536,148 @@ a.game-menu-card {
 .quiz-result span { color: var(--games-content-subtle); font-size: 0.7rem; font-weight: 800; letter-spacing: 0.1em; }
 .quiz-result strong { color: var(--games-content); font: 800 2.6rem 'Geist Mono', monospace; }
 .quiz-result p { margin: 0; font-size: 0.85rem; }
+
+.quiz-result-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+}
+
+.quiz-secondary-btn {
+    padding: 10px 16px;
+    color: var(--games-content);
+    font: 600 0.85rem var(--font-family);
+    background: var(--games-fill);
+    border: 1px solid var(--games-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 150ms ease, background 150ms ease, border-color 150ms ease;
+}
+
+.quiz-secondary-btn:hover { background: var(--games-fill-hover); border-color: var(--games-border-hover); }
+.quiz-secondary-btn:active { transform: scale(0.97); }
+
+/* Source picker shown before a quiz round */
+.quiz-setup {
+    min-height: 360px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 10px;
+    padding: 24px;
+    border: 1px solid var(--games-border);
+    border-radius: 12px;
+    background: var(--games-fill);
+}
+
+.quiz-setup h3 {
+    margin: 0;
+    color: var(--games-content);
+    font-size: 1.15rem;
+}
+
+.quiz-setup p {
+    margin: 0 0 8px;
+    color: var(--games-content-muted);
+    font-size: 0.85rem;
+    line-height: 1.45;
+}
+
+.quiz-source-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+}
+
+.quiz-source-card {
+    min-height: 96px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    padding: 14px 16px;
+    color: var(--games-content);
+    text-align: left;
+    font-family: var(--font-family);
+    background: var(--games-surface);
+    border: 1px solid var(--games-border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1),
+        background 180ms ease-out, border-color 180ms ease-out;
+}
+
+.quiz-source-card strong { font-size: 0.95rem; }
+.quiz-source-card small { color: var(--games-content-muted); font-size: 0.75rem; line-height: 1.4; }
+
+@media (hover: hover) and (pointer: fine) {
+    .quiz-source-card:hover {
+        transform: translateY(-2px);
+        background: var(--games-fill-hover);
+        border-color: var(--games-border-hover);
+    }
+}
+
+.quiz-source-card:active { transform: scale(0.98); }
+
+/* Poster question: the zoomed, blurred poster clears up until the answer. */
+.quiz-poster-reveal {
+    position: relative;
+    height: 370px;
+    overflow: hidden;
+    border: 1px solid var(--games-border);
+    border-radius: 12px;
+    background: var(--games-board);
+}
+
+.quiz-reveal-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    transform: scale(2.6);
+    filter: blur(16px);
+}
+
+.quiz-poster-reveal.is-revealed .quiz-reveal-image {
+    transform: none;
+    filter: none;
+    transition: transform 400ms cubic-bezier(0.23, 1, 0.32, 1), filter 400ms ease-out;
+}
+
+/* Plot question: hidden words are bars as long as the word. */
+.quiz-description {
+    min-height: 200px;
+    margin: 0;
+    padding: 18px 20px;
+    color: var(--games-content);
+    font-size: 0.95rem;
+    line-height: 1.65;
+    border: 1px solid var(--games-border);
+    border-radius: 12px;
+    background: var(--games-fill);
+}
+
+.quiz-mask {
+    display: inline-block;
+    min-width: calc(var(--mask-length, 4) * 0.62em);
+    height: 1.05em;
+    vertical-align: -0.12em;
+    color: transparent;
+    background: var(--games-fill-active);
+    border-radius: 4px;
+}
+
+.quiz-mask.is-revealed {
+    min-width: 0;
+    height: auto;
+    padding-inline: 2px;
+    vertical-align: baseline;
+    color: var(--games-content);
+    font-weight: 700;
+    background: var(--games-fill-hover);
+}
 .quiz-error strong { color: var(--games-danger); }
 
 .games-modal-container.quiz-game .game-sidebar {
@@ -587,11 +731,6 @@ a.game-menu-card {
 }
 
 /* Rubik's Cube */
-.games-modal-container.rubiks-game-mode {
-    width: min(94vw, 1060px);
-    max-width: 1060px;
-}
-
 .games-modal-container.rubiks-game-mode .games-modal-body {
     align-items: stretch;
     gap: 14px;
@@ -1268,6 +1407,8 @@ a.game-menu-card {
 .game-menu-card:focus-visible,
 .games-back-btn:focus-visible,
 .quiz-option:focus-visible,
+.quiz-source-card:focus-visible,
+.quiz-secondary-btn:focus-visible,
 .rubiks-action-btn:focus-visible,
 .rubiks-move-group button:focus-visible,
 .rubiks-controls-drawer summary:focus-visible,
@@ -1366,7 +1507,8 @@ a.game-menu-card {
         width: min(100%, 590px);
     }
 
-    .quiz-poster {
+    .quiz-poster,
+    .quiz-poster-reveal {
         height: min(52vh, 370px);
     }
 
@@ -1399,7 +1541,8 @@ a.game-menu-card {
     .games-modal-container {
         width: 100%;
         max-height: none;
-        margin: auto 0;
+        /* Top-anchored like on wider screens, so a shorter game does not move the header. */
+        margin: 0;
     }
 
     .games-menu {
@@ -1478,6 +1621,9 @@ a.game-menu-card {
     .game-menu-arrow,
     .rubiks-move-group button,
     .rubiks-size-card,
+    .quiz-source-card,
+    .quiz-secondary-btn,
+    .quiz-poster-reveal.is-revealed .quiz-reveal-image,
     .rubiks-action-btn,
     .games-confirm-btn,
     .games-back-btn { transition-duration: 1ms; }

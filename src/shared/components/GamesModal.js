@@ -289,7 +289,8 @@ export class GamesModal {
     pauseIfRunning() {
         const game = this.game;
         if (!game || !['tetris', 'snake'].includes(this.activeGame)) return;
-        if (game.isPaused || game.isGameOver) return;
+        // A snake still waiting for its first move has nothing running to pause.
+        if (game.isPaused || game.isGameOver || game.isWaitingForStart) return;
         game.setBoost?.(false);
         game.togglePause();
     }

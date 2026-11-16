@@ -1,4 +1,4 @@
-import { getCanvasViewSize } from './gamesI18n.js';
+import { getCanvasViewSize, t } from './gamesI18n.js';
 
 export class SnakeGame {
     static GRID_SIZE = 20; // 20x20 cells
@@ -25,6 +25,8 @@ export class SnakeGame {
         this.isGameOver = false;
         this.isWon = false;
         this.isPaused = false;
+        // A new round stands still until the first direction, so it never starts unattended.
+        this.isWaitingForStart = true;
         this.animFrameId = null;
         this.lastStepTime = 0;
         this.boostMultiplier = 1;
@@ -84,6 +86,17 @@ export class SnakeGame {
     }
 
     setDirection(dx, dy) {
+        if (this.isWaitingForStart) {
+            this.isWaitingForStart = false;
+            this.lastStepTime = performance.now();
+            if (dx === -this.dir.x && dy === -this.dir.y) {
+                // At rest the snake may set off backwards: it turns round instead of biting itself.
+                this.snake.reverse();
+                this.dir = { x: dx, y: dy };
+                this.render();
+                return;
+            }
+        }
         // Validate against the last queued turn so quick two-key turns are kept.
         const last = this.turnQueue[this.turnQueue.length - 1] || this.dir;
         if ((dx === last.x && dy === last.y) || (dx === -last.x && dy === -last.y)) return;
@@ -161,9 +174,16 @@ export class SnakeGame {
     start() {
         this.isPaused = false;
         this.isGameOver = false;
+        // The sidebar is shared by every game: a new round replaces the previous round's numbers.
+        this.callbacks.onStatsUpdate({
+            score: this.score,
+            lines: this.applesEaten,
+            level: Math.floor(this.applesEaten / 5) + 1,
+            highScore: this.highScore
+        });
         this.lastStepTime = performance.now();
         const loop = (timestamp) => {
-            if (!this.isPaused && !this.isGameOver) {
+            if (!this.isPaused && !this.isGameOver && !this.isWaitingForStart) {
                 if (timestamp - this.lastStepTime > this.getStepInterval()) {
                     this.step();
                     this.lastStepTime = timestamp;
@@ -238,5 +258,25 @@ export class SnakeGame {
                 this.ctx.fillRect(sx + 1, sy + 1, cs - 2, cs - 2);
             }
         });
+
+        if (this.isWaitingForStart && !this.isPaused) this.drawStartHint(boardSize, gridOffsetY);
+    }
+
+    /** A band under the resting snake says how to set it off. */
+    drawStartHint(boardSize, gridOffsetY) {
+        const ctx = this.ctx;
+        const fontSize = Math.max(12, Math.round(boardSize / 26));
+        const bandHeight = fontSize * 2.6;
+        const inset = Math.round(boardSize / 20);
+        const centerY = gridOffsetY + boardSize * 0.75;
+        ctx.fillStyle = 'rgba(9, 11, 16, 0.82)';
+        ctx.beginPath();
+        ctx.roundRect(inset, centerY - bandHeight / 2, boardSize - inset * 2, bandHeight, Math.round(fontSize * 0.6));
+        ctx.fill();
+        ctx.fillStyle = '#e5e7eb';
+        ctx.font = `600 ${fontSize}px Outfit, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(t('overlay.snake_start'), boardSize / 2, centerY + 1, boardSize - inset * 4);
     }
 }

@@ -252,6 +252,64 @@ const canvas = () => window.document.createElement('canvas');
     assert.deepEqual(finalState, { won: true }, 'the modal is told the round was won');
 }
 
+// --- Snake: a new round waits for the first direction --------------------------
+{
+    const snake = new SnakeGame(canvas(), canvas(), makeCallbacks(), silentAudio);
+    snake.start();
+    assert.equal(snake.isWaitingForStart, true, 'a new round stands still until the player moves');
+    const head = { ...snake.snake[0] };
+    let frame = null;
+    const realRaf = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = callback => { frame = callback; return 1; };
+    snake.stop();
+    snake.start();
+    frame(performance.now() + 10_000);
+    globalThis.requestAnimationFrame = realRaf;
+    assert.deepEqual(snake.snake[0], head, 'the loop does not move a waiting snake however long it waits');
+    assert.equal(snake.isGameOver, false);
+
+    snake.setDirection(0, 1);
+    assert.equal(snake.isWaitingForStart, false, 'the first direction starts the round');
+    assert.deepEqual(snake.turnQueue, [{ x: 0, y: 1 }], 'and is applied as the first turn');
+
+    const backwards = new SnakeGame(canvas(), canvas(), makeCallbacks(), silentAudio);
+    const tail = { ...backwards.snake[backwards.snake.length - 1] };
+    backwards.setDirection(-1, 0);
+    assert.deepEqual(backwards.snake[0], tail, 'setting off backwards turns the snake round');
+    assert.deepEqual(backwards.dir, { x: -1, y: 0 });
+    backwards.step();
+    assert.equal(backwards.isGameOver, false, 'instead of biting itself on the first step');
+    assert.deepEqual(backwards.snake[0], { x: tail.x - 1, y: tail.y });
+}
+
+// --- Sidebar: a new round never shows the previous round's numbers -----------
+{
+    for (const Game of [TetrisGame, SnakeGame]) {
+        const callbacks = makeCallbacks();
+        const game = new Game(canvas(), canvas(), callbacks, silentAudio);
+        game.start();
+        game.stop();
+        assert.ok(callbacks.stats.some(stats => stats.score === 0 && stats.highScore !== undefined),
+            `${Game.name} announces a zero score and the record when it starts`);
+    }
+
+    const modal = new GamesModal();
+    modal.open();
+    const scoreEl = window.document.getElementById('gameScoreVal');
+    modal.switchGame('tetris');
+    scoreEl.textContent = '176';
+    modal.showGameMenu();
+    modal.switchGame('snake');
+    assert.equal(scoreEl.textContent, '0', 'Snake does not inherit the Tetris score');
+    modal.game.score = 50;
+    modal.startNewGame();
+    assert.equal(scoreEl.textContent, '0', 'Play again starts from zero');
+
+    modal.pauseIfRunning();
+    assert.equal(modal.game.isPaused, false, 'leaving the window does not pause a snake that has not moved yet');
+    modal.close();
+}
+
 // --- 2048: win, continue, readable tiles, record writes -----------------------
 {
     const writes = [];

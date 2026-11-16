@@ -1,7 +1,17 @@
 import { shuffled, t } from './gamesI18n.js';
+import { LIBRARY_MIN_MOVIES, QuizLibraryError, loadLibraryMovies } from './MovieQuizLibrary.js';
+import { POSTER_REVEAL_MS, availableTypes, maskDescription, planQuestionTypes, pointsFor } from './MovieQuizQuestions.js';
+import { loadReferencePool, rankBySimilarity } from './MovieQuizSimilarity.js';
 
 export class MovieQuizGame {
     static ROUNDS = 5;
+    static SOURCES = ['library', 'popular'];
+    // The last chosen source is offered first next time.
+    static SOURCE_KEY = 'movieQuizSourceV1';
+    static POSTER_CHECK_CONCURRENCY = 4;
+    static CACHED_DESCRIPTION_LENGTH = 400;
+    static OWN_MOVIE_BONUS = 0.75;
+    static OPTION_JITTER = 2.5;
     static MIN_KP_VOTES = 50000;
     static CANDIDATE_TARGET = 10;
     static SEARCH_RESULT_LIMIT = 12;
@@ -83,10 +93,16 @@ export class MovieQuizGame {
         this.audio = audio;
         this.panel = document.getElementById('movieQuiz');
         this.movies = [];
+        this.roundTypes = [];
+        this.referencePool = [];
+        this.source = 'popular';
         this.round = 0;
         this.score = 0;
+        this.correctCount = 0;
         this.highScore = 0;
         this.isAnswered = false;
+        this.roundStartedAt = 0;
+        this.revealAnimation = null;
         this.distractorMovies = [];
         this.allCandidates = [];
         this.shownOptionIds = new Set();
@@ -106,41 +122,61 @@ export class MovieQuizGame {
         } catch { /* Scores are optional. */ }
     }
 
+    /** Opens on the source picker; a pick starts the round. */
     async start() {
         const sessionId = this.beginSession();
-        this.renderLoading();
+        this.resetRound();
         await this.loadHighScore();
         if (!this.isCurrentSession(sessionId)) return;
         this.callbacks.onStatsUpdate({ score: 0, highScore: this.highScore, level: 1, lines: MovieQuizGame.ROUNDS });
-        try {
-            const service = await this.createKinopoiskService();
-            if (!service?.isConfigured?.()) throw new Error(t('quiz.error_not_configured'));
-            await this.loadApiCache();
-            const candidates = await this.loadQuizMovies(service, this.abortController.signal, sessionId);
-            const moviesWithFrames = await this.attachQuizFrames(service, candidates, this.abortController.signal, sessionId);
-            await this.saveApiCache();
-            if (!this.isCurrentSession(sessionId)) return;
+        this.source = await this.loadSource();
+        if (!this.isCurrentSession(sessionId)) return;
+        this.renderSetup();
+    }
 
-            // Ensure each of the 5 question movies belongs to a distinct franchise
-            const questionFranchises = new Set();
-            const selectedQuestions = [];
-            for (const movie of this.shuffle(moviesWithFrames)) {
-                const fKey = MovieQuizGame.getFranchiseKey(movie.name);
-                if (!questionFranchises.has(fKey)) {
-                    questionFranchises.add(fKey);
-                    selectedQuestions.push(movie);
-                    if (selectedQuestions.length >= MovieQuizGame.ROUNDS) break;
-                }
-            }
-            for (const movie of this.shuffle(moviesWithFrames)) {
-                if (selectedQuestions.length >= MovieQuizGame.ROUNDS) break;
-                if (!selectedQuestions.some(m => String(m.kinopoiskId) === String(movie.kinopoiskId))) {
-                    selectedQuestions.push(movie);
-                }
-            }
-            this.movies = selectedQuestions;
-            if (this.movies.length < MovieQuizGame.ROUNDS) throw new Error(t('quiz.error_not_enough'));
-            this.allCandidates = this.dedupeMovies(candidates);
+    resetRound() {
+        this.round = 0;
+        this.score = 0;
+        this.correctCount = 0;
+        this.movies = [];
+        this.roundTypes = [];
+        this.distractorMovies = [];
+        this.allCandidates = [];
+    }
+
+    async loadSource() {
+        try {
+            const stored = (await chrome.storage.local.get(MovieQuizGame.SOURCE_KEY))?.[MovieQuizGame.SOURCE_KEY];
+            return MovieQuizGame.SOURCES.includes(stored) ? stored : 'popular';
+        } catch {
+            return 'popular';
+        }
+    }
+
+    saveSource(source) {
+        try {
+            chrome.storage.local.set({ [MovieQuizGame.SOURCE_KEY]: source });
+        } catch { /* The remembered choice is a convenience. */ }
+    }
+
+    /** Builds five questions from the chosen source and shows the first one. */
+    async play(source) {
+        this.source = MovieQuizGame.SOURCES.includes(source) ? source : 'popular';
+        this.saveSource(this.source);
+        const sessionId = this.beginSession();
+        this.resetRound();
+        this.renderLoading(this.source);
+        this.callbacks.onStatsUpdate({ score: 0, highScore: this.highScore, level: 1, lines: MovieQuizGame.ROUNDS });
+        try {
+            const poolPromise = loadReferencePool();
+            const prepared = this.source === 'library'
+                ? await this.prepareLibraryQuiz(sessionId)
+                : await this.preparePopularQuiz(sessionId);
+            this.referencePool = await poolPromise;
+            if (!prepared || !this.isCurrentSession(sessionId)) return;
+            this.movies = prepared.movies;
+            this.roundTypes = prepared.types;
+            this.allCandidates = prepared.candidates;
             const questionIds = new Set(this.movies.map(movie => String(movie.kinopoiskId)));
             this.distractorMovies = this.allCandidates
                 .filter(movie => !questionIds.has(String(movie.kinopoiskId)));
@@ -149,10 +185,96 @@ export class MovieQuizGame {
             this.showRound();
         } catch (error) {
             if (this.isCurrentSession(sessionId) && !MovieQuizGame.isAbortError(error)) {
-                console.error('[MovieQuiz] Failed to start the quiz:', error?.message || error);
-                this.renderError(this.getUserFacingError(error));
+                if (!(error instanceof QuizLibraryError)) {
+                    console.error('[MovieQuiz] Failed to start the quiz:', error?.message || error);
+                }
+                this.renderError(this.getUserFacingError(error), {
+                    offerPopular: this.source === 'library'
+                });
             }
         }
+    }
+
+    async preparePopularQuiz(sessionId) {
+        const signal = this.abortController.signal;
+        const service = await this.createKinopoiskService();
+        if (!service?.isConfigured?.()) throw new Error(t('quiz.error_not_configured'));
+        await this.loadApiCache();
+        const candidates = await this.loadQuizMovies(service, signal, sessionId);
+        const moviesWithFrames = await this.attachQuizFrames(service, candidates, signal, sessionId);
+        await this.saveApiCache();
+        if (!this.isCurrentSession(sessionId)) return null;
+
+        const pool = this.shuffle(moviesWithFrames);
+        const selected = this.pickQuestions(pool);
+        // Every question here has a frame; any of them may be swapped for a poster or a summary.
+        for (const movie of pool) {
+            if (!selected.includes(movie) && selected.length < MovieQuizGame.ROUNDS) selected.push(movie);
+        }
+        if (selected.length < MovieQuizGame.ROUNDS) throw new Error(t('quiz.error_not_enough'));
+        await this.checkPosters(selected, signal);
+        return { movies: selected, types: planQuestionTypes(selected), candidates: this.dedupeMovies(candidates) };
+    }
+
+    async prepareLibraryQuiz(sessionId) {
+        const signal = this.abortController.signal;
+        const library = await loadLibraryMovies({
+            firebaseManager: window.firebaseManager,
+            ensureMovieCacheService: () => this.ensureMovieCacheService(),
+            signal
+        });
+        if (!this.isCurrentSession(sessionId)) return null;
+        if (library.length < LIBRARY_MIN_MOVIES) throw MovieQuizGame.tooSmallLibrary(library.length);
+
+        // Movies asked recently go last, so a small library still rotates its questions.
+        const recentIds = await this.getRecentMovieIds();
+        const isRecent = movie => recentIds.has(String(movie.kinopoiskId));
+        const ordered = [
+            ...this.shuffle(library.filter(movie => !isRecent(movie))),
+            ...this.shuffle(library.filter(isRecent))
+        ];
+        await this.checkPosters(ordered.slice(0, MovieQuizGame.ROUNDS * 3), signal);
+        if (!this.isCurrentSession(sessionId)) return null;
+        const selected = this.pickQuestions(ordered.filter(movie => availableTypes(movie).length));
+        if (selected.length < MovieQuizGame.ROUNDS) throw MovieQuizGame.tooSmallLibrary(selected.length);
+        return { movies: selected, types: planQuestionTypes(selected), candidates: this.dedupeMovies(library) };
+    }
+
+    static tooSmallLibrary(count) {
+        return new QuizLibraryError('too-small', t('quiz.library_too_small', { count, min: MovieQuizGame.ROUNDS }));
+    }
+
+    /** Up to five questions, each from a different franchise. */
+    pickQuestions(movies) {
+        const franchises = new Set();
+        const selected = [];
+        for (const movie of movies) {
+            const key = MovieQuizGame.getFranchiseKey(movie.name);
+            if (franchises.has(key)) continue;
+            franchises.add(key);
+            selected.push(movie);
+            if (selected.length >= MovieQuizGame.ROUNDS) break;
+        }
+        return selected;
+    }
+
+    /** A poster that does not load is dropped, so its movie gets another kind of question. */
+    async checkPosters(movies, signal) {
+        const queue = movies.filter(movie => movie.posterUrl);
+        const worker = async () => {
+            while (queue.length) {
+                const movie = queue.shift();
+                if (!(await MovieQuizGame.canLoadImage(movie.posterUrl, signal))) movie.posterUrl = '';
+            }
+        };
+        await Promise.all(Array.from({ length: Math.min(MovieQuizGame.POSTER_CHECK_CONCURRENCY, queue.length) }, worker));
+    }
+
+    async ensureMovieCacheService() {
+        if (!window.MovieCacheService) {
+            await MovieQuizGame.loadScript('src/shared/services/MovieCacheService.js', 'MovieCacheService');
+        }
+        return window.firebaseManager?.getMovieCacheService?.() || null;
     }
 
     beginSession() {
@@ -226,10 +348,22 @@ export class MovieQuizGame {
     }
 
     static compactMovie(movie) {
+        const posterUrl = movie?.posterUrl || movie?.poster?.url || '';
         return {
             kinopoiskId: movie.kinopoiskId,
             name: movie.name,
+            year: Number(movie.year) || null,
+            posterUrl: /^https:\/\//i.test(posterUrl) ? posterUrl : '',
+            // Enough for a clipped plot question; the cache stays small.
+            description: String(movie.description || movie.shortDescription || '')
+                .slice(0, MovieQuizGame.CACHED_DESCRIPTION_LENGTH),
             votes: { kp: Number(movie?.votes?.kp) || 0 },
+            // A series is kept out of film answers and the other way round.
+            type: typeof movie.type === 'string' ? movie.type : '',
+            isSeries: movie.isSeries === true,
+            countries: Array.isArray(movie.countries)
+                ? movie.countries.map(country => (typeof country === 'object' ? country?.name : country)).filter(Boolean)
+                : [],
             genres: Array.isArray(movie.genres)
                 ? movie.genres.map(genre => (typeof genre === 'object' ? genre?.name : genre)).filter(Boolean)
                 : []
@@ -459,15 +593,6 @@ export class MovieQuizGame {
         const usedFranchisesInQuestion = new Set([correctFranchise]);
         const distractors = [];
 
-        const extractGenres = movie => {
-            if (Array.isArray(movie?.genres)) {
-                return movie.genres.map(g => (typeof g === 'object' ? g.name : g)).filter(Boolean).map(g => String(g).toLowerCase());
-            }
-            return [];
-        };
-
-        const targetGenres = new Set(extractGenres(correct));
-
         const tryAddCandidate = (candidate, allowCrossRoundReuse = false) => {
             if (distractors.length >= 3 || !candidate) return;
             const id = String(candidate.kinopoiskId || '');
@@ -495,33 +620,19 @@ export class MovieQuizGame {
             ...(this.allCandidates || []).filter(m => String(m.kinopoiskId) !== correctId)
         ];
 
-        // 1. Prioritize genre-matching candidates from loaded session pool
-        if (targetGenres.size > 0) {
-            const genreMatching = sessionCandidates.filter(m => extractGenres(m).some(g => targetGenres.has(g)));
-            this.shuffle(genreMatching).forEach(m => tryAddCandidate(m, false));
-        }
+        // Wrong answers are the movies most like the right one (setting, theme, genres,
+        // years), from this round's movies and the bundled reference pool. The round's
+        // own movies win a near tie, so «my movies» options are not all strangers.
+        const sessionSet = new Set(sessionCandidates);
+        // The small built-in list (no years or themes) only stands in when the pool did not load.
+        const reference = this.referencePool?.length ? this.referencePool : MovieQuizGame.CURATED_FALLBACK_POOL;
+        const ranked = rankBySimilarity(correct, [...sessionCandidates, ...reference], {
+            // Enough jitter to rotate among the closest films between games.
+            jitter: MovieQuizGame.OPTION_JITTER, bonus: candidate => (sessionSet.has(candidate) ? MovieQuizGame.OWN_MOVIE_BONUS : 0) });
+        ranked.forEach(m => tryAddCandidate(m, false));
 
-        // 2. Any other loaded candidates from session pool (unshown this session)
-        this.shuffle(sessionCandidates).forEach(m => tryAddCandidate(m, false));
-
-        // 3. Fallback to curated iconic pool matching genre (unshown this session)
-        if (distractors.length < 3) {
-            const curatedMatching = MovieQuizGame.CURATED_FALLBACK_POOL.filter(m => m.genres.some(g => targetGenres.has(g)));
-            this.shuffle(curatedMatching).forEach(m => tryAddCandidate(m, false));
-        }
-
-        // 4. Any curated fallback item (unshown this session)
-        if (distractors.length < 3) {
-            this.shuffle(MovieQuizGame.CURATED_FALLBACK_POOL).forEach(m => tryAddCandidate(m, false));
-        }
-
-        // 5. If still needed, relax session-level reuse (while strictly preserving in-question uniqueness)
-        if (distractors.length < 3) {
-            this.shuffle(sessionCandidates).forEach(m => tryAddCandidate(m, true));
-        }
-        if (distractors.length < 3) {
-            this.shuffle(MovieQuizGame.CURATED_FALLBACK_POOL).forEach(m => tryAddCandidate(m, true));
-        }
+        // If still needed, relax session-level reuse (while strictly preserving in-question uniqueness)
+        if (distractors.length < 3) ranked.forEach(m => tryAddCandidate(m, true));
 
         // Register options into session-level tracking so they won't repeat in subsequent rounds
         this.shownOptionIds.add(correctId);
@@ -555,6 +666,7 @@ export class MovieQuizGame {
 
     showRound() {
         const movie = this.movies[this.round % this.movies.length];
+        const type = this.roundTypes[this.round] || 'frame';
         const options = this.getOptions(movie);
         if (options.length !== 4) {
             this.renderError(t('quiz.error_options'));
@@ -562,21 +674,15 @@ export class MovieQuizGame {
         }
 
         this.isAnswered = false;
+        this.cancelReveal();
         this.panel.replaceChildren();
         const progress = document.createElement('div');
         progress.className = 'quiz-progress';
-        progress.textContent = t('quiz.progress', { round: this.round + 1, total: MovieQuizGame.ROUNDS });
-        const image = document.createElement('img');
-        image.className = 'quiz-poster quiz-frame';
-        image.src = movie.quizImageUrl;
-        image.alt = t('quiz.frame_alt');
-        image.referrerPolicy = 'no-referrer';
-        image.onerror = () => {
-            image.style.display = 'none';
-        };
+        progress.textContent = `${t('quiz.progress', { round: this.round + 1, total: MovieQuizGame.ROUNDS })} · ${t(`quiz.type_${type}`)}`;
+        const media = this.createMedia(movie, type);
         const prompt = document.createElement('p');
         prompt.className = 'quiz-prompt';
-        prompt.textContent = t('quiz.prompt');
+        prompt.textContent = t(type === 'frame' ? 'quiz.prompt' : `quiz.prompt_${type}`);
         const optionsContainer = document.createElement('div');
         optionsContainer.className = 'quiz-options';
         options.forEach((option, index) => {
@@ -590,22 +696,112 @@ export class MovieQuizGame {
             button.addEventListener('click', () => this.answer(button, movie));
             optionsContainer.appendChild(button);
         });
-        this.panel.append(progress, image, prompt, optionsContainer);
+        this.panel.append(progress, media, prompt, optionsContainer);
+        // Description and frame rounds start counting now; a poster starts once it is shown.
+        this.roundStartedAt = type === 'poster' ? 0 : performance.now();
         this.callbacks.onStatsUpdate({ score: this.score, highScore: this.highScore, level: this.round + 1, lines: MovieQuizGame.ROUNDS });
         optionsContainer.querySelector('.quiz-option')?.focus({ preventScroll: true });
+    }
+
+    createMedia(movie, type) {
+        if (type === 'description') return this.createDescription(movie);
+        if (type === 'poster') return this.createPosterReveal(movie);
+        const image = document.createElement('img');
+        image.className = 'quiz-poster quiz-frame';
+        image.src = movie.quizImageUrl;
+        image.alt = t('quiz.frame_alt');
+        image.referrerPolicy = 'no-referrer';
+        image.onerror = () => {
+            image.style.display = 'none';
+        };
+        return image;
+    }
+
+    createDescription(movie) {
+        const quote = document.createElement('blockquote');
+        quote.className = 'quiz-description';
+        quote.setAttribute('aria-label', t('quiz.description_label'));
+        for (const segment of maskDescription(movie.description, movie.name) || []) {
+            if (!segment.masked) {
+                quote.append(document.createTextNode(segment.text));
+                continue;
+            }
+            const mask = document.createElement('span');
+            mask.className = 'quiz-mask';
+            mask.dataset.word = segment.text;
+            mask.style.setProperty('--mask-length', String(Math.min(10, Math.max(3, segment.text.length))));
+            mask.textContent = '…';
+            quote.append(mask);
+        }
+        return quote;
+    }
+
+    /** The poster starts zoomed in and blurred and clears up until the answer. */
+    createPosterReveal(movie) {
+        const frame = document.createElement('div');
+        frame.className = 'quiz-media quiz-poster-reveal';
+        const image = document.createElement('img');
+        image.className = 'quiz-reveal-image';
+        image.alt = t('quiz.poster_alt');
+        image.referrerPolicy = 'no-referrer';
+        image.addEventListener('load', () => this.startReveal(image), { once: true });
+        image.addEventListener('error', () => {
+            image.hidden = true;
+            this.roundStartedAt = performance.now();
+        }, { once: true });
+        image.src = movie.posterUrl;
+        frame.append(image);
+        return frame;
+    }
+
+    startReveal(image) {
+        if (this.isAnswered || !image.isConnected) return;
+        this.roundStartedAt = performance.now();
+        if (typeof image.animate !== 'function') return;
+        // Reduced motion keeps the clearing blur but drops the zoom and moves in steps.
+        const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        const keyframes = reduced
+            ? [{ transform: 'scale(1.5)', filter: 'blur(16px)' }, { transform: 'scale(1.5)', filter: 'blur(3px)' }]
+            : [{ transform: 'scale(2.6)', filter: 'blur(16px)' }, { transform: 'scale(1.5)', filter: 'blur(3px)' }];
+        this.revealAnimation = image.animate(keyframes, {
+            duration: POSTER_REVEAL_MS,
+            easing: reduced ? 'steps(4, end)' : 'linear',
+            fill: 'forwards'
+        });
+    }
+
+    cancelReveal() {
+        this.revealAnimation?.cancel();
+        this.revealAnimation = null;
+    }
+
+    /** After the answer the whole question is shown: the full poster and the hidden words. */
+    revealAnswerMedia() {
+        this.cancelReveal();
+        this.panel.querySelector('.quiz-poster-reveal')?.classList.add('is-revealed');
+        this.panel.querySelectorAll('.quiz-mask').forEach(mask => {
+            mask.textContent = mask.dataset.word || '';
+            mask.classList.add('is-revealed');
+        });
     }
 
     answer(button, correctMovie) {
         if (this.isAnswered) return;
         this.isAnswered = true;
+        const type = this.roundTypes[this.round] || 'frame';
+        const elapsed = performance.now() - (this.roundStartedAt || performance.now());
         const isCorrect = String(button.dataset.id) === String(correctMovie.kinopoiskId);
+        this.revealAnswerMedia();
 
         this.panel.querySelectorAll('.quiz-option').forEach(option => {
             option.disabled = true;
             if (String(option.dataset.id) === String(correctMovie.kinopoiskId)) option.classList.add('correct');
         });
+        let points = 0;
         if (isCorrect) {
-            this.score += 100;
+            points = pointsFor(type, elapsed);
+            this.score += points;
+            this.correctCount += 1;
             button.classList.add('correct');
             this.audio.clear();
         } else {
@@ -614,7 +810,9 @@ export class MovieQuizGame {
         }
         const feedback = document.createElement('p');
         feedback.className = `quiz-feedback ${isCorrect ? 'is-correct' : 'is-incorrect'}`;
-        feedback.textContent = isCorrect ? t('quiz.correct') : t('quiz.correct_answer', { name: correctMovie.name });
+        feedback.textContent = isCorrect
+            ? t('quiz.correct_points', { points })
+            : t('quiz.correct_answer', { name: correctMovie.name });
         this.panel.appendChild(feedback);
         if (this.score > this.highScore) {
             this.highScore = this.score;
@@ -622,12 +820,14 @@ export class MovieQuizGame {
         }
         this.callbacks.onStatsUpdate({ score: this.score, highScore: this.highScore, level: this.round + 1, lines: MovieQuizGame.ROUNDS });
         const sessionId = this.sessionId;
+        // The revealed poster or summary gets a moment longer than a frame.
+        const delay = type === 'frame' ? MovieQuizGame.ANSWER_FEEDBACK_MS : MovieQuizGame.ANSWER_FEEDBACK_MS + 800;
         this.transitionTimer = window.setTimeout(() => {
             if (!this.isCurrentSession(sessionId)) return;
             this.round += 1;
             if (this.round < MovieQuizGame.ROUNDS) this.showRound();
             else this.showResult();
-        }, MovieQuizGame.ANSWER_FEEDBACK_MS);
+        }, delay);
     }
 
     showResult() {
@@ -638,42 +838,98 @@ export class MovieQuizGame {
         const score = document.createElement('strong');
         score.textContent = String(this.score);
         const summary = document.createElement('p');
-        summary.textContent = t('quiz.result_summary', { correct: this.score / 100, total: MovieQuizGame.ROUNDS });
+        summary.textContent = t('quiz.result_summary', { correct: this.correctCount, total: MovieQuizGame.ROUNDS });
+        const actions = document.createElement('div');
+        actions.className = 'quiz-result-actions';
         const restart = document.createElement('button');
         restart.className = 'game-btn-primary quiz-restart';
         restart.type = 'button';
         restart.textContent = t('quiz.play_again');
         restart.addEventListener('click', () => this.restart());
-        result.append(label, score, summary, restart);
+        const change = document.createElement('button');
+        change.className = 'quiz-secondary-btn';
+        change.type = 'button';
+        change.textContent = t('quiz.change_source');
+        change.addEventListener('click', () => this.start());
+        actions.append(restart, change);
+        result.append(label, score, summary, actions);
         this.panel.replaceChildren(result);
         restart.focus({ preventScroll: true });
     }
 
-    renderLoading() {
+    /** The source picker shown before a round. */
+    renderSetup() {
+        const setup = document.createElement('div');
+        setup.className = 'quiz-setup';
+        const title = document.createElement('h3');
+        title.textContent = t('quiz.setup_title');
+        const text = document.createElement('p');
+        text.textContent = t('quiz.setup_text');
+        const grid = document.createElement('div');
+        grid.className = 'quiz-source-grid';
+        let preferred = null;
+        for (const source of MovieQuizGame.SOURCES) {
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'quiz-source-card';
+            card.dataset.source = source;
+            const name = document.createElement('strong');
+            name.textContent = t(`quiz.source_${source}`);
+            const hint = document.createElement('small');
+            hint.textContent = t(`quiz.source_${source}_text`);
+            card.append(name, hint);
+            card.addEventListener('click', () => this.play(source));
+            grid.append(card);
+            if (source === this.source) preferred = card;
+        }
+        setup.append(title, text, grid);
+        this.panel.replaceChildren(setup);
+        preferred?.focus({ preventScroll: true });
+    }
+
+    renderLoading(source = this.source) {
         const status = document.createElement('div');
         status.className = 'quiz-status';
-        status.textContent = t('quiz.loading');
+        status.textContent = t(source === 'library' ? 'quiz.loading_library' : 'quiz.loading');
         this.panel.replaceChildren(status);
     }
 
-    renderError(message) {
+    renderError(message, { offerPopular = false } = {}) {
         const status = document.createElement('div');
         status.className = 'quiz-status quiz-error';
         const title = document.createElement('strong');
         title.textContent = t('quiz.unavailable');
         const details = document.createElement('span');
         details.textContent = message;
-        const restart = document.createElement('button');
-        restart.className = 'game-btn-primary quiz-restart';
-        restart.type = 'button';
-        restart.textContent = t('quiz.retry');
-        restart.addEventListener('click', () => this.restart());
-        status.append(title, details, restart);
+        const actions = document.createElement('div');
+        actions.className = 'quiz-result-actions';
+        const primary = document.createElement('button');
+        primary.className = 'game-btn-primary quiz-restart';
+        primary.type = 'button';
+        if (offerPopular) {
+            primary.textContent = t('quiz.play_popular');
+            primary.addEventListener('click', () => this.play('popular'));
+        } else {
+            primary.textContent = t('quiz.retry');
+            primary.addEventListener('click', () => this.restart());
+        }
+        const change = document.createElement('button');
+        change.className = 'quiz-secondary-btn';
+        change.type = 'button';
+        change.textContent = t('quiz.change_source');
+        change.addEventListener('click', () => this.start());
+        actions.append(primary, change);
+        status.append(title, details, actions);
         this.panel.replaceChildren(status);
-        restart.focus({ preventScroll: true });
+        primary.focus({ preventScroll: true });
     }
 
     getUserFacingError(error) {
+        if (error instanceof QuizLibraryError) {
+            if (error.code === 'signed-out') return t('quiz.library_signed_out');
+            if (error.code === 'unavailable') return t('quiz.library_unavailable');
+            return error.message;
+        }
         const presentation = window.ErrorPresentation?.getPresentation?.(error, {
             context: { operation: 'movie-quiz-load', category: 'provider' }
         });
@@ -684,16 +940,12 @@ export class MovieQuizGame {
         return message || t('quiz.error_generic');
     }
 
+    /** Plays again with the same source. */
     restart() {
-        this.round = 0;
-        this.score = 0;
-        this.movies = [];
-        this.distractorMovies = [];
-        this.allCandidates = [];
         this.shownOptionIds.clear();
         this.shownOptionNames.clear();
         this.shownFranchises.clear();
-        this.start();
+        this.play(this.source);
     }
 
     render() { /* Quiz owns its HTML panel instead of the shared canvas. */ }
@@ -703,6 +955,7 @@ export class MovieQuizGame {
         this.sessionId += 1;
         this.abortController?.abort();
         this.abortController = null;
+        this.cancelReveal();
         if (this.transitionTimer) window.clearTimeout(this.transitionTimer);
         this.transitionTimer = null;
         this.shownOptionIds?.clear();

@@ -1,8 +1,3 @@
-.games-modal-container.word-guess-game-mode {
-    width: min(94vw, 900px);
-    max-width: 900px;
-}
-
 .games-modal-container.word-guess-game-mode .game-canvas-wrapper,
 .games-modal-container.word-guess-game-mode .movie-quiz {
     display: none;

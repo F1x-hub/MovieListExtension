@@ -352,6 +352,8 @@ export class TetrisGame {
     start() {
         this.isPaused = false;
         this.isGameOver = false;
+        // The sidebar is shared by every game: a new round replaces the previous round's numbers.
+        this.callbacks.onStatsUpdate({ score: this.score, lines: this.lines, level: this.level, highScore: this.highScore });
         this.lastDropTime = performance.now();
         const loop = (timestamp) => {
             if (!this.isPaused && !this.isGameOver) this.tick(timestamp);
