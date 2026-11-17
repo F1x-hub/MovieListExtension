@@ -39,6 +39,7 @@ const context = vm.createContext({
     setTimeout,
     clearTimeout
 });
+vm.runInContext(fs.readFileSync('src/pages/movie-details/UserRatingsPanel.js', 'utf8'), context);
 vm.runInContext(source, context);
 
 const MovieDetailsManager = context.window.MovieDetailsManager;

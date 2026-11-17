@@ -174,10 +174,7 @@ class RandomManager {
 
     initDoubleSlider(idPrefix, minLimit, maxLimit, minGap) {
         const formatValue = val => {
-            if (idPrefix === 'votes') {
-                if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
-                if (val >= 1000) return (val / 1000).toFixed(0) + 'k';
-            }
+            if (idPrefix === 'votes' && val >= 1000) return Utils.formatCompactNumber(val, i18n.currentLocale);
             return val;
         };
         const fieldLabel = document.getElementById(`${idPrefix}Slider`).parentElement.querySelector('label').textContent.trim();
@@ -1741,7 +1738,9 @@ class RandomManager {
                 if (action === 'roll') {
                     const candidates = this._getMarathonDisplayItems()
                         .filter((item) => item.state === 'queued');
-                    this._showRollReady(candidates, () => this._rollMarathonWithAnimation());
+                    // One movie left: there is nothing to spin, so the wheel never opens.
+                    if (candidates.length === 1) await this._rollMarathonWithAnimation();
+                    else this._showRollReady(candidates, () => this._rollMarathonWithAnimation());
                 } else if (handlers[action]) {
                     await this._runMarathonAction(handlers[action], { pendingAction: action });
                 }

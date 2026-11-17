@@ -8,10 +8,14 @@
     /* Foreground ink channel for translucent overlays: white on dark, near-black on light */
     --theme-ink-rgb: 255, 255, 255;
 
-    /* Stacking scale */
-    --z-dropdown: 1000;
-    --z-modal: 10000;
-    --z-top: 100000;
+    /* Stacking scale: the only global layers (docs/design-system.md, "Stacking").
+       Small numbers (1-10) stay local to a component. */
+    --z-floating: 900;     /* floating page controls under the navigation: back-to-top, live pill */
+    --z-dropdown: 1000;    /* navigation bar and its menus, page dropdowns */
+    --z-fixed: 1030;       /* fixed widgets: report button */
+    --z-popover: 1050;     /* popovers above the navigation: pickers, notices, selection popup */
+    --z-modal: 10000;      /* modal overlays, dialogs, toasts */
+    --z-top: 100000;       /* full-screen viewers: image lightbox */
 
     /* Background Colors */
     --theme-bg-primary: #09090b;
@@ -131,7 +135,6 @@ body,
 .nav-header,
 .nav-user-dropdown,
 .collection-dropdown,
-.theme-card,
 .filter-section {
     transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
@@ -174,7 +177,7 @@ body,
 .light-theme .nav-user-dropdown {
     background: var(--theme-bg-secondary);
     border: 1px solid var(--theme-border);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--elevation-2);
 }
 
 .light-theme .nav-dropdown-item {
@@ -193,7 +196,7 @@ body,
 .light-theme .collection-dropdown {
     background: var(--theme-bg-secondary);
     border: 1px solid var(--theme-border);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--elevation-2);
 }
 
 .light-theme .collection-dropdown .dropdown-item {
@@ -224,11 +227,11 @@ body,
 }
 
 /* Light theme cards */
-.light-theme .theme-card,
+
 .light-theme .filter-section {
     background: var(--theme-bg-card);
     border: 1px solid var(--theme-border);
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--elevation-1);
 }
 
 /* Light theme scrollbar */
@@ -238,7 +241,7 @@ body,
 
 .light-theme ::-webkit-scrollbar-thumb {
     background: #838080;
-    border-radius: 4px;
+    border-radius: var(--radius-sm, 4px);
 }
 
 .light-theme ::-webkit-scrollbar-thumb:hover {

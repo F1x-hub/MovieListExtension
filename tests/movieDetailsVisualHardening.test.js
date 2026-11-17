@@ -116,7 +116,11 @@ const escapeHtmlHelper = (t) => {
         .replace(/'/g, '&#039;');
 };
 
+const realUtilsContext = vm.createContext({ module: { exports: {} } });
+vm.runInContext(fs.readFileSync(new URL('../src/shared/utils/Utils.js', import.meta.url), 'utf8'), realUtilsContext);
 const utilsStub = {
+    formatCompactNumber: realUtilsContext.module.exports.formatCompactNumber,
+    selectRussianPlural: realUtilsContext.module.exports.selectRussianPlural,
     createPageStateManager: () => ({}),
     escapeHtml: escapeHtmlHelper,
     normalizeRatingComment: (v) => (typeof v === 'string' ? v.trim() : ''),
@@ -492,7 +496,7 @@ console.log('--- 19: Testing Phase UI-1 / UI-2 Presentation Contracts ---');
         'Light theme no longer applies a blanket logo filter');
     assert(css.includes('background: linear-gradient('),
         'Light theme logo presentation provides a contrast well');
-    const rendererSource = readText('src/pages/movie-details/movie-details.js');
+    const rendererSource = readText('src/pages/movie-details/MetaRenderer.js');
     assert(rendererSource.includes('data-fallback="company-logo"'),
         'Company logo failed-image fallback contract remains in the renderer');
 

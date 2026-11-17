@@ -18,6 +18,7 @@ context.Utils = {
     normalizeRatingReview: value => String(value || '').trim(),
     showToast() {}
 };
+vm.runInContext(fs.readFileSync('src/pages/movie-details/UserRatingsPanel.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('src/pages/movie-details/movie-details.js', 'utf8')
     .replace(/^import .*;\r?$/gm, ''), context);
 vm.runInContext(fs.readFileSync('src/shared/errors/ErrorPresentation.js', 'utf8'), context);

@@ -150,6 +150,7 @@ const utilsContext = vm.createContext({ module: { exports: {} } });
 vm.runInContext(fs.readFileSync(new URL('../src/shared/utils/Utils.js', import.meta.url), 'utf8'), utilsContext);
 const utilsStub = {
     selectRussianPlural: utilsContext.module.exports.selectRussianPlural,
+    formatCompactNumber: utilsContext.module.exports.formatCompactNumber,
     createPageStateManager: () => ({}),
     escapeHtml: escapeHtmlHelper,
     normalizeRatingComment: (v) => (typeof v === 'string' ? v.trim() : ''),
@@ -197,7 +198,7 @@ assert(/\.episode-rating-value\s*\{[^}]*flex:\s*0 0 5ch;[^}]*width:\s*5ch;/s.tes
 assert(/\.episode-rating-remove-slot\s*\{[^}]*flex:\s*0 0 32px;/s.test(css), 'hidden removal does not shift the stars');
 assert(/\.episode-rating-message\s*\{[^}]*flex-basis:\s*100%;[^}]*text-align:\s*center;/s.test(css), 'access and future messages are centered');
 assert(source.includes('<span class="episode-rating-remove-slot"><button'), 'removal keeps its slot even when hidden');
-assert(/@media \(max-width: 420px\)[\s\S]*\.episode-rating-scale\s*\{[^}]*repeat\(5,/s.test(css), 'mobile stars retain the centered two-row layout');
+assert(/@media \(max-width: 480px\)[\s\S]*\.episode-rating-scale\s*\{[^}]*repeat\(5,/s.test(css), 'mobile stars retain the centered two-row layout');
 
 // =========================================================================
 // PART 44: RATINGS TESTS (Tests 1 - 8)

@@ -40,8 +40,7 @@ body {
 }
 
 /* No YouTube source for these: picture-in-picture needs a real media stream. */
-.yt-player-host [data-player-action="pip"],
-.yt-player-host .player-pip-button {
+.yt-player-host [data-player-action="pip"] {
     display: none !important;
 }
 

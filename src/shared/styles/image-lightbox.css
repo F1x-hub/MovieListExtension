@@ -8,7 +8,7 @@
     height: 100vh;
     background: rgba(0, 0, 0, 0.85);
     backdrop-filter: blur(5px);
-    z-index: var(--z-top, 100000);
+    z-index: var(--z-top);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -32,8 +32,8 @@
     max-width: 90vw;
     max-height: 90vh;
     object-fit: contain;
-    border-radius: 8px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    border-radius: var(--radius-md);
+    box-shadow: var(--elevation-3);
     transform: translateY(var(--motion-distance-enter)) scale(var(--motion-scale-enter));
     transition: transform var(--motion-duration-fast) var(--motion-ease-in);
     cursor: pointer;
@@ -47,8 +47,8 @@
 }
 
 .image-lightbox-crossfade {
-    border-radius: 8px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    border-radius: var(--radius-md);
+    box-shadow: var(--elevation-3);
 }
 
 .image-lightbox-close {
@@ -58,14 +58,14 @@
     background: rgba(0, 0, 0, 0.5);
     color: white;
     border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: var(--radius-sm, 6px);
+    border-radius: var(--radius-sm);
     width: 36px;
     height: 36px;
     cursor: pointer;
     display: flex;
     justify-content: center;
     align-items: center;
-    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    transition: background-color var(--motion-duration-base) var(--motion-ease-out), border-color var(--motion-duration-base) var(--motion-ease-out), color var(--motion-duration-base) var(--motion-ease-out), opacity var(--motion-duration-base) var(--motion-ease-out), transform var(--motion-duration-base) var(--motion-ease-out), box-shadow var(--motion-duration-base) var(--motion-ease-out), filter var(--motion-duration-base) var(--motion-ease-out);
     padding: 0;
     backdrop-filter: blur(10px);
 }
@@ -87,8 +87,8 @@
     background: rgba(0, 0, 0, 0.6);
     color: rgba(255, 255, 255, 0.9);
     padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 13px;
+    border-radius: var(--radius-pill);
+    font-size: var(--font-size-sm);
     font-weight: 600;
     letter-spacing: 0.5px;
     backdrop-filter: blur(10px);
@@ -104,17 +104,17 @@
     background: rgba(0, 0, 0, 0.5);
     color: white;
     border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: var(--radius-sm, 6px);
+    border-radius: var(--radius-sm);
     width: 36px;
     height: 36px;
     cursor: pointer;
     display: flex;
     justify-content: center;
     align-items: center;
-    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    transition: background-color var(--motion-duration-base) var(--motion-ease-out), border-color var(--motion-duration-base) var(--motion-ease-out), color var(--motion-duration-base) var(--motion-ease-out), opacity var(--motion-duration-base) var(--motion-ease-out), transform var(--motion-duration-base) var(--motion-ease-out), box-shadow var(--motion-duration-base) var(--motion-ease-out), filter var(--motion-duration-base) var(--motion-ease-out);
     backdrop-filter: blur(10px);
     user-select: none;
-    z-index: calc(var(--z-top, 100000) + 1);
+    z-index: calc(var(--z-top) + 1);
     padding: 0;
 }
 

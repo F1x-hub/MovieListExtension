@@ -1931,15 +1931,11 @@ class SearchManager {
     }
 
     getDayWord(days) {
-        if (days === 1) return 'день';
-        if (days >= 2 && days <= 4) return 'дня';
-        return 'дней';
+        return Utils.selectRussianPlural(days, ['день', 'дня', 'дней']);
     }
 
     getWeekWord(weeks) {
-        if (weeks === 1) return 'неделю';
-        if (weeks >= 2 && weeks <= 4) return 'недели';
-        return 'недель';
+        return Utils.selectRussianPlural(weeks, ['неделю', 'недели', 'недель']);
     }
 
     createDetailedMovieCard(movie, userRating = null, bookmarkStatus = null) {
@@ -2011,7 +2007,7 @@ class SearchManager {
         // Get audience data for Russia
         const audienceRussia = movie.audience?.find(a => a.country === 'Россия' || a.country === 'Russia');
         const audienceRussiaStr = audienceRussia 
-            ? `${(audienceRussia.count / 1000).toFixed(1)} ${i18n.currentLocale === 'ru' ? 'тыс' : 'k'}` 
+            ? Utils.formatCompactNumber(audienceRussia.count, i18n.currentLocale)
             : '';
         
         return `
@@ -2347,9 +2343,9 @@ class SearchManager {
                     <p>${this.escapeHtml(description)}</p>
                     ${this.createMovieFramesSection(movie)}
                     <div id="userRatingsSection" class="user-ratings-section" data-movie-id="${movie.kinopoiskId}">
-                        <div class="user-ratings-loading" style="display: none;">
-                            <div class="loading-spinner"></div>
-                            <span>${i18n.get('movie_details.loading_reviews')}</span>
+                        <div class="user-ratings-loading app-loader app-loader--compact" role="status" style="display: none;">
+                            <div class="app-loader__indicator" aria-hidden="true"></div>
+                            <span class="app-loader__label">${i18n.get('movie_details.loading_reviews')}</span>
                         </div>
                         <div class="user-ratings-content"></div>
                     </div>
@@ -2793,10 +2789,10 @@ class SearchManager {
 
     getSearchLoadingMarkup() {
         return `
-            <div class="initial-loading-content search-loading-state" role="status" aria-live="polite">
-                <div class="loading-spinner-large" aria-hidden="true"></div>
+            <div class="initial-loading-content search-loading-state app-loader app-loader--section" role="status" aria-live="polite">
+                <div class="app-loader__indicator" aria-hidden="true"></div>
                 <h3 class="loading-title">Ищем фильмы</h3>
-                <p class="loading-text">Сначала парсим результаты, затем загружаем данные фильмов...</p>
+                <p class="loading-text app-loader__label">Сначала парсим результаты, затем загружаем данные фильмов...</p>
             </div>
         `;
     }
@@ -3326,9 +3322,8 @@ class SearchManager {
     }
 
     escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        // Quote-safe: the result also goes into attribute values.
+        return Utils.escapeHtml(text);
     }
 
     /**
@@ -3340,31 +3335,10 @@ class SearchManager {
         return /[а-яё]/i.test(str);
     }
 
-    /**
-     * Format large numbers to compact format (1.06m, 582k)
-     * @param {number} num - Number to format
-     * @returns {string} - Formatted number string
-     */
+    /** Votes in the shared compact format ("1,2 тыс."), the same as on other pages. */
     formatVotes(num) {
-        if (!num || num === 0) return '0';
-        
-        if (num >= 1000000) {
-            const millions = num / 1000000;
-            // Format to 1 decimal place, remove trailing zeros
-            const formatted = millions.toFixed(1);
-            return formatted.replace(/\.?0+$/, '') + 'm';
-        } else if (num >= 100000) {
-            // For numbers >= 100k, show whole thousands only (582k)
-            const thousands = Math.round(num / 1000);
-            return thousands + 'k';
-        } else if (num >= 1000) {
-            // For numbers < 100k, show with 1 decimal place (1.5k, 5.8k)
-            const thousands = num / 1000;
-            const formatted = thousands.toFixed(1);
-            return formatted.replace(/\.?0+$/, '') + 'k';
-        }
-        
-        return num.toString();
+        if (!num) return '0';
+        return Utils.formatCompactNumber(num, i18n.currentLocale);
     }
 
 
@@ -3431,9 +3405,9 @@ class SearchManager {
             
             // Show loading state in player
             this.elements.videoContainer.innerHTML = `
-                <div class="video-placeholder">
-                    <div class="loading-spinner"></div>
-                    <span>Searching for video sources...</span>
+                <div class="video-placeholder app-loader" role="status">
+                    <div class="app-loader__indicator" aria-hidden="true"></div>
+                    <span class="app-loader__label">Searching for video sources...</span>
                 </div>
             `;
             

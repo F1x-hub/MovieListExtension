@@ -626,9 +626,8 @@ class CollectionPageManager {
     }
 
     escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        // Quote-safe: the result also goes into attribute values.
+        return Utils.escapeHtml(text);
     }
 }
 

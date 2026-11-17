@@ -170,6 +170,79 @@ on any extension page and reload; `removeItem` returns to the real date.
 
 ## Token ownership
 
+### Corner radius
+
+The corner of an element follows its role, not its page. The scale lives in
+`common.css`; write the token, never a pixel value.
+
+| Token | Value | Role |
+| --- | --- | --- |
+| `--radius-sm` | 4px | Text labels: status, studio, genre, "new" and live badges |
+| `--radius-md` | 8px | Anything clickable: buttons, inputs, selects, tabs, filter choices, menu items (`--ui-control-radius`) |
+| `--radius-lg` | 12px | Cards, posters, panels, banners, popovers |
+| `--radius-xl` | 16px | Page surfaces, modals, large sections |
+| `--radius-pill` | 999px | Non-interactive counters and tracks only: count badges, progress bars, slider and switch tracks |
+| `--radius-circle` | 50% | Square elements only: avatars, dots, spinners, icon-only round buttons |
+
+Buttons, tabs and choices are never pill-shaped. `50%` on a wide element draws
+an ellipse, so wide counters and bars use `--radius-pill`; `--radius-full` is a
+legacy alias of it. A child inset in a rounded frame takes the frame's radius
+minus the inset (`calc(var(--radius-xl) - 1px)` inside a 1px border).
+Files that load without `common.css` keep fallbacks; see "Files loaded without
+`common.css`" below.
+
+### Type scale
+
+Font sizes come from one scale in `common.css`; write the token, not a size.
+
+| Token | Size | Typical use |
+| --- | --- | --- |
+| `--font-size-3xs` | 10px | Micro labels on badges and counters |
+| `--font-size-2xs` | 11px | Captions, meta, uppercase eyebrows |
+| `--font-size-xs` | 12px | Small text, chips |
+| `--font-size-sm` | 13px | Secondary text, compact controls |
+| `--font-size-md` | 14px | Body text and controls (`--ui-control-font-size`) |
+| `--font-size-base` | 16px | Lead text |
+| `--font-size-lg` | 18px | Card and dialog titles |
+| `--font-size-xl` | 20px | Section titles |
+| `--font-size-2xl` | 24px | Large headings |
+| `--font-size-3xl` | 32px | Page titles |
+| `--font-size-4xl` | 48px | Display numbers |
+
+`--font-size-sm` was 14px before this scale; it is 13px now and 14px is `md`.
+Fluid hero titles may use `clamp()`, and `em` sizes stay relative. Weights are
+400, 500, 600, 700 and 800 only.
+
+### Elevation
+
+Drop shadows use `--elevation-1` (resting surfaces), `--elevation-2` (raised
+cards, menus, popovers) or `--elevation-3` (dialogs, floating panels). They adapt
+to the theme: a hairline ring plus a deep shadow in dark, soft shadows in light.
+`--shadow-sm/md/lg/xl` are legacy aliases of them. Focus rings, inset shadows
+and coloured glows are separate effects and are written where they are used.
+
+### Stacking
+
+`theme.css` owns the only global layers: `--z-floating` 900 (back-to-top, live
+pill), `--z-dropdown` 1000 (navigation bar and menus), `--z-fixed` 1030 (report
+button), `--z-popover` 1050 (pickers, notices, selection popup), `--z-modal`
+10000 (modal overlays, dialogs, toasts) and `--z-top` 100000 (lightbox). A modal
+always covers the navigation bar. Numbers 1–10 stay local to one component.
+
+### Breakpoints
+
+Media queries use 360, 480, 640, 768, 900, 1024 and 1280px (`max-width`), with
+the matching `min-width` one pixel above or `max-width` one pixel below (639,
+1023…) for a split at the same step. The popup, the player and seasonal decor
+keep their own widths.
+
+### Files loaded without `common.css`
+
+`theme.css` and `player.css` also load on the YouTube player page, and
+`back-to-top.css` loads alone on the update instructions page. Tokens in them
+carry fallbacks (`var(--radius-md, 8px)`), and their transitions are written as
+literal values because `tokens.css` is not there.
+
 Sorting uses `src/shared/components/SortControl.js` and the `.sort-control`
 rules in `components.css`. Enhance a labelled native select; keep its option
 values, persistence and ordering logic in the owning page. Selected labels and
@@ -188,8 +261,8 @@ paired numeric bounds or multi-thumb ranges; provide a label for each bound,
 preserve the native controls as the source of truth, and pass the page's existing
 step and minimum-gap rules. One committed range change calls the page callback
 once, while restore and localization updates remain silent.
-Discovery panels use a 20px radius; their header/body own padding once. Choices
-use 44px pill targets. Range inputs display one pair of integrated numeric bounds
+Discovery panels use `--radius-xl`; their header/body own padding once. Choices
+use 44px targets with `--radius-md` corners. Range inputs display one pair of integrated numeric bounds
 before the slider rather than duplicate value rows. The inline range variant
 fits beside sorting on wide Rated layouts and stacks on narrow screens.
 Pass `compactLimit`, `moreLabel` and `lessLabel` to `FilterChoice.enhanceGroup`
@@ -281,8 +354,11 @@ not part of the product contract.
 `standard`, `spring`), entry distance (6px), entry scale (0.985), and press scale
 (0.98). Their names use the `--motion-duration-*`, `--motion-ease-*`,
 `--motion-distance-enter`, and `--motion-scale-*` prefixes. The spring curve is
-only for small controls. Legacy `--ease-*` aliases resolve to these shared roles;
-page transition lists remain compatibility layers, not duration tokens.
+only for small controls. Legacy `--ease-*` aliases resolve to these shared roles,
+and `--transition-fast/base/slow` are duration-plus-easing aliases of the fast,
+base and slow steps. Transitions name their duration and easing through these
+tokens; only deliberately long motion (over 350ms) and delays are written as
+literal times.
 
 Menus use `--motion-duration-menu` (160ms), disclosures use
 `--motion-duration-disclosure` (200ms), and panes use `--motion-distance-pane`
@@ -394,6 +470,16 @@ a link requires a verified runtime pass on that page.
 - Keep provider badges and game visuals small and bounded by their content area.
 - Use explicit modifier classes for intentional variants instead of overriding a
   generic class from a page stylesheet.
+- Page states have one look everywhere, owned by `components.css`. Empty results
+  use `.empty-state` with `.empty-state-icon`, `-title`, `-text`; a failed load
+  uses `.error-state` with the same parts (`.error-state-*`, or the older
+  `.error-icon` / `.error-title` / `.error-text` / `.error-message` names). Its
+  icon is the only red part, and a page-level error is a centred 560px card. A
+  single action is `.btn.btn-primary` plus `.empty-state-btn` / `.error-state-btn`;
+  several go in `.error-actions`. Loading uses `.app-loader` (`common.css`) with a
+  size modifier (`--page`, `--section`, `--compact`, `--inline`). Page stylesheets
+  do not restyle these classes; only the popup has a compact variant under
+  `.popup-page`.
 - Keep dark/light hierarchy equivalent: the same element must remain primary,
   secondary, muted, interactive, or disabled in both modes.
 - Text must not inherit a decorative or legacy accent token. Ordinary secondary

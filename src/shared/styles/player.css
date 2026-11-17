@@ -57,7 +57,7 @@ body.player-modal-open {
         var(--theme-bg-secondary);
     /* The shell is ~opaque, so a backdrop blur only cost GPU time without a visible effect. */
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 22px !important;
+    border-radius: var(--radius-xl, 16px) !important;
     box-shadow: 0 32px 90px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(255, 255, 255, 0.025) inset;
     overflow: hidden !important;
     transform: translateZ(0);
@@ -83,7 +83,8 @@ body.player-modal-open {
 
 #videoPlayerModal .player-workspace > .video-modal {
     flex: 0 0 auto;
-    transition: width var(--motion-duration-slow) var(--motion-ease-out);
+    /* Literal values: player.css also loads on the YouTube player page without tokens.css. */
+    transition: width 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* 400px panel + 12px gap + 12px outer margins. */
@@ -155,7 +156,7 @@ body.player-modal-open {
     color: var(--theme-text-primary);
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid var(--theme-border-hover);
-    border-radius: 12px;
+    border-radius: var(--radius-lg, 12px);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18), inset 0 1px rgba(255, 255, 255, 0.06);
 }
 
@@ -176,7 +177,7 @@ body.player-modal-open {
     color: var(--theme-text-primary);
     font-family: var(--font-family);
     font-size: clamp(15px, 1.8vw, 18px);
-    font-weight: 650;
+    font-weight: 600;
     line-height: 1.25;
     letter-spacing: -0.025em;
     text-overflow: ellipsis;
@@ -185,8 +186,8 @@ body.player-modal-open {
 
 .video-subtitle {
     font-family: var(--font-family);
-    font-size: 12px;
-    font-weight: 550;
+    font-size: var(--font-size-xs, 12px);
+    font-weight: 600;
     color: var(--ui-color-interactive);
     line-height: 1.2;
     letter-spacing: 0.01em;
@@ -228,7 +229,7 @@ body.player-modal-open {
     max-width: 150px;
     overflow: hidden;
     color: var(--theme-text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-2xs, 11px);
     font-variant-numeric: tabular-nums;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -246,7 +247,7 @@ body.player-modal-open {
     width: min(250px, calc(100vw - 32px));
     padding: 10px;
     border: 1px solid var(--theme-border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg, 12px);
     background: var(--theme-surface-elevated, var(--theme-bg-primary));
     box-shadow: 0 14px 30px rgb(0 0 0 / 0.24);
 }
@@ -254,7 +255,7 @@ body.player-modal-open {
 .watch-room-members-popover__title {
     margin: 0 0 6px;
     color: var(--theme-text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-2xs, 11px);
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -274,7 +275,7 @@ body.player-modal-open {
     gap: 8px;
     min-width: 0;
     color: var(--theme-text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-xs, 12px);
 }
 
 .watch-room-member__presence {
@@ -282,7 +283,7 @@ body.player-modal-open {
     height: 7px;
     flex: 0 0 7px;
     border: 1px solid currentColor;
-    border-radius: 50%;
+    border-radius: var(--radius-circle, 50%);
     color: var(--theme-text-muted);
 }
 
@@ -300,7 +301,7 @@ body.player-modal-open {
 .watch-room-member__role {
     margin-left: auto;
     color: var(--theme-text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-2xs, 11px);
     white-space: nowrap;
 }
 
@@ -309,11 +310,11 @@ body.player-modal-open {
     padding: 3px 6px;
     color: var(--theme-text-secondary);
     font: inherit;
-    font-size: 11px;
+    font-size: var(--font-size-2xs, 11px);
     white-space: nowrap;
     background: transparent;
     border: 1px solid var(--theme-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md, 8px);
     cursor: pointer;
 }
 
@@ -341,7 +342,7 @@ body.player-modal-open {
 .watch-room-invite-popover__hint {
     margin: 0;
     color: var(--ui-color-content-muted);
-    font-size: 12px;
+    font-size: var(--font-size-xs, 12px);
     line-height: 1.4;
 }
 
@@ -351,7 +352,7 @@ body.player-modal-open {
     padding: 8px 10px;
     color: var(--ui-color-content);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--font-size-sm, 13px);
     font-variant-numeric: tabular-nums;
     background: var(--ui-color-surface-muted);
     border: 1px solid var(--ui-color-border);
@@ -370,7 +371,7 @@ body.player-modal-open {
 .watch-room-invite-popover__error {
     margin: 0;
     color: var(--ui-color-status-danger);
-    font-size: 12px;
+    font-size: var(--font-size-xs, 12px);
     line-height: 1.4;
 }
 
@@ -388,7 +389,7 @@ body.player-modal-open {
     padding: 6px 12px;
     color: var(--ui-color-content);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--font-size-xs, 12px);
     font-weight: 600;
     background: transparent;
     border: 1px solid var(--ui-color-border);
@@ -429,12 +430,12 @@ body.player-modal-open {
     height: 36px;
     padding: 0 12px;
     font-family: var(--font-family);
-    font-size: 13px;
-    font-weight: 550;
+    font-size: var(--font-size-sm, 13px);
+    font-weight: 600;
     color: var(--theme-text-secondary);
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--theme-border);
-    border-radius: 10px;
+    border-radius: var(--radius-md, 8px);
     cursor: pointer;
     transition: color 160ms ease, background-color 160ms ease,
         border-color 160ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
@@ -473,7 +474,7 @@ body.player-modal-open {
     border-color: rgba(9, 9, 11, 0.15);
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
     .player-nav-btn {
         padding: 0 8px;
     }
@@ -495,7 +496,7 @@ body.player-modal-open {
     color: var(--theme-text-secondary);
     background: rgba(255, 255, 255, 0.035);
     border: 1px solid var(--theme-border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg, 12px);
     transition: color 160ms ease, background-color 160ms ease,
         border-color 160ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
@@ -555,7 +556,7 @@ body.player-modal-open {
     aspect-ratio: 16 / 9;
     align-self: center;
     border: 1px solid rgba(255, 255, 255, 0.085);
-    border-radius: 16px;
+    border-radius: var(--radius-xl, 16px);
     box-shadow: 0 18px 48px rgba(0, 0, 0, 0.36), inset 0 0 0 1px rgba(0, 0, 0, 0.5);
     overflow: hidden;
     transform: translateZ(0);
@@ -574,7 +575,7 @@ body.player-modal-open {
     width: 100%;
     height: 100%;
     border: none;
-    border-radius: 15px;
+    border-radius: var(--radius-xl, 16px);
     overflow: hidden;
 }
 
@@ -611,8 +612,8 @@ body.player-modal-open {
 
 .video-modal .player-source-lifecycle__message {
     color: var(--theme-text-secondary);
-    font-size: 13px;
-    font-weight: 550;
+    font-size: var(--font-size-sm, 13px);
+    font-weight: 600;
     letter-spacing: -0.01em;
 }
 
@@ -621,7 +622,7 @@ body.player-modal-open {
     color: var(--theme-text-primary);
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid var(--theme-border-hover);
-    border-radius: 10px;
+    border-radius: var(--radius-md, 8px);
     font-family: var(--font-family);
     transition: background-color 160ms ease, border-color 160ms ease,
         transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
@@ -646,7 +647,7 @@ body.player-modal-open {
     padding: 6px 8px;
     background: rgba(255, 255, 255, 0.035);
     border: 1px solid var(--theme-border);
-    border-radius: 14px;
+    border-radius: var(--radius-lg, 12px);
     box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
 }
 
@@ -663,7 +664,7 @@ body.player-modal-open {
     flex: 0 0 auto;
     padding: 0 10px 0 6px;
     color: var(--ui-color-content-muted);
-    font-size: 11px;
+    font-size: var(--font-size-2xs, 11px);
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -688,7 +689,7 @@ body.player-modal-open {
 .source-toolbar__dub-label {
     flex: 0 0 auto;
     color: var(--ui-color-content-muted);
-    font-size: 11px;
+    font-size: var(--font-size-2xs, 11px);
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -702,9 +703,9 @@ body.player-modal-open {
     color: var(--ui-color-content);
     background: var(--ui-color-surface);
     border: 1px solid var(--ui-color-border);
-    border-radius: 10px;
+    border-radius: var(--radius-md, 8px);
     font-family: var(--font-family);
-    font-size: 13px;
+    font-size: var(--font-size-sm, 13px);
     font-weight: 500;
     text-overflow: ellipsis;
     cursor: pointer;
@@ -741,7 +742,7 @@ body.player-modal-open {
     max-height: 36px;
     background: transparent;
     border: 0;
-    border-radius: 10px;
+    border-radius: var(--radius-md, 8px);
     overflow-x: auto;
     overflow-y: hidden;
     overscroll-behavior-inline: contain;
@@ -780,7 +781,7 @@ body.player-modal-open {
 .source-buttons-container:has(.hdrezka-access-actions) .source-rail-note {
     flex-basis: 100%;
     color: var(--ui-color-content-muted);
-    font-size: 13px;
+    font-size: var(--font-size-sm, 13px);
     line-height: 1.4;
 }
 
@@ -790,7 +791,7 @@ body.player-modal-open {
 
 .source-buttons-container::-webkit-scrollbar-thumb {
     background: var(--theme-border-hover);
-    border-radius: 999px;
+    border-radius: var(--radius-pill, 999px);
 }
 
 .source-buttons-container:focus-visible {
@@ -805,8 +806,8 @@ body.player-modal-open {
     color: var(--theme-text-secondary);
     border: 1px solid var(--theme-border);
     padding: 8px 12px 8px 26px;
-    border-radius: 10px;
-    font-size: 13px;
+    border-radius: var(--radius-md, 8px);
+    font-size: var(--font-size-sm, 13px);
     font-weight: 500;
     cursor: pointer;
     transition: color 160ms ease, background-color 160ms ease,
@@ -825,7 +826,7 @@ body.player-modal-open {
     top: 50%;
     width: 5px;
     height: 5px;
-    border-radius: 50%;
+    border-radius: var(--radius-circle, 50%);
     background: currentColor;
     opacity: 0.35;
     transform: translateY(-50%);
@@ -891,7 +892,7 @@ body.player-modal-open {
     left: 10px;
     background: none;
     border-radius: 0;
-    font-size: 13px;
+    font-size: var(--font-size-sm, 13px);
     line-height: 1;
     opacity: 0.9;
     box-shadow: none;
@@ -924,7 +925,6 @@ body.player-modal-open {
 
 .source-btn:focus-visible,
 .video-modal .modal-close:focus-visible,
-.player-surface .control-btn:focus-visible,
 .player-surface__primary-action:focus-visible {
     outline: 3px solid color-mix(in srgb, var(--theme-text-primary) 72%, transparent);
     outline-offset: 3px;
@@ -988,7 +988,7 @@ body.player-modal-open {
 .player-surface__primary-action {
     width: 80px;
     height: 80px;
-    border-radius: 50%;
+    border-radius: var(--radius-circle, 50%);
     background-color: color-mix(in srgb, var(--theme-text-primary) 88%, transparent);
     border: none;
     cursor: pointer;
@@ -1026,7 +1026,7 @@ body.player-modal-open {
     color: #fafafa;
     background: rgba(18, 18, 20, 0.86) !important;
     border: 1px solid rgba(255, 255, 255, 0.16) !important;
-    border-radius: 20px !important;
+    border-radius: var(--radius-xl, 16px) !important;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.42), inset 0 1px rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(14px) saturate(130%) !important;
     -webkit-backdrop-filter: blur(14px) saturate(130%) !important;
@@ -1048,7 +1048,7 @@ body.player-modal-open {
     gap: 8px !important;
     background: rgba(18, 18, 20, 0.88) !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 16px !important;
+    border-radius: var(--radius-xl, 16px) !important;
     box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42), inset 0 1px rgba(255, 255, 255, 0.05) !important;
     backdrop-filter: blur(18px) saturate(130%) !important;
     transition: opacity 280ms cubic-bezier(0.4, 0, 0.2, 1), transform 340ms cubic-bezier(0.4, 0, 0.2, 1) !important;
@@ -1065,12 +1065,12 @@ body.player-modal-open {
     right: 12px !important;
     height: 3px !important;
     background-color: rgba(255, 255, 255, 0.2) !important;
-    border-radius: 999px !important;
+    border-radius: var(--radius-pill, 999px) !important;
 }
 
 .video-container .player-progress-fill {
     background-color: #f4f4f5 !important;
-    border-radius: 999px !important;
+    border-radius: var(--radius-pill, 999px) !important;
 }
 
 .video-container .player-progress-fill::after {
@@ -1080,7 +1080,7 @@ body.player-modal-open {
     right: -5px;
     width: 10px;
     height: 10px;
-    border-radius: 50%;
+    border-radius: var(--radius-circle, 50%);
     background: #f4f4f5;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
     opacity: 0;
@@ -1106,7 +1106,7 @@ body.player-modal-open {
     color: rgba(255, 255, 255, 0.82) !important;
     background: transparent !important;
     border: 1px solid transparent !important;
-    border-radius: 10px !important;
+    border-radius: var(--radius-md, 8px) !important;
     opacity: 1 !important;
     transition: color 160ms ease, background-color 160ms ease,
         border-color 160ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1) !important;
@@ -1153,7 +1153,7 @@ body.player-modal-open {
     margin-left: 2px;
     color: rgba(255, 255, 255, 0.86) !important;
     font-family: var(--font-family) !important;
-    font-size: 12px !important;
+    font-size: var(--font-size-xs, 12px) !important;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.01em;
 }
@@ -1163,7 +1163,7 @@ body.player-modal-open {
     width: 38px !important;
     --popover-surface-bg: rgba(24, 24, 27, 0.94);
     --popover-surface-border: rgba(255, 255, 255, 0.1);
-    --popover-surface-radius: 12px;
+    --popover-surface-radius: var(--radius-lg, 12px);
     --popover-surface-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
     --popover-surface-backdrop: blur(16px);
 }
@@ -1171,16 +1171,16 @@ body.player-modal-open {
 .video-container .player-settings-menu {
     --popover-surface-bg: rgba(24, 24, 27, 0.94);
     --popover-surface-border: rgba(255, 255, 255, 0.1);
-    --popover-surface-radius: 14px;
+    --popover-surface-radius: var(--radius-lg, 12px);
     --popover-surface-shadow: 0 20px 50px rgba(0, 0, 0, 0.48);
     --popover-surface-backdrop: blur(18px) saturate(130%);
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
     .video-container .player-center-action {
         width: 58px !important;
         height: 58px !important;
-        border-radius: 17px !important;
+        border-radius: var(--radius-xl, 16px) !important;
     }
 
     .video-container .player-control-dock {
@@ -1202,7 +1202,7 @@ body.player-modal-open {
     }
 
     .video-container .player-timecode {
-        font-size: 11px !important;
+        font-size: var(--font-size-2xs, 11px) !important;
     }
 
     .video-container .player-progress-track {
@@ -1224,53 +1224,14 @@ body.player-modal-open {
     overflow: hidden;
 }
 
-.video-wrapper:hover .custom-controls,
-.video-wrapper.paused .custom-controls {
-    opacity: 1;
-    pointer-events: all;
-}
-
-.video-wrapper.idle .custom-controls {
-    opacity: 0;
-    pointer-events: none;
-}
-
-.custom-controls {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0));
-    padding: 40px 16px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    opacity: 0;
-    transition: opacity 180ms ease;
-    z-index: 20;
-}
-
 /* Progress Bar */
-.progress-container {
-    width: 100%;
-    height: 5px;
-    background: rgba(255,255,255,0.3);
-    border-radius: 5px;
-    cursor: pointer;
-    position: relative;
-    transition: height 0.1s ease;
-}
-
-.progress-container:hover {
-    height: 8px;
-}
 
 /* Controls always sit on black video, so they stay light in both themes. */
 .progress-bar {
     height: 100%;
     background: #f4f4f5;
     width: 0%;
-    border-radius: 5px;
+    border-radius: var(--radius-sm, 4px);
     position: relative;
 }
 
@@ -1283,127 +1244,18 @@ body.player-modal-open {
     width: 12px;
     height: 12px;
     background: #fff;
-    border-radius: 50%;
+    border-radius: var(--radius-circle, 50%);
     transition: transform 0.1s ease;
 }
 
-.progress-container:hover .progress-bar::after {
-    transform: translateY(-50%) scale(1);
-}
-
 /* Controls Row */
-.controls-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.controls-left, .controls-right {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.control-btn {
-    background: none;
-    border: none;
-    color: #fff;
-    cursor: pointer;
-    width: 32px;
-    height: 32px;
-    padding: 4px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background-color 160ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.control-btn:hover {
-    background: rgba(255,255,255,0.1);
-}
-
-.control-btn:active {
-    transform: scale(0.97);
-}
-
-.control-btn svg {
-    width: 20px;
-    height: 20px;
-    fill: currentColor;
-}
 
 /* Specific button styles */
-.pip-btn svg {
-    width: 22px; /* Slightly larger for the detailed icon */
-    height: 22px;
-}
-
-.time-display {
-    color: #fff;
-    font-size: 13px;
-    font-variant-numeric: tabular-nums;
-    font-family: var(--font-family);
-}
 
 /* Volume Control */
-.volume-container {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    position: relative;
-}
-
-.volume-slider-container {
-    width: 0;
-    overflow: hidden;
-    transition: width 0.2s ease;
-    display: flex;
-    align-items: center;
-}
-
-.volume-container:hover .volume-slider-container,
-.volume-slider-container:hover {
-    width: 80px;
-}
-
-.volume-slider {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 100%;
-    height: 4px;
-    background: rgba(255,255,255,0.3);
-    border-radius: 2px;
-    outline: none;
-}
-
-.volume-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 12px;
-    height: 12px;
-    background: #fff;
-    border-radius: 50%;
-    cursor: pointer;
-}
 
 /* Animations & States */
-.control-btn.active {
-    color: #ffffff;
-    background: rgba(255, 255, 255, 0.16);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
-}
 
-@media (max-width: 768px) {
-    .custom-controls {
-        opacity: 1; /* Always show on mobile for now, or implement tap handling */
-        padding: 20px 10px 10px;
-    }
-    
-    .volume-slider-container {
-        display: none; /* Simplify on mobile */
-    }
-}
 
 
 /* Seasonvar uses the same surface; this bridge remains data-only for cleaner. */
@@ -1434,7 +1286,7 @@ body.player-modal-open {
     bottom: calc(20px + 36px + 12px + env(safe-area-inset-bottom, 0px));
     right: 20px;
     max-width: calc(100vw - 40px);
-    z-index: var(--z-modal, 1000);
+    z-index: var(--z-modal, 10000);
     display: flex;
     align-items: center;
     gap: 12px;
@@ -1443,7 +1295,7 @@ body.player-modal-open {
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
-    border-radius: 100px;
+    border-radius: var(--radius-md, 8px);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
     cursor: pointer;
     transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1), border-color 180ms ease, box-shadow 180ms ease;
@@ -1474,7 +1326,7 @@ body.player-modal-open {
     text-align: left;
     background: none;
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--radius-md, 8px);
     cursor: pointer;
 }
 
@@ -1508,13 +1360,13 @@ body.player-modal-open {
 .restore-icon {
     width: 32px;
     height: 32px;
-    border-radius: 50%;
+    border-radius: var(--radius-circle, 50%);
     background: var(--theme-text-primary);
     color: var(--theme-bg-primary);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
+    font-size: var(--font-size-2xs, 11px);
     font-weight: 700;
     line-height: 1;
     flex-shrink: 0;
@@ -1532,7 +1384,7 @@ body.player-modal-open {
 
 .restore-title {
     font-family: var(--font-family);
-    font-size: 13px;
+    font-size: var(--font-size-sm, 13px);
     font-weight: 600;
     color: var(--theme-text-primary);
     max-width: 180px;
@@ -1544,7 +1396,7 @@ body.player-modal-open {
 
 .restore-subtitle {
     font-family: var(--font-family);
-    font-size: 11px;
+    font-size: var(--font-size-2xs, 11px);
     color: var(--theme-text-muted);
     line-height: 1.2;
 }
@@ -1556,11 +1408,11 @@ body.player-modal-open {
     width: 32px;
     height: 32px;
     flex: 0 0 32px;
-    border-radius: 50%;
+    border-radius: var(--radius-circle, 50%);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
+    font-size: var(--font-size-md, 14px);
     cursor: pointer;
     transition: background-color 160ms ease, color 160ms ease;
     margin-left: 4px;
@@ -1624,7 +1476,7 @@ body.player-modal-open {
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 14px;
+    border-radius: var(--radius-lg, 12px);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
     max-width: 340px;
     min-width: 250px;
@@ -1658,7 +1510,7 @@ body.player-modal-open {
 }
 
 .player-autonext-prompt__countdown {
-    font-size: 13px;
+    font-size: var(--font-size-sm, 13px);
     font-weight: 600;
     letter-spacing: 0.01em;
     color: var(--ui-color-interactive);
@@ -1669,7 +1521,7 @@ body.player-modal-open {
 }
 
 .player-autonext-prompt__target {
-    font-size: 13px;
+    font-size: var(--font-size-sm, 13px);
     font-weight: 500;
     line-height: 1.35;
     color: var(--theme-text-primary, #fff);
@@ -1691,19 +1543,19 @@ body.player-modal-open {
 
 .player-autonext-prompt__btn-play {
     flex: 1 1 auto;
-    font-size: 12px;
+    font-size: var(--font-size-xs, 12px);
     font-weight: 600;
     padding: 6px 14px;
-    border-radius: 8px;
+    border-radius: var(--radius-md, 8px);
     cursor: pointer;
 }
 
 .player-autonext-prompt__btn-cancel {
     flex: 0 0 auto;
-    font-size: 12px;
+    font-size: var(--font-size-xs, 12px);
     font-weight: 500;
     padding: 6px 12px;
-    border-radius: 8px;
+    border-radius: var(--radius-md, 8px);
     cursor: pointer;
 }
 
@@ -1737,7 +1589,7 @@ body.player-modal-open {
 .player-episode-picker {
     --popover-surface-bg: rgba(18, 18, 22, 0.96);
     --popover-surface-border: rgba(255, 255, 255, 0.12);
-    --popover-surface-radius: 14px;
+    --popover-surface-radius: var(--radius-lg, 12px);
     --popover-surface-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
     --popover-surface-backdrop: blur(20px);
     position: absolute;
@@ -1783,7 +1635,7 @@ body.player-modal-open {
 }
 
 .player-episode-picker__title {
-    font-size: 13px;
+    font-size: var(--font-size-sm, 13px);
     font-weight: 600;
     color: var(--theme-text-primary);
 }
@@ -1797,7 +1649,7 @@ body.player-modal-open {
     margin: -4px -6px -4px 0;
     background: transparent;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-md, 8px);
     color: var(--theme-text-secondary);
     cursor: pointer;
     transition: color 140ms ease, background 140ms ease;
@@ -1834,7 +1686,7 @@ body.player-modal-open {
 }
 
 .player-episode-picker__label {
-    font-size: 11px;
+    font-size: var(--font-size-2xs, 11px);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -1860,7 +1712,7 @@ body.player-modal-open {
 
 .player-episode-picker__seasons::-webkit-scrollbar-track {
     background: rgba(255, 255, 255, 0.03);
-    border-radius: 4px;
+    border-radius: var(--radius-sm, 4px);
 }
 
 .light-theme .player-episode-picker__seasons::-webkit-scrollbar-track {
@@ -1869,7 +1721,7 @@ body.player-modal-open {
 
 .player-episode-picker__seasons::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm, 4px);
     transition: background 140ms ease;
 }
 
@@ -1890,10 +1742,10 @@ body.player-modal-open {
     align-items: center;
     justify-content: center;
     padding: 4px 12px;
-    font-size: 12px;
-    font-weight: 550;
+    font-size: var(--font-size-xs, 12px);
+    font-weight: 600;
     white-space: nowrap;
-    border-radius: 8px;
+    border-radius: var(--radius-md, 8px);
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: var(--theme-text-secondary);
@@ -1949,7 +1801,7 @@ body.player-modal-open {
 .player-episode-picker__body::-webkit-scrollbar-track,
 .player-episode-picker__episodes::-webkit-scrollbar-track {
     background: rgba(255, 255, 255, 0.03);
-    border-radius: 4px;
+    border-radius: var(--radius-sm, 4px);
 }
 
 .light-theme .player-episode-picker__body::-webkit-scrollbar-track,
@@ -1960,7 +1812,7 @@ body.player-modal-open {
 .player-episode-picker__body::-webkit-scrollbar-thumb,
 .player-episode-picker__episodes::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm, 4px);
     transition: background 140ms ease;
 }
 
@@ -1984,9 +1836,9 @@ body.player-modal-open {
     align-items: center;
     justify-content: center;
     height: 36px;
-    font-size: 13px;
+    font-size: var(--font-size-sm, 13px);
     font-weight: 600;
-    border-radius: 8px;
+    border-radius: var(--radius-md, 8px);
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: var(--theme-text-primary);
@@ -2028,7 +1880,7 @@ body.player-modal-open {
     position: absolute;
     top: 2px;
     right: 4px;
-    font-size: 11px;
+    font-size: var(--font-size-2xs, 11px);
     font-weight: 700;
     line-height: 1;
     color: var(--ui-color-content-muted);
@@ -2081,9 +1933,9 @@ body.player-modal-open {
     color: var(--ui-color-content);
     background: var(--ui-color-surface);
     border: 1px solid var(--ui-color-border);
-    border-radius: 8px;
+    border-radius: var(--radius-md, 8px);
     font-family: var(--font-family);
-    font-size: 13px;
+    font-size: var(--font-size-sm, 13px);
     text-align: center;
     -moz-appearance: textfield;
 }
@@ -2103,7 +1955,7 @@ body.player-modal-open {
 
 .player-episode-picker__hint {
     color: var(--ui-color-content-muted);
-    font-size: 12px;
+    font-size: var(--font-size-xs, 12px);
 }
 
 .player-episode-picker__ranges {
@@ -2118,9 +1970,9 @@ body.player-modal-open {
     color: var(--ui-color-content-muted);
     background: transparent;
     border: 1px solid var(--ui-color-border);
-    border-radius: 8px;
+    border-radius: var(--radius-md, 8px);
     font-family: var(--font-family);
-    font-size: 12px;
+    font-size: var(--font-size-xs, 12px);
     font-weight: 600;
     cursor: pointer;
     transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
@@ -2147,8 +1999,8 @@ body.player-modal-open {
 .source-toolbar .watch-entry-button {
     box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
     height: 40px; min-height: 40px; padding: 0 14px; border: 1px solid var(--ui-color-border);
-    border-radius: 10px; color: var(--ui-color-content); background: var(--ui-color-surface);
-    font-family: var(--font-family, sans-serif); font-size: 14px; font-weight: 600; line-height: 20px;
+    border-radius: var(--radius-md, 8px); color: var(--ui-color-content); background: var(--ui-color-surface);
+    font-family: var(--font-family, sans-serif); font-size: var(--font-size-md, 14px); font-weight: 600; line-height: 20px;
     letter-spacing: normal; text-decoration: none; white-space: nowrap; cursor: pointer;
 }
 .source-toolbar .watch-entry-button[hidden], .watch-source-popover[hidden] { display: none; }
@@ -2166,7 +2018,7 @@ body.player-modal-open {
 .watch-source-popover {
     position: absolute; top: calc(100% + 8px); left: 0; z-index: 60;
     width: min(360px, calc(100vw - 40px)); max-height: min(420px, 60vh); overflow: auto;
-    padding: 12px; border: 1px solid var(--ui-color-border); border-radius: 14px;
+    padding: 12px; border: 1px solid var(--ui-color-border); border-radius: var(--radius-lg, 12px);
     background: var(--ui-color-surface); color: var(--ui-color-content); box-shadow: var(--popover-surface-shadow);
 }
 .watch-source-popover .source-buttons-container { display: flex; flex-wrap: wrap; gap: 8px; max-height: none; overflow: visible; }
@@ -2178,16 +2030,16 @@ body.player-modal-open {
 }
 .player-diagnostics-dialog {
     width: min(700px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 20px;
-    border: 1px solid var(--ui-color-border); border-radius: 16px;
+    border: 1px solid var(--ui-color-border); border-radius: var(--radius-xl, 16px);
     background: var(--ui-color-surface); color: var(--ui-color-content);
 }
 .player-diagnostics-dialog::backdrop { background: rgba(0, 0, 0, .6); }
-.player-diagnostics-report { max-height: 50vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--ui-color-surface-muted); border-radius: 8px; }
+.player-diagnostics-report { max-height: 50vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--ui-color-surface-muted); border-radius: var(--radius-md, 8px); }
 .player-diagnostics-status { min-height: 1.5em; color: var(--ui-color-content-muted); }
 .player-diagnostics-summary { display: grid; gap: 10px; margin: 16px 0; }
 .player-diagnostics-summary p { margin: 0; overflow-wrap: anywhere; }
 .player-diagnostics-dialog summary { cursor: pointer; padding: 8px 0; }
-.player-shortcut-help { position: absolute; z-index: 40; inset: 20% 10% auto; padding: 16px; border-radius: 12px; background: rgba(0, 0, 0, .9); color: #fff; line-height: 1.6; }
+.player-shortcut-help { position: absolute; z-index: 40; inset: 20% 10% auto; padding: 16px; border-radius: var(--radius-lg, 12px); background: rgba(0, 0, 0, .9); color: #fff; line-height: 1.6; }
 @media (max-width: 480px) {
     .watch-entry-group { flex-wrap: wrap; }
     .source-toolbar .watch-entry-button { height: 44px; min-height: 44px; }
@@ -2202,7 +2054,7 @@ body.player-modal-open {
         left: 10px;
         width: auto;
         max-width: none;
-        border-radius: 16px;
+        border-radius: var(--radius-xl, 16px);
     }
 }
 

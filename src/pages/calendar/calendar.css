@@ -14,14 +14,14 @@
     gap: 10px;
     margin: 0 0 8px;
     color: var(--theme-text-primary, #ffffff);
-    font-size: 28px;
+    font-size: var(--font-size-2xl);
     font-weight: 700;
 }
 
 .calendar-subtitle {
     margin: 0;
     color: var(--theme-text-secondary, rgba(255, 255, 255, 0.7));
-    font-size: 14px;
+    font-size: var(--font-size-md);
 }
 
 .calendar-total-badge {
@@ -30,7 +30,7 @@
     padding: 0;
     background: transparent;
     color: var(--theme-text-secondary, rgba(255, 255, 255, 0.7));
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
 }
 
@@ -39,10 +39,10 @@
 .calendar-month {
     margin-bottom: 10px;
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
     background: var(--theme-bg-card, rgba(255, 255, 255, 0.03));
-    transition: border-color 0.2s ease;
+    transition: border-color var(--motion-duration-base) var(--motion-ease-out);
 }
 
 .calendar-month:hover {
@@ -63,7 +63,7 @@
     text-align: left;
     cursor: pointer;
     user-select: none;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--motion-duration-base) var(--motion-ease-out);
 }
 
 .calendar-month-header:hover {
@@ -73,7 +73,7 @@
 .calendar-month-header:focus-visible {
     outline: 2px solid var(--theme-accent, #f4f4f5);
     outline-offset: -2px;
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
 }
 
 .calendar-month-name {
@@ -81,7 +81,7 @@
     align-items: center;
     gap: 8px;
     color: var(--theme-text-primary, #ffffff);
-    font-size: 18px;
+    font-size: var(--font-size-lg);
     font-weight: 700;
 }
 
@@ -90,7 +90,7 @@
     padding: 0;
     background: transparent;
     color: var(--theme-text-secondary, #94a3b8);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
 }
 
@@ -140,13 +140,13 @@
     padding: 14px 6px;
     border-right: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
     color: var(--theme-text-secondary, #94a3b8);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     text-transform: uppercase;
 }
 
 .calendar-day-num {
     color: var(--theme-text-primary, #ffffff);
-    font-size: 24px;
+    font-size: var(--font-size-2xl);
     font-weight: 700;
     line-height: 1;
 }
@@ -157,7 +157,7 @@
     background: var(--theme-text-primary, #f4f4f5);
     padding: 3px 6px;
     margin: -3px -6px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
 }
 
 .calendar-day-week {
@@ -175,7 +175,7 @@
     justify-content: space-between;
     gap: 16px;
     padding: 12px 20px;
-    transition: background 0.15s ease;
+    transition: background var(--motion-duration-fast) var(--motion-ease-out);
 }
 
 .calendar-episode-row + .calendar-episode-row {
@@ -196,7 +196,7 @@
     max-width: 100%;
     width: fit-content;
     color: var(--theme-text-primary, #ffffff);
-    font-size: 14px;
+    font-size: var(--font-size-md);
     font-weight: 600;
     text-decoration: none;
     white-space: nowrap;
@@ -216,7 +216,7 @@ span.calendar-show-name {
 .calendar-ep-label {
     margin-top: 4px;
     color: var(--theme-text-secondary, rgba(255, 255, 255, 0.7));
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -225,7 +225,7 @@ span.calendar-show-name {
 .calendar-countdown {
     flex-shrink: 0;
     color: var(--theme-text-secondary, #94a3b8);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -256,7 +256,7 @@ span.calendar-show-name {
 
 .skeleton-month {
     height: 52px;
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     background: var(--theme-hover-bg, rgba(255, 255, 255, 0.06));
     animation: skeletonPulse 1.4s infinite ease-in-out;
 }
@@ -269,7 +269,7 @@ span.calendar-show-name {
     justify-content: center;
     padding: 72px 24px;
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
-    border-radius: 16px;
+    border-radius: var(--radius-xl);
     background: var(--theme-bg-card, rgba(255, 255, 255, 0.02));
     color: var(--theme-text-secondary, rgba(255, 255, 255, 0.7));
     text-align: center;
@@ -286,7 +286,7 @@ span.calendar-show-name {
     display: block;
     margin-bottom: 8px;
     color: var(--theme-text-primary, #ffffff);
-    font-size: 16px;
+    font-size: var(--font-size-base);
 }
 
 @keyframes skeletonPulse {
@@ -314,7 +314,7 @@ span.calendar-show-name {
     }
 
     .calendar-title {
-        font-size: 24px;
+        font-size: var(--font-size-2xl);
     }
 
     .calendar-day-group {

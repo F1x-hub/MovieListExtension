@@ -1522,16 +1522,7 @@ class AdminPanelManager {
     }
 
     formatRussianCount(count, one, few, many) {
-        const value = Math.abs(Number(count)) % 100;
-        const lastDigit = value % 10;
-        const word = value > 10 && value < 20
-            ? many
-            : lastDigit === 1
-                ? one
-                : lastDigit >= 2 && lastDigit <= 4
-                    ? few
-                    : many;
-        return `${count} ${word}`;
+        return `${count} ${Utils.selectRussianPlural(count, [one, few, many])}`;
     }
 
     renderApprovalsTable() {
@@ -3664,12 +3655,7 @@ class AdminPanelManager {
     }
 
     pluralizeTask(count) {
-        const value = Math.abs(Number(count)) % 100;
-        const remainder = value % 10;
-        if (value > 10 && value < 20) return 'задач';
-        if (remainder > 1 && remainder < 5) return 'задачи';
-        if (remainder === 1) return 'задача';
-        return 'задач';
+        return Utils.selectRussianPlural(count, ['задача', 'задачи', 'задач']);
     }
 
     async verifyQuickManualMapping({ form, mediaType, tmdbId, kpId, submittedTitle }) {
@@ -4385,12 +4371,7 @@ class AdminPanelManager {
 
     escapeHtml(text) {
         if (!text) return '';
-        if (typeof Utils !== 'undefined' && Utils.escapeHtml) {
-            return Utils.escapeHtml(text);
-        }
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return Utils.escapeHtml(text);
     }
 }
 

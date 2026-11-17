@@ -138,41 +138,18 @@ class SequelsParsingService {
     }
 
     saveToCache(movieId, data) {
-        try {
-            const cacheEntry = {
-                timestamp: Date.now(),
-                data: data
-            };
-            localStorage.setItem(this.storageKey + movieId, JSON.stringify(cacheEntry));
-        } catch (e) {
-            console.warn('Failed to save sequels to cache', e);
-        }
+        Utils.writeTtlCache(this.storageKey + movieId, data);
     }
 
     getFromCache(movieId) {
-        try {
-            const json = localStorage.getItem(this.storageKey + movieId);
-            if (!json) return null;
-
-            const cacheEntry = JSON.parse(json);
-            if (Date.now() - cacheEntry.timestamp > this.cacheDuration) {
-                localStorage.removeItem(this.storageKey + movieId);
-                return null;
-            }
-
-            // Sanitize URLs from cache just in case
-            if (cacheEntry.data && Array.isArray(cacheEntry.data)) {
-                cacheEntry.data.forEach(item => {
-                    if (item.posterUrl && item.posterUrl.startsWith('//')) {
-                        item.posterUrl = 'https:' + item.posterUrl;
-                    }
-                });
-            }
-
-            return cacheEntry.data;
-        } catch {
-            return null;
+        const data = Utils.readTtlCache(this.storageKey + movieId, this.cacheDuration);
+        // Old entries may hold protocol-relative posters.
+        if (Array.isArray(data)) {
+            data.forEach(item => {
+                if (item?.posterUrl?.startsWith('//')) item.posterUrl = 'https:' + item.posterUrl;
+            });
         }
+        return data;
     }
 }
 

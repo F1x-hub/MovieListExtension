@@ -1,6 +1,10 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
+import { createRequire } from 'node:module';
+
+// Movie Details loads Utils.js; extracted methods call it as a global.
+globalThis.Utils ??= createRequire(import.meta.url)('../src/shared/utils/Utils.js');
 
 const { MovieDetailsPlayerSurface } = await import('../src/pages/movie-details/PlayerSurface.js')
     .then(module => module.default || module);
@@ -17,7 +21,8 @@ const methodSource = [
     source,
     read('../src/pages/movie-details/TorrentSourcePanel.js'),
     read('../src/pages/movie-details/WatchRoomPanel.js'),
-    read('../src/pages/movie-details/MetaRenderer.js')
+    read('../src/pages/movie-details/MetaRenderer.js'),
+    read('../src/pages/movie-details/UserRatingsPanel.js')
 ].join('\n');
 
 function extractMethod(name) {
@@ -478,7 +483,7 @@ return isTrustedHostMessage;`);
     assert.match(html, /<script defer src="ModalStack\.js"><\/script>\s*(?:<script defer src="[^"]+"><\/script>\s*)*<script defer src="movie-details\.js" type="module">/, 'modal stack must load before MovieDetails');
     assert.doesNotMatch(source, /[^.\w]confirm\(/, 'MovieDetails must use the in-page confirmation dialog instead of window.confirm()');
     for (const id of ['confirm', 'announce', 'review-reader', 'torrent-panel', 'watch-room-invite', 'episode-picker', 'trailer', 'rating', 'video-player', 'comment-reaction-picker']) {
-        assert.match(source, new RegExp(`register\\('${id}'`), `${id} must be a modal stack layer`);
+        assert.match(methodSource, new RegExp(`register\\('${id}'`), `${id} must be a modal stack layer`);
     }
 }
 

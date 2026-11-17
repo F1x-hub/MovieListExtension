@@ -923,9 +923,7 @@ class MovieDetailsTorrentPanelMethods {
                 else unnamed += 1;
             }
             const parts = [...counts].map(([name, count]) => (count > 1 ? `${name} ×${count}` : name));
-            const tens = unnamed % 100;
-            const noun = unnamed % 10 === 1 && tens !== 11 ? 'дорожка'
-                : unnamed % 10 >= 2 && unnamed % 10 <= 4 && (tens < 12 || tens > 14) ? 'дорожки' : 'дорожек';
+            const noun = Utils.selectRussianPlural(unnamed, ['дорожка', 'дорожки', 'дорожек']);
             if (unnamed && counts.size) parts.push(`ещё ${unnamed} без языка`);
             else if (unnamed) parts.push(unnamed === 1 ? 'язык не указан' : `${unnamed} ${noun}, язык не указан`);
             return parts.join(', ');

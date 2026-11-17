@@ -372,7 +372,7 @@ console.log('\n--- 6. Testing Filmography Filters & Initial 20-Item Bounds ---')
     assert.ok(personDetailsCss.includes('font-variant-numeric: tabular-nums'), 'Section counts use quiet numeric styling');
     assert.ok(!personDetailsCss.includes('.person-section__count {\n    font-size: 14px'), 'Section counts no longer use oversized pill styling');
     assert.ok(personDetailsCss.includes('.filmography-filter-pill {'), 'Filmography filter selector remains scoped');
-    assert.ok(personDetailsCss.includes('border-radius: var(--radius-sm, 6px);'), 'Filmography filters use compact rectangular controls');
+    assert.ok(/\.filmography-filter-pill \{\s*padding: 6px 14px;\s*border-radius: var\(--radius-sm\);/.test(personDetailsCss), 'Filmography filters use compact rectangular controls');
     assert.ok(personDetailsCss.includes('.carousel-nav-btn {'), 'Carousel controls remain scoped to PersonDetails');
     assert.ok(personDetailsCss.includes('z-index: 20;'), 'Carousel controls stay above hovered movie cards');
     assert.ok(personDetailsCss.includes('.person-details-content .movie-card-component.mc-variant-search {'), 'PersonDetails movie cards use local rectangular styling');

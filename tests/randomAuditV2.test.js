@@ -85,6 +85,7 @@ function harness() {
         requestAnimationFrame: callback => frames.push(callback), performance: { now: () => 0 }
     };
     for (const file of [
+        'src/shared/utils/Utils.js',
         'src/shared/config/discoveryFilters.js',
         'src/shared/components/FilterControls.js',
         'src/shared/utils/PosterUrl.js',
@@ -96,6 +97,7 @@ function harness() {
         runInNewContext(read(file), context);
     }
     context.MovieCard = dom.window.MovieCard;
+    context.Utils = dom.window.Utils;
     context.DiscoveryFilters = dom.window.DiscoveryFilters;
     context.FilterChoice = dom.window.FilterChoice;
     context.RangeControl = dom.window.RangeControl;

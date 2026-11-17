@@ -162,7 +162,7 @@ async function main() {
                     assert.equal(metrics.duplicatedValues, false, `${surface}: range values are not displayed twice`);
                     for (const chip of metrics.chips) {
                         assert.ok(chip.height >= 44 && chip.height <= 45, `${surface}: chips keep a compact 44px hit target (${chip.height})`);
-                        assert.ok(chip.radius >= 100, `${surface}: discovery choices stay pill-shaped`);
+                        assert.equal(chip.radius, 8, `${surface}: discovery choices use the control radius, not a pill`);
                     }
                     if (surface === 'random') assert.equal(metrics.padding, 0, 'Random header/body own padding without an inset square header');
                     if (surface === 'random' && width === 390) assert.ok(metrics.height < 1200, 'Mobile Random avoids showing the full genre/country directory');

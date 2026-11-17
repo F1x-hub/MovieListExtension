@@ -47,9 +47,9 @@
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
-    border-radius: 20px;
+    border-radius: var(--radius-xl);
     padding: 20px 14px;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    box-shadow: var(--elevation-3);
     transition: var(--transition, all 0.2s ease);
 }
 
@@ -59,7 +59,7 @@
 }
 
 .sidebar-header h2 {
-    font-size: 1.15rem;
+    font-size: var(--font-size-lg);
     font-weight: 700;
     letter-spacing: -0.01em;
     color: var(--theme-text-primary, #ffffff);
@@ -84,12 +84,12 @@
     padding: 12px 14px;
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     color: var(--theme-text-secondary, #a1a1aa);
-    font-size: 14px;
+    font-size: var(--font-size-md);
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), filter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: background-color var(--motion-duration-base) var(--motion-ease-out), border-color var(--motion-duration-base) var(--motion-ease-out), color var(--motion-duration-base) var(--motion-ease-out), opacity var(--motion-duration-base) var(--motion-ease-out), transform var(--motion-duration-base) var(--motion-ease-out), box-shadow var(--motion-duration-base) var(--motion-ease-out), filter var(--motion-duration-base) var(--motion-ease-out);
     text-align: left;
     width: 100%;
     user-select: none;
@@ -116,7 +116,7 @@
     height: 20px;
     flex-shrink: 0;
     color: currentColor;
-    transition: color 0.2s ease;
+    transition: color var(--motion-duration-base) var(--motion-ease-out);
 }
 
 .sidebar-icon svg {
@@ -138,7 +138,7 @@
     color: var(--theme-text-muted, #71717a) !important;
     padding: 0;
     border-radius: 0;
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     font-weight: 600;
     font-family: ui-monospace, SFMono-Regular, monospace;
     min-width: 0;
@@ -174,7 +174,7 @@
 }
 
 .sidebar-header-sm span {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     font-weight: 700;
     color: var(--theme-text-muted, #71717a);
     letter-spacing: 0.08em;
@@ -190,10 +190,10 @@
     padding: 0;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     color: var(--theme-text-secondary, #a1a1aa);
     cursor: pointer;
-    transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), filter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: background-color var(--motion-duration-base) var(--motion-ease-out), border-color var(--motion-duration-base) var(--motion-ease-out), color var(--motion-duration-base) var(--motion-ease-out), opacity var(--motion-duration-base) var(--motion-ease-out), transform var(--motion-duration-base) var(--motion-ease-out), box-shadow var(--motion-duration-base) var(--motion-ease-out), filter var(--motion-duration-base) var(--motion-ease-out);
 }
 
 .icon-btn:hover {
@@ -217,11 +217,11 @@
     padding: 8px 12px;
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 10px;
+    border-radius: var(--radius-md);
     color: var(--theme-text-secondary, #a1a1aa);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     cursor: pointer;
-    transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), filter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: background-color var(--motion-duration-base) var(--motion-ease-out), border-color var(--motion-duration-base) var(--motion-ease-out), color var(--motion-duration-base) var(--motion-ease-out), opacity var(--motion-duration-base) var(--motion-ease-out), transform var(--motion-duration-base) var(--motion-ease-out), box-shadow var(--motion-duration-base) var(--motion-ease-out), filter var(--motion-duration-base) var(--motion-ease-out);
     text-align: left;
     width: 100%;
 }
@@ -240,7 +240,7 @@
 }
 
 .collection-icon {
-    font-size: 16px;
+    font-size: var(--font-size-base);
 }
 
 .collection-name {
@@ -267,7 +267,7 @@
 }
 
 .content-header h1 {
-    font-size: 1.75rem;
+    font-size: var(--font-size-2xl);
     font-weight: 800;
     letter-spacing: -0.02em;
     color: var(--theme-text-primary, #ffffff);
@@ -283,10 +283,10 @@
     padding: 0;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
+    border-radius: var(--radius-md);
     color: var(--theme-text-secondary, #a1a1aa);
     cursor: pointer;
-    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    transition: background-color var(--motion-duration-base) var(--motion-ease-out), border-color var(--motion-duration-base) var(--motion-ease-out), color var(--motion-duration-base) var(--motion-ease-out), opacity var(--motion-duration-base) var(--motion-ease-out), transform var(--motion-duration-base) var(--motion-ease-out), box-shadow var(--motion-duration-base) var(--motion-ease-out), filter var(--motion-duration-base) var(--motion-ease-out);
 }
 
 /* The collection menu opens under its button, outside it: a menu inside the
@@ -356,13 +356,13 @@
     height: 42px;
     padding: 0 38px 0 14px;
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     background: rgba(24, 24, 27, 0.65);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     color: var(--theme-text-primary, #ffffff);
-    font-size: 14px;
-    transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), filter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    font-size: var(--font-size-md);
+    transition: background-color var(--motion-duration-base) var(--motion-ease-out), border-color var(--motion-duration-base) var(--motion-ease-out), color var(--motion-duration-base) var(--motion-ease-out), opacity var(--motion-duration-base) var(--motion-ease-out), transform var(--motion-duration-base) var(--motion-ease-out), box-shadow var(--motion-duration-base) var(--motion-ease-out), filter var(--motion-duration-base) var(--motion-ease-out);
 }
 
 .search-wrapper input:focus {
@@ -395,15 +395,15 @@
     height: 42px;
     padding: 0 36px 0 14px;
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     background-color: rgba(24, 24, 27, 0.65);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     color: var(--theme-text-primary, #ffffff);
-    font-size: 14px;
+    font-size: var(--font-size-md);
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), filter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: background-color var(--motion-duration-base) var(--motion-ease-out), border-color var(--motion-duration-base) var(--motion-ease-out), color var(--motion-duration-base) var(--motion-ease-out), opacity var(--motion-duration-base) var(--motion-ease-out), transform var(--motion-duration-base) var(--motion-ease-out), box-shadow var(--motion-duration-base) var(--motion-ease-out), filter var(--motion-duration-base) var(--motion-ease-out);
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
@@ -445,14 +445,14 @@
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
-    border-radius: 18px;
+    border-radius: var(--radius-xl);
     overflow: hidden;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--elevation-3);
 }
 
 .bookmarks-content .mc-poster-container {
     height: 275px;
-    border-radius: 18px 18px 0 0;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 
 .bookmarks-content .mc-content {
@@ -467,45 +467,15 @@
 }
 
 /* Loading Section */
-.loading-section {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 320px;
-}
-
-.spinner {
-    width: 36px;
-    height: 36px;
-    border: 3px solid rgba(255, 255, 255, 0.1);
-    border-top-color: var(--theme-text-primary, #ffffff);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-}
 
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
 
-/* Empty State */
-.empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 64px 24px;
-    text-align: center;
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.06));
-    border-radius: 20px;
-    margin: 20px 0;
-    width: 100%;
-}
-
 .empty-icon {
     width: 64px;
     height: 64px;
-    border-radius: 50%;
+    border-radius: var(--radius-circle);
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
     display: flex;
@@ -513,19 +483,6 @@
     justify-content: center;
     color: var(--theme-text-muted, #71717a);
     margin-bottom: 16px;
-}
-
-.empty-state h3 {
-    font-size: 1.15rem;
-    font-weight: 700;
-    color: var(--theme-text-primary, #ffffff);
-    margin: 0 0 6px;
-}
-
-.empty-state p {
-    color: var(--theme-text-muted, #a1a1aa);
-    margin: 0;
-    font-size: 14px;
 }
 
 /* Responsive Design */
@@ -635,7 +592,7 @@
 .light-theme .bookmarks-sidebar {
     background: rgba(255, 255, 255, 0.85);
     border-color: rgba(9, 9, 11, 0.08);
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--elevation-1);
 }
 
 .light-theme .sidebar-header h2,
@@ -680,9 +637,4 @@
 .light-theme .custom-select option {
     background: #ffffff;
     color: #09090b;
-}
-
-.light-theme .spinner {
-    border-color: rgba(9, 9, 11, 0.1);
-    border-top-color: #09090b;
 }

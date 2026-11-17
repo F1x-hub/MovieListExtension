@@ -18,6 +18,7 @@ const FILM = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 4l2 4h-3
 
 function openWindow() {
     const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://extension.test/', runScripts: 'outside-only' });
+    dom.window.eval(`${read('src/shared/utils/Utils.js')}`);
     dom.window.eval(`${read('src/shared/services/CollectionService.js')}\n;window.CollectionService = CollectionService;`);
     dom.window.eval(read('src/shared/data/collectionIcons.js'));
     return dom.window;

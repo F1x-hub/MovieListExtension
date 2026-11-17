@@ -970,12 +970,7 @@ class MovieCard {
             }
         };
 
-        const formatVotes = (votes) => {
-            if (!votes) return '';
-            if (votes >= 1000000) return (votes / 1000000).toFixed(1) + 'M';
-            if (votes >= 1000) return (votes / 1000).toFixed(0) + 'k';
-            return votes.toString();
-        };
+        const formatVotes = (votes) => (votes ? Utils.formatCompactNumber(votes) : '');
 
         // Extract data
         const posterUrl = (typeof PosterUrl !== 'undefined' ? PosterUrl.safe(movie.posterUrl) : '')

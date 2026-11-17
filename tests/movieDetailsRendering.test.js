@@ -134,6 +134,7 @@ const utilsContext = vm.createContext({ module: { exports: {} } });
 vm.runInContext(fs.readFileSync(new URL('../src/shared/utils/Utils.js', import.meta.url), 'utf8'), utilsContext);
 const utilsStub = {
     selectRussianPlural: utilsContext.module.exports.selectRussianPlural,
+    formatCompactNumber: utilsContext.module.exports.formatCompactNumber,
     createPageStateManager: () => ({}),
     escapeHtml: escapeHtmlHelper,
     normalizeRatingComment: (v) => {
@@ -191,6 +192,7 @@ const context = vm.createContext({
 
 vm.runInContext(fs.readFileSync(new URL('../src/pages/movie-details/PlayerSurface.js', import.meta.url), 'utf8'), context);
 vm.runInContext(fs.readFileSync(new URL('../src/pages/movie-details/MetaRenderer.js', import.meta.url), 'utf8'), context);
+vm.runInContext(fs.readFileSync(new URL('../src/pages/movie-details/UserRatingsPanel.js', import.meta.url), 'utf8'), context);
 vm.runInContext(source, context);
 
 const MovieDetailsManager = context.window.MovieDetailsManager;

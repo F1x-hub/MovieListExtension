@@ -86,32 +86,11 @@ class SeasonsParsingService {
     }
 
     saveToCache(movieId, data) {
-        try {
-            const cacheEntry = {
-                timestamp: Date.now(),
-                data: data
-            };
-            localStorage.setItem(this.storageKey + movieId, JSON.stringify(cacheEntry));
-        } catch (e) {
-            console.warn('Failed to save seasons to cache', e);
-        }
+        Utils.writeTtlCache(this.storageKey + movieId, data);
     }
 
     getFromCache(movieId) {
-        try {
-            const json = localStorage.getItem(this.storageKey + movieId);
-            if (!json) return null;
-
-            const cacheEntry = JSON.parse(json);
-            if (Date.now() - cacheEntry.timestamp > this.cacheDuration) {
-                localStorage.removeItem(this.storageKey + movieId);
-                return null;
-            }
-
-            return cacheEntry.data;
-        } catch {
-            return null;
-        }
+        return Utils.readTtlCache(this.storageKey + movieId, this.cacheDuration);
     }
 }
 

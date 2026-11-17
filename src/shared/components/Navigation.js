@@ -1139,9 +1139,10 @@ class Navigation {
     }
 
     escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        // Quote-safe: the result also goes into attribute values. Utils is not loaded on every page.
+        if (typeof Utils !== 'undefined' && Utils.escapeHtml) return Utils.escapeHtml(text);
+        if (text === null || text === undefined) return '';
+        return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
 
     async updateCounts() {

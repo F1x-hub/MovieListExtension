@@ -383,7 +383,7 @@ class HomeDataController {
     async readStorage(key) {
         try {
             const result = await chrome.storage.local.get([key]);
-            return result?.[key] || null;
+            return result?.[key] ?? null;
         } catch {
             return null;
         }

@@ -197,7 +197,7 @@ const settingsScript = read('src/pages/settings/settings.js');
 assert.doesNotMatch(movieDetails, /rgba\(\s*(?:59\s*,\s*130\s*,\s*246|168\s*,\s*85\s*,\s*247|42\s*,\s*171\s*,\s*238)/i);
 assert.match(movieDetails, /\.tab-btn\.disabled\s*\{[\s\S]*?color:\s*var\(--theme-text-muted\);[\s\S]*?opacity:\s*1;/);
 assert.match(movieDetails, /\.torrent-playback-status__metrics\s*\{[\s\S]*?flex-wrap:\s*wrap;/);
-assert.match(movieDetails, /\.torrent-playback-status__download-fill[\s\S]*?\{[\s\S]*?transition:\s*width 220ms ease-out;/);
+assert.match(movieDetails, /\.torrent-playback-status__download-fill[\s\S]*?\{[\s\S]*?transition:\s*width var\(--motion-duration-slow\) var\(--motion-ease-out\);/);
 assert.match(movieDetails, /\.torrent-playback-status\[data-state="error"\]/);
 assert.match(movieDetails, /\.torrent-playback-status\[hidden\][\s\S]*?display:\s*none !important;/);
 assert.match(movieDetails, /\.torrent-source-panel\s*\{[\s\S]*?contain:\s*size;/);

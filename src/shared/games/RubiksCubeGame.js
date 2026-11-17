@@ -20,10 +20,6 @@ const HISTORY_LIMIT = 50;
 // Net layout of the flat fallback view: [face, column, row] on a 4×3 grid of faces.
 const NET_LAYOUT = [['U', 2, 1], ['L', 1, 2], ['F', 2, 2], ['R', 3, 2], ['B', 4, 2], ['D', 2, 3]];
 
-export function invertRubiksMove(move, size = 3) {
-    return invertMove(move, size);
-}
-
 /** "1:15" while running; with `precise`, hundredths are added ("1:15.90"). */
 export function formatRubiksTime(totalSeconds, { precise = false } = {}) {
     const value = Math.max(0, Number(totalSeconds) || 0);

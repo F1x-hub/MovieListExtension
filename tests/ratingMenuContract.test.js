@@ -4,7 +4,8 @@ import fs from 'node:fs';
 console.log('🧪 Running rating menu contract & regression tests...');
 
 const read = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
-const movieDetailsJs = read('../src/pages/movie-details/movie-details.js');
+// The ratings list and its menu live in UserRatingsPanel.js, installed onto MovieDetails.
+const movieDetailsJs = [read('../src/pages/movie-details/movie-details.js'), read('../src/pages/movie-details/UserRatingsPanel.js')].join('\n');
 const movieDetailsCss = read('../src/pages/movie-details/movie-details.css');
 const utilsJs = read('../src/shared/utils/Utils.js');
 

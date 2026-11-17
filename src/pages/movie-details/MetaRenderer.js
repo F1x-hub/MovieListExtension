@@ -313,12 +313,7 @@ class MovieDetailsMetaRendererMethods {
     // Utility Methods
     formatVotes(num) {
         if (!num) return '0';
-        const locale = i18n?.currentLocale === 'en' ? 'en' : 'ru';
-        try {
-            return new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(num);
-        } catch {
-            return String(num);
-        }
+        return Utils.formatCompactNumber(num, i18n?.currentLocale);
     }
 
     metaLabel(key) {
@@ -371,6 +366,167 @@ class MovieDetailsMetaRendererMethods {
         } catch {
             return englishName;
         }
+    }
+
+    // The Numbers chart: the hover tooltip that follows the pointer over the chart.
+    setupTheNumbersChartTooltip() {
+        if (this._theNumbersChartTooltipEventsSetup) return;
+        this._theNumbersChartTooltipEventsSetup = true;
+
+        document.addEventListener('mousemove', event => {
+            const viewport = event.target?.closest?.('.the-numbers-chart__viewport');
+            if (viewport) this.showTheNumbersChartTooltipAtX(viewport, event.clientX);
+        }, true);
+
+        document.addEventListener('mouseout', event => {
+            const viewport = event.target?.closest?.('.the-numbers-chart__viewport');
+            const relatedViewport = event.relatedTarget?.closest?.('.the-numbers-chart__viewport');
+            if (viewport && viewport !== relatedViewport) this.hideTheNumbersChartTooltip();
+        }, true);
+
+        document.addEventListener('focusin', event => {
+            const point = event.target?.closest?.('.the-numbers-chart__point-hit-area');
+            const viewport = point?.closest?.('.the-numbers-chart__viewport');
+            const index = Number(point?.dataset?.chartIndex);
+            if (viewport && Number.isInteger(index)) this.showTheNumbersChartTooltipAtIndex(viewport, index);
+        });
+
+        document.addEventListener('focusout', event => {
+            if (event.target?.closest?.('.the-numbers-chart__point-hit-area')) {
+                this.hideTheNumbersChartTooltip();
+            }
+        });
+    }
+
+    getTheNumbersChartIndexAtX(viewport, clientX) {
+        const svg = viewport?.querySelector?.('.the-numbers-chart__svg');
+        const svgRect = svg?.getBoundingClientRect?.();
+        const metadata = viewport?.dataset || {};
+        const viewBoxWidth = Number(metadata.chartViewWidth);
+        const plotLeft = Number(metadata.chartPlotLeft);
+        const plotWidth = Number(metadata.chartPlotWidth);
+        const pointCount = Number(metadata.chartPointCount);
+        if (!svgRect?.width || !Number.isFinite(clientX) || !Number.isFinite(viewBoxWidth)
+            || !Number.isFinite(plotLeft) || !Number.isFinite(plotWidth) || !Number.isInteger(pointCount)
+            || pointCount < 2) return null;
+
+        const viewX = ((clientX - svgRect.left) / svgRect.width) * viewBoxWidth;
+        const normalizedX = Math.max(0, Math.min(1, (viewX - plotLeft) / plotWidth));
+        return Math.round(normalizedX * (pointCount - 1));
+    }
+
+    showTheNumbersChartTooltipAtX(viewport, clientX) {
+        const index = this.getTheNumbersChartIndexAtX(viewport, clientX);
+        if (index !== null) this.showTheNumbersChartTooltipAtIndex(viewport, index);
+    }
+
+    showTheNumbersChartTooltipAtIndex(viewport, index) {
+        const point = viewport?.querySelector?.(`.the-numbers-chart__point-hit-area[data-chart-index="${index}"]`);
+        const chart = viewport?.closest?.('.the-numbers-chart');
+        const tooltip = chart?.querySelector('.the-numbers-chart__tooltip');
+        if (!point || !tooltip) return;
+
+        if (this._theNumbersChartTooltipViewport !== viewport) this.hideTheNumbersChartTooltip();
+        const samePoint = this._theNumbersChartTooltipPoint === point;
+        this.updateTheNumbersChartHover(viewport, index, point);
+        this._theNumbersChartTooltipViewport = viewport;
+        this._theNumbersChartTooltipPoint = point;
+        if (samePoint) {
+            this.positionTheNumbersChartTooltip(point);
+            return;
+        }
+
+        const rows = [
+            ['Cume:', point.dataset.chartCume, 'cume'],
+            ['Median:', point.dataset.chartMedian, 'median'],
+            ['Bottom 10%:', point.dataset.chartBottom10, 'bottom'],
+            ['Top 10%:', point.dataset.chartTop10, 'top']
+        ].filter(([, value]) => value !== undefined && value !== '');
+
+        tooltip.innerHTML = `
+            <div class="the-numbers-chart__tooltip-date">${this.escapeHtml(point.dataset.chartDate || '')}</div>
+            ${rows.map(([label, value, tone]) => `
+                <div class="the-numbers-chart__tooltip-row">
+                    <span class="the-numbers-chart__tooltip-swatch the-numbers-chart__tooltip-swatch--${tone}" aria-hidden="true"></span>
+                    <span class="the-numbers-chart__tooltip-label">${label}</span>
+                    <strong>${this.escapeHtml(this.formatTheNumbersAmount(value))}</strong>
+                </div>
+            `).join('')}`;
+        tooltip.hidden = false;
+        tooltip.classList.add('is-visible');
+        this.positionTheNumbersChartTooltip(point);
+    }
+
+    updateTheNumbersChartHover(viewport, index, point) {
+        const svg = viewport?.querySelector?.('.the-numbers-chart__svg');
+        const activeGroup = svg?.querySelector?.('.the-numbers-chart__active-points');
+        const activeCume = activeGroup?.querySelector?.('.the-numbers-chart__active-point--cume');
+        const activeMedian = activeGroup?.querySelector?.('.the-numbers-chart__active-point--median');
+        const crosshair = activeGroup?.querySelector?.('.the-numbers-chart__crosshair');
+        if (!svg || !activeGroup || !activeCume || !activeMedian || !crosshair) return;
+
+        const cumeX = point.getAttribute('cx');
+        const cumeY = point.getAttribute('cy');
+        const medianPoint = svg.querySelector(`.the-numbers-chart__median-point[data-chart-index="${index}"]`);
+        const medianX = medianPoint?.getAttribute('cx');
+        const medianY = medianPoint?.getAttribute('cy');
+        if (!cumeX || !cumeY) return;
+
+        crosshair.setAttribute('x1', cumeX);
+        crosshair.setAttribute('x2', cumeX);
+        activeCume.setAttribute('cx', cumeX);
+        activeCume.setAttribute('cy', cumeY);
+        activeCume.style.display = '';
+        if (medianX && medianY) {
+            activeMedian.setAttribute('cx', medianX);
+            activeMedian.setAttribute('cy', medianY);
+            activeMedian.style.display = '';
+        } else {
+            activeMedian.style.display = 'none';
+        }
+        activeGroup.style.display = '';
+    }
+
+    positionTheNumbersChartTooltip(point) {
+        const chart = point?.closest?.('.the-numbers-chart');
+        const tooltip = chart?.querySelector('.the-numbers-chart__tooltip');
+        const viewport = point?.closest?.('.the-numbers-chart__viewport');
+        if (!tooltip || !viewport || tooltip.hidden) return;
+
+        const viewportRect = viewport.getBoundingClientRect();
+        const pointRect = point.getBoundingClientRect();
+        const clientX = pointRect.left + pointRect.width / 2;
+        const clientY = pointRect.top + pointRect.height / 2;
+        const gap = 12;
+        let left = clientX - viewportRect.left + gap;
+        let top = clientY - viewportRect.top - tooltip.offsetHeight - gap;
+
+        if (left + tooltip.offsetWidth > viewportRect.width - 8) {
+            left = clientX - viewportRect.left - tooltip.offsetWidth - gap;
+        }
+        if (left < 8) left = 8;
+        if (top < 8) top = clientY - viewportRect.top + gap;
+        if (top + tooltip.offsetHeight > viewportRect.height - 8) {
+            top = Math.max(8, viewportRect.height - tooltip.offsetHeight - 8);
+        }
+
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+    }
+
+    hideTheNumbersChartTooltip() {
+        const point = this._theNumbersChartTooltipPoint;
+        const viewport = this._theNumbersChartTooltipViewport || point?.closest?.('.the-numbers-chart__viewport');
+        const chart = viewport?.closest?.('.the-numbers-chart');
+        const tooltip = chart?.querySelector('.the-numbers-chart__tooltip');
+        const activeGroup = viewport?.querySelector?.('.the-numbers-chart__active-points');
+        if (tooltip) {
+            tooltip.classList.remove('is-visible');
+            tooltip.hidden = true;
+        }
+        if (activeGroup) activeGroup.style.display = 'none';
+        this._theNumbersChartTooltipPoint = null;
+        this._theNumbersChartTooltipViewport = null;
     }
 }
 

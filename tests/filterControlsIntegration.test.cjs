@@ -14,7 +14,7 @@ function fixture(page, className) {
     window.eval(read('src/shared/i18n/I18n.js').replace(/^import .*;\r?\n/gm, '').replace('export const i18n', 'const i18n').replace('export { I18n };', '').replace('this.locales = locales;', 'this.locales = window.testLocales;'));
     window.i18n.currentLocale = 'ru';
     window.i18n.translatePage();
-    for (const file of ['src/shared/config/discoveryFilters.js', 'src/shared/components/FilterControls.js', 'src/shared/components/SortControl.js']) window.eval(read(file));
+    for (const file of ['src/shared/utils/Utils.js', 'src/shared/config/discoveryFilters.js', 'src/shared/components/FilterControls.js', 'src/shared/components/SortControl.js']) window.eval(read(file));
     const listener = window.document.addEventListener;
     window.document.addEventListener = function (type, callback, options) {
         if (type !== 'DOMContentLoaded') listener.call(this, type, callback, options);
@@ -68,7 +68,7 @@ function checkRandom() {
         assert.deepEqual(saved.genres, ['комедия']);
         event(h, element('ratingFrom'), 'input', 10);
         assert.equal(Number(element('ratingTo').value) - Number(element('ratingFrom').value), 0.5, 'Random rating gap remains .5');
-        assert.equal(element('votesMaxDisplay').textContent, '2.0M', 'Vote formatting is retained');
+        assert.match(element('votesMaxDisplay').textContent, /^2\s?млн$/, 'Votes use the shared compact format');
         const filters = manager.getFilters();
         window.i18n.currentLocale = 'en';
         window.i18n.translatePage();

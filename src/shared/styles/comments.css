@@ -13,7 +13,7 @@
 
 .comment-reaction-caption {
     color: var(--theme-text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     letter-spacing: 0.02em;
 }
@@ -42,7 +42,7 @@
     min-height: 32px;
     padding: 0 8px;
     border: 1px solid var(--theme-border);
-    border-radius: 999px;
+    border-radius: var(--radius-md);
     background: var(--theme-bg-secondary);
     color: var(--theme-text-muted);
     cursor: pointer;
@@ -50,7 +50,7 @@
     white-space: nowrap;
     font: inherit;
     line-height: 1;
-    transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+    transition: transform var(--motion-duration-fast) var(--motion-ease-out), background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
 .comment-reaction-trigger {
@@ -60,14 +60,14 @@
     height: 32px;
     padding: 0;
     border: 1px dashed var(--theme-border);
-    border-radius: 50%;
+    border-radius: var(--radius-circle);
     background: transparent;
     color: var(--theme-text-muted);
     cursor: pointer;
     touch-action: manipulation;
     font: inherit;
     line-height: 1;
-    transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+    transition: transform var(--motion-duration-fast) var(--motion-ease-out), background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
 .comment-reaction-trigger > span {
@@ -86,7 +86,7 @@
     left: 50%;
     width: 14px;
     height: 1.5px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: currentColor;
     content: "";
     transform: translate(-50%, -50%);
@@ -115,9 +115,9 @@
     max-height: calc(100vh - 16px);
     padding: 6px;
     border: 1px solid var(--theme-border);
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
     background: var(--theme-bg-secondary);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+    box-shadow: var(--elevation-3);
     transform-origin: top left;
     overflow-y: auto;
 }
@@ -148,14 +148,14 @@
     min-height: 32px;
     padding: 0 4px;
     border: 1px solid transparent;
-    border-radius: 9px;
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--theme-text-muted);
     cursor: pointer;
     touch-action: manipulation;
     font: inherit;
     line-height: 1;
-    transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+    transition: transform var(--motion-duration-fast) var(--motion-ease-out), background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
 .comment-reaction-picker-btn.is-active {
@@ -165,7 +165,7 @@
 }
 
 .comment-reaction-emoji {
-    font-size: 15.75px;
+    font-size: var(--font-size-base);
     line-height: 1;
 }
 
@@ -174,7 +174,7 @@
     place-items: center;
     width: 17.85px;
     height: 17.85px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     line-height: 1;
     overflow: hidden;
 }
@@ -189,14 +189,14 @@
 }
 
 .comment-reaction-image-fallback {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     overflow-wrap: anywhere;
 }
 
 .comment-reaction-count {
     min-width: 0;
     font-family: var(--font-data, monospace);
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     font-variant-numeric: tabular-nums;
 }
 
@@ -264,7 +264,7 @@
     opacity: 0.6;
 }
 
-@media (max-width: 520px) {
+@media (max-width: 480px) {
     .comment-reaction-bar {
         align-items: flex-start;
         flex-direction: column;

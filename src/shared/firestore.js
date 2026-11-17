@@ -940,26 +940,6 @@ class FirebaseManager {
         }
     }
 
-    formatTimestamp(timestamp) {
-        if (!timestamp) return 'Unknown';
-        
-        const date = timestamp.toDate ? timestamp.toDate() : (timestamp.seconds ? new Date(timestamp.seconds * 1000) : new Date(timestamp));
-        const now = new Date();
-        const diffInSeconds = Math.floor((now - date) / 1000);
-
-        if (diffInSeconds < 60) {
-            return 'Just now';
-        } else if (diffInSeconds < 3600) {
-            const minutes = Math.floor(diffInSeconds / 60);
-            return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
-        } else if (diffInSeconds < 86400) {
-            const hours = Math.floor(diffInSeconds / 3600);
-            return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-        } else {
-            return date.toLocaleDateString();
-        }
-    }
-
     isAuthenticated() {
         return !!this.user || !!(this.auth && this.auth.currentUser);
     }

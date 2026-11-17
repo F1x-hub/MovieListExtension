@@ -25,7 +25,7 @@ async function readStorage(key) {
     if (!hasChromeStorage()) return null;
     try {
         const result = await chrome.storage.local.get([key]);
-        return result[key] || null;
+        return result[key] ?? null;
     } catch {
         return null;
     }

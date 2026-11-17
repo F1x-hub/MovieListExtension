@@ -73,13 +73,15 @@ async function main() {
     const sourceFiles = [
         'src/pages/admin/admin.js', 'src/pages/bookmarks/bookmarks.js', 'src/pages/search/search.js',
         'src/pages/settings/settings.js',
-        'src/popup/popup.js', 'src/pages/movie-details/movie-details.js'
+        'src/popup/popup.js', 'src/pages/movie-details/UserRatingsPanel.js'
     ];
+    assert.doesNotMatch(read('src/pages/movie-details/movie-details.js'), /[^.\w]confirm\(/, 'movie-details.js must not call window.confirm()');
     for (const file of sourceFiles) {
         const source = read(file);
         assert.doesNotMatch(source, /[^.\w]confirm\(/, `${file} must use ConfirmDialog instead of window.confirm()`);
         assert.match(source, /ConfirmDialog\.confirm\(/, `${file} uses ConfirmDialog`);
-        const html = read(file.replace(/\.js$/, '.html'));
+        // UserRatingsPanel.js is part of the Movie Details page.
+        const html = read(file.replace('UserRatingsPanel.js', 'movie-details.js').replace(/\.js$/, '.html'));
         assert.match(html, /<script[^>]+src="[^"]*shared\/components\/ConfirmDialog\.js"/, `${file.replace(/\.js$/, '.html')} loads ConfirmDialog.js`);
     }
 

@@ -33,15 +33,6 @@
 }
 
 /* Fix user actions overflow */
-.user-actions {
-    min-width: 0;
-    overflow: hidden;
-}
-
-.feed-actions {
-    flex-wrap: wrap;
-    gap: var(--space-xs);
-}
 
 /* Fix search actions overflow */
 .search-actions {
@@ -50,11 +41,6 @@
 }
 
 /* Ensure proper text truncation */
-.text-truncate {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
 
 /* Fix long URLs and text */
 .rating-comment,
@@ -80,16 +66,8 @@
 }
 
 /* Fix for flex items that might overflow */
-.flex-item {
-    min-width: 0;
-    flex-shrink: 1;
-}
 
 /* Fix for grid items */
-.grid-item {
-    min-width: 0;
-    overflow: hidden;
-}
 
 /* Fix for rating scores layout */
 .rating-scores {

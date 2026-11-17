@@ -2,6 +2,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -124,6 +125,9 @@ global.Image = class MockImage {
     }
 };
 
+// Pages that show MovieCard load Utils.js first.
+global.Utils = createRequire(import.meta.url)('../src/shared/utils/Utils.js');
+
 // Load MovieCard
 const movieCardCode = fs.readFileSync(path.join(__dirname, '../src/shared/components/MovieCard.js'), 'utf8');
 eval(movieCardCode);
@@ -138,7 +142,8 @@ global.MovieCard = MovieCard;
 console.log('--- 0. Testing error-state keeps its centered flex layout ---');
 {
     const randomJs = fs.readFileSync(path.join(__dirname, '../src/pages/random/random.js'), 'utf8');
-    const randomCss = fs.readFileSync(path.join(__dirname, '../src/pages/random/random.css'), 'utf8');
+    // The page state layout is shared: components.css owns .error-state for every page.
+    const componentsCss = fs.readFileSync(path.join(__dirname, '../src/shared/styles/components.css'), 'utf8');
 
     assert.match(
         randomJs,
@@ -146,9 +151,9 @@ console.log('--- 0. Testing error-state keeps its centered flex layout ---');
         'Error state must be shown as flex so the icon remains centered'
     );
     assert.match(
-        randomCss,
-        /\.error-state\s*\{[\s\S]*?display:\s*flex;/,
-        'Random page error state must define a flex column layout'
+        componentsCss,
+        /\.empty-state,\s*\.error-state\s*\{[\s\S]*?display:\s*flex;\s*flex-direction:\s*column;/,
+        'The shared error state must define a flex column layout'
     );
     console.log('  âœ… Error icon, message, and retry button share the centered layout');
 }

@@ -63,7 +63,7 @@
     --ui-control-padding-y: var(--space-sm, 8px);
     --ui-control-padding-x: var(--space-md, 16px);
     --ui-control-radius: var(--radius-md, 8px);
-    --ui-control-font-size: var(--font-size-sm, 14px);
+    --ui-control-font-size: var(--font-size-md);
     --ui-control-font-weight: 500;
     --ui-control-gap: var(--space-xs, 4px);
     --ui-control-transition: var(--transition-base, 0.3s ease);
