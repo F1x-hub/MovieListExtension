@@ -56,6 +56,27 @@ test('the balancer script is read as data for its current domain and the ones it
     assert.equal(domains.parseScript(script('http://api.femd.ws')), null, 'not HTTPS');
 });
 
+// The same line as published on 2026-11-17: zones are grouped as (?:a|b)\.net.
+const groupedScript = `!function(){
+var actual = "https://api.femd.ws"
+	,re=/^(?:https?:)?\\/\\/(?:mm|app?i\\w*)\\.((?:embedstorage|embf|multikland)\\.net|(?:buildplayer|mir-dikogo-zapada|synchroncode)\\.com|delivembed\\.cc|placehere\\.link|ameytools\\.club|(?:tobaco|namy|nextembed)\\.ws)/
+	,delay=200,max=1000*60*60*24
+}()`;
+
+test('grouped zones in the current script are read too, so KinoGo embf.net embeds move to femd.ws', t => {
+    const { dom, domains } = environment();
+    t.after(() => dom.window.close());
+    const parsed = domains.parseScript(groupedScript);
+    assert.equal(parsed.actualHost, 'api.femd.ws');
+    for (const retired of ['embf.net', 'embedstorage.net', 'multikland.net', 'synchroncode.com', 'mir-dikogo-zapada.com',
+        'delivembed.cc', 'placehere.link', 'ameytools.club', 'tobaco.ws', 'namy.ws', 'nextembed.ws']) {
+        assert.ok(parsed.retired.includes(retired), retired);
+    }
+    assert.ok(!parsed.retired.some(domain => domain.includes('?') || domain.includes('|')), 'only plain domains');
+    // Known without a network answer as well: KinoGo printed this address for «Джуманджи».
+    assert.equal(domains.actualize('https://api.embf.net/embed/movie/937'), 'https://api.femd.ws/embed/movie/937');
+});
+
 test('an address on a domain the balancer left moves to the current one and keeps the rest', t => {
     const { dom, domains } = environment();
     t.after(() => dom.window.close());

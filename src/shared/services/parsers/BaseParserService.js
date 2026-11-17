@@ -900,10 +900,10 @@ const BALANCER_HOST_PATTERN = /^(?:mm|app?i\w*)\.((?:[a-z0-9-]+\.)+[a-z]{2,})$/;
  * balancer's own player, because the extension's frame scripts do not run there.
  */
 const BalancerDomains = {
-    // As published by actualize.js on 2026-11-06.
+    // As published by actualize.js on 2026-11-17 (embf.net joined the retired list).
     actualHost: 'api.femd.ws',
     retired: new Set([
-        'delivembed.cc', 'buildplayer.com', 'embedstorage.net', 'mir-dikogo-zapada.com', 'multikland.net',
+        'delivembed.cc', 'buildplayer.com', 'embedstorage.net', 'embf.net', 'mir-dikogo-zapada.com', 'multikland.net',
         'placehere.link', 'synchroncode.com', 'ameytools.club',
         ...['tobaco', 'topdbltj', 'delivembd', 'hostemb', 'loadbox', 'getcodes', 'strvid', 'ebder', 'framprox',
             'embprox', 'bedemp2', 'embr', 'lessornot', 'linktodo', 'insertunit', 'marts', 'ninsel', 'embess',
@@ -926,8 +926,12 @@ const BalancerDomains = {
         if (!this.domainOf(actualHost)) return null;
         const pattern = /\bre\s*=\s*\/(.+)\//.exec(source)?.[1] || '';
         const retired = [
-            ...[...pattern.matchAll(/([a-z0-9-]+\\\.[a-z]{2,})(?=\||\))/gi)].map(match => match[1].replace('\\', '')),
-            ...(/\(([a-z0-9|-]+)\)\(\\\.ws\)/i.exec(pattern)?.[1]?.split('|') || []).map(name => `${name}.ws`)
+            // Single names: delivembed\.cc
+            ...[...pattern.matchAll(/(?<![a-z0-9-])([a-z0-9-]+\\\.[a-z]{2,})(?=\||\))/gi)].map(match => match[1].replace('\\', '')),
+            // Groups sharing a zone, in either form the script has used:
+            // (?:embedstorage|embf|multikland)\.net and (tobaco|namy)(\.ws)
+            ...[...pattern.matchAll(/\((?:\?:)?([a-z0-9|-]+)\)\(?\\\.([a-z]{2,})\)?/gi)]
+                .flatMap(match => match[1].split('|').filter(Boolean).map(name => `${name}.${match[2]}`))
         ].map(domain => domain.toLowerCase());
         return { actualHost, retired };
     },
