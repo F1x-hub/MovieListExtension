@@ -1,5 +1,15 @@
 export const whatsNew = [
     {
+        id: '1.5.6', version: '1.5.6', date: '2026-11-18',
+        highlights: [
+            { id: 'online-battleship', title: { ru: 'Морской бой онлайн', en: 'Online Battleship' }, text: { ru: 'Сыграйте с другими пользователями расширения: открытая игра, приглашение по коду или вызов по имени.', en: 'Play other extension users: an open game, an invite code or a challenge by name.' } },
+            { id: 'quiz-your-films', title: { ru: 'Викторина по вашим фильмам', en: 'A quiz about your films' }, text: { ru: 'Вопросы из «Буду смотреть», избранного и оценок, а ещё размытый постер и сюжет без названия.', en: 'Questions from your watchlist, favourites and ratings, plus a blurred poster and a plot with the title hidden.' } },
+            { id: 'new-year', title: { ru: 'Новый год в расширении', en: 'New Year in the extension' }, text: { ru: 'Колесо фильмов играет новогоднюю музыку, а за 10 оценок в праздники дают достижение «Кино под ёлкой».', en: 'The movie wheel plays holiday music, and rating 10 films over the holidays earns «Кино под ёлкой».' } },
+            { id: 'one-look', title: { ru: 'Единый вид', en: 'One consistent look' }, text: { ru: 'Кнопки, вкладки, шрифты, тени и экраны «пусто» и «ошибка» выглядят одинаково на всех страницах.', en: 'Buttons, tabs, type, shadows and empty and error screens look the same on every page.' } },
+            { id: 'kinogo-our-player', title: { ru: 'KinoGo снова в нашем плеере', en: 'KinoGo back in our player' }, text: { ru: 'Фильмы KinoGo, у которых сайт указывает старый адрес, открываются в плеере расширения.', en: 'KinoGo films whose page lists an old address open in the extension player again.' } }
+        ]
+    },
+    {
         id: '1.5.5', version: '1.5.5', date: '2026-11-10',
         highlights: [
             { id: 'franchise-icons', title: { ru: 'Иконки франшиз для коллекций', en: 'Franchise icons for collections' }, text: { ru: 'В выборе иконки появился раздел «Франшизы»: 51 цветная плитка, от Marvel и DC до «Звёздных войн» и «Гарри Поттера».', en: 'The icon picker has a Franchises section: 51 colour tiles, from Marvel and DC to Star Wars and Harry Potter.' } },
