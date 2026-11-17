@@ -843,7 +843,7 @@ html[data-season] .placeholder-icon-animated {
 }
 
 /* Medium widths: the CTA moves closer, so the scene steps back behind it. */
-@media (max-width: 1024px) {
+@media (max-width: 1000px) {
     .season-banner__scene {
         right: 0;
         width: 260px;
@@ -851,7 +851,7 @@ html[data-season] .placeholder-icon-animated {
     }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 600px) {
     .season-halloween .season-banner:not([hidden]) {
         flex-wrap: wrap;
         gap: 14px;

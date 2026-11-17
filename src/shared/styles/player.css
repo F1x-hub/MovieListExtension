@@ -474,7 +474,7 @@ body.player-modal-open {
     border-color: rgba(9, 9, 11, 0.15);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 600px) {
     .player-nav-btn {
         padding: 0 8px;
     }
@@ -1176,7 +1176,7 @@ body.player-modal-open {
     --popover-surface-backdrop: blur(18px) saturate(130%);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 600px) {
     .video-container .player-center-action {
         width: 58px !important;
         height: 58px !important;

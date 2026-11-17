@@ -1283,7 +1283,7 @@ body.player-modal-open .ny-strip *::after {
 
 .ny-strip:hover .ny-strip__action svg { transform: translateY(2px); }
 
-@media (max-width: 900px) {
+@media (max-width: 860px) {
     .ny-strip { margin-bottom: 36px; }
 
     .ny-strip__text {
@@ -1296,7 +1296,7 @@ body.player-modal-open .ny-strip *::after {
     .ny-strip__left { max-width: 100%; font-size: var(--font-size-xs); }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 560px) {
     .ny-strip__gift + .ny-strip__gift { display: none; }
     .ny-strip__row { right: 24px; left: 100px; gap: 8px; }
     .season-newyear .ny-strip__title { font-size: var(--font-size-xl); }
