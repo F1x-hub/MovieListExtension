@@ -1486,7 +1486,7 @@ function tenure(level, u) {
     return s + [[28, 30, '#F2C14E'], [92, 28, '#4AA3D9'], [26, 56, '#E5484D'], [94, 54, '#5BAA5E']].map(([x, y, c]) => star5(x, y, 3, c)).join('');
 }
 
-/* ── One-off scenes: First step (a flag on a sunrise summit), Full spectrum (a rainbow of ten bars), Halloween (a glowing jack-o'-lantern) ── */
+/* ── One-off scenes: First step (a flag on a sunrise summit), Full spectrum (a rainbow of ten bars), Halloween (a glowing jack-o'-lantern), New Year (a decorated fir under the snow) ── */
 
 function firstStep(level, u) {
     let s = '<defs>' + linear(`${u}s`, [[0, '#3A3A8A'], [0.55, '#E5728A'], [1, '#FFC27A']]) + radial(`${u}g`, [[0, '#FFE6A0', 0.7], [1, '#FFE6A0', 0]]) + '</defs>' + backdrop(`url(#${u}s)`);
@@ -1528,6 +1528,65 @@ function halloween(level, u) {
     s += carve('M44 61 L52 61 L48 54Z') + carve('M68 61 L76 61 L72 54Z') + carve('M58 66 L62 66 L60 62.4Z');
     s += carve('M43 70 Q60 82 77 70 Q74 76 70 77 L69 73.6 L66 76.6 L63 74 L60 77.6 L57 74 L54 76.6 L51 73.6 L50 77 Q46 76 43 70Z');
     return s + candle2(30, 86, 6, '#F1E9D8') + candle2(90, 86, 5, '#F1E9D8');
+}
+
+const SNOW = '#F4F8FF';
+
+/** One tier of the fir: the right face in shade and snow along the lower edge. */
+function firTier(apex, base, hw, u) {
+    const l = 60 - hw, r = 60 + hw, mid = f(base + 1.5);
+    return `<path d="M60 ${apex} L${l} ${base} Q60 ${base + 3} ${r} ${base}Z" fill="url(#${u}t)"/>`
+        + `<path d="M60 ${apex} L60 ${mid} Q${f(60 + hw / 2)} ${mid} ${r} ${base}Z" fill="#06261A" opacity=".3"/>`
+        + `<path d="M${l} ${base} Q60 ${base + 3} ${r} ${base}" stroke="${SNOW}" stroke-width="2.2" stroke-linecap="round" fill="none"/>`
+        + `<circle cx="${l + 1}" cy="${f(base - 0.4)}" r="1.5" fill="${SNOW}"/><circle cx="${r - 1}" cy="${f(base - 0.4)}" r="1.5" fill="${SNOW}"/>`;
+}
+
+function bauble(x, y, r, fill) {
+    return `<circle cx="${x}" cy="${y}" r="${r}" fill="${fill}"/><circle cx="${f(x - r * 0.35)}" cy="${f(y - r * 0.38)}" r="${f(r * 0.32)}" fill="#fff" opacity=".75"/>`;
+}
+
+/** Five lights on a string that hangs along a quadratic curve. */
+function lights(x0, y0, cx, cy, x1, y1) {
+    const colors = ['#FFF3C4', '#FFB3B8', '#9AD8FF'];
+    let s = `<path d="M${x0} ${y0} Q${cx} ${cy} ${x1} ${y1}" stroke="#D9C38A" stroke-width=".5" fill="none" opacity=".8"/>`;
+    for (let i = 0; i < 5; i++) {
+        const t = 0.1 + i * 0.2, k = 1 - t;
+        const x = f(k * k * x0 + 2 * k * t * cx + t * t * x1), y = f(k * k * y0 + 2 * k * t * cy + t * t * y1), c = colors[i % 3];
+        s += `<circle cx="${x}" cy="${y}" r="1.9" fill="${c}" opacity=".25"/><circle cx="${x}" cy="${y}" r=".95" fill="${c}"/>`;
+    }
+    return s;
+}
+
+function snowflake(x, y, r) {
+    const dx = r * 0.87, dy = r / 2;
+    return `<path d="M${x} ${f(y - r)}V${f(y + r)}M${f(x - dx)} ${f(y - dy)}L${f(x + dx)} ${f(y + dy)}M${f(x - dx)} ${f(y + dy)}L${f(x + dx)} ${f(y - dy)}" stroke="${SNOW}" stroke-width=".6" stroke-linecap="round"/>`;
+}
+
+/** New Year: a fir under the northern lights with a star, a film-reel ornament, lights and gifts in the snow. */
+function newYear(level, u) {
+    let s = '<defs>' + radial(`${u}s`, [[0, '#26406E'], [1, '#070B1D']], 'cx="50%" cy="30%" r="85%"')
+        + radial(`${u}g`, [[0, '#FFE6A0', 0.32], [1, '#FFE6A0', 0]])
+        + radial(`${u}h`, [[0, '#FFE79A', 0.65], [1, '#FFE79A', 0]])
+        + linear(`${u}t`, [[0, '#43A870'], [1, '#14503A']])
+        + '</defs>' + backdrop(`url(#${u}s)`);
+    s += '<path d="M12 46 Q34 28 60 36 T108 28 L108 38 Q84 48 60 44 T12 56Z" fill="#7CF2C8" opacity=".16"/>';
+    s += '<path d="M12 38 Q36 22 62 30 T108 22 L108 28 Q84 36 62 34 T12 44Z" fill="#6EC6F2" opacity=".1"/>';
+    s += [[36, 28, 0.6], [84, 30, 0.7], [44, 40, 0.5], [79, 44, 0.5], [32, 50, 0.5], [88, 42, 0.5]]
+        .map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#FFF6D0"/>`).join('');
+    s += `<circle cx="60" cy="52" r="32" fill="url(#${u}g)"/>`;
+    s += '<path d="M10 79 Q34 71 60 75 Q86 71 110 79 V120 H10Z" fill="#BFD2EA"/><rect x="57.2" y="72" width="5.6" height="6" fill="#5A3A22"/>';
+    s += firTier(46, 73, 20, u) + firTier(37.5, 60, 15.5, u) + firTier(30, 47.5, 11, u);
+    s += `<path d="M56.6 35.4 L60 30 L63.4 35.4 Q60 37 56.6 35.4Z" fill="${SNOW}"/>`;
+    s += bauble(57, 42, 1.8, '#E5484D') + bauble(63.5, 39.5, 1.5, '#4AA3D9');
+    s += bauble(52.5, 54, 2, '#4AA3D9') + bauble(60, 55.5, 1.6, '#E3EAF4') + bauble(67.5, 53.5, 2, '#E5484D');
+    s += bauble(50, 65.5, 2.1, '#E5484D') + reel(60, 65, 3.8, '#D5DCE6') + bauble(70, 65.5, 2.1, '#4AA3D9');
+    s += lights(47, 57, 60, 62, 73, 56) + lights(44, 68, 60, 75.5, 76.5, 67);
+    s += `<circle cx="60" cy="28" r="10" fill="url(#${u}h)"/>` + star5(60, 28, 5.6, '#FFE79A') + star5(60, 28, 2.6, '#FFF8DC');
+    s += '<path d="M10 84 Q38 77 60 80 Q84 77 110 84 V120 H10Z" fill="#EEF4FC"/>';
+    s += gift(44.5, 72.5, 9, 7, '#E5484D', '#F2C14E') + gift(66, 73, 10, 6.5, '#4AA3D9', SNOW) + gift(56, 77, 8, 5.5, '#7A4A8C', '#F2C14E');
+    s += [[34, 34, 1], [86, 37, 1.1], [40, 57, 0.9], [83, 59, 0.9], [46, 24, 0.8], [75, 25, 0.8], [39, 69.5, 0.8], [81, 69.5, 0.8]]
+        .map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${SNOW}" opacity=".85"/>`).join('');
+    return s + snowflake(37, 45, 2.6) + snowflake(84, 49, 2.4);
 }
 
 function cartoonSun(cx, cy, r) {
@@ -1580,7 +1639,7 @@ function bat(x, y, k) {
 }
 
 const SCENES = {
-    trophy: provider, pin: showcase, calendar: tenure, flag: firstStep, chart: fullSpectrum, pumpkin: halloween,
+    trophy: provider, pin: showcase, calendar: tenure, flag: firstStep, chart: fullSpectrum, pumpkin: halloween, tree: newYear,
     heart: voice, thumbsUp: generous, wheel: marathoner,
     layers: filler, pen: reviewer, book: writer,
     camera: directors, playCircle: inProgress, folder: curator,

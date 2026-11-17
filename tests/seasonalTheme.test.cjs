@@ -184,6 +184,17 @@ for (const [, reference] of sideArt.matchAll(/url\(#(\w+)\)/g)) {
         }
     }
 
+    // A seasonal achievement repeats its season's dates; moving a season must move the achievement too.
+    const { ACHIEVEMENTS } = await import(pathToFileURL(path.join(__dirname, '../src/shared/achievements/AchievementCatalog.js')).href);
+    const seasonal = ACHIEVEMENTS.filter(def => def.season);
+    assert.ok(seasonal.some(def => def.season.id === 'newyear'), 'the New Year season has an achievement');
+    for (const def of seasonal) {
+        const season = service.SEASONS.find(item => item.id === def.season.id);
+        assert.ok(season, `${def.id} names an unknown season ${def.season.id}`);
+        assert.deepStrictEqual([def.season.start, def.season.end], [{ ...season.start }, { ...season.end }],
+            `${def.id} keeps the dates of the ${season.id} season`);
+    }
+
     const makeI18n = locale => ({
         currentLocale: locale,
         get(key) {

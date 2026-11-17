@@ -109,6 +109,8 @@ movie-rating-extension/
 
 - **Seasonal runtime**: `SeasonalThemeService` owns windows, the opt-out, the `season-*` class and `#seasonalDecor`. A season with a `runtime` list loads `src/shared/seasonal/<id>/*.js` on demand through `loadRuntime()`, so off-season pages fetch none of it. The New Year season's static pictures are pre-rendered by `scripts/generate-newyear-art.cjs`; see `docs/design-system.md`.
 
+- **Seasonal achievements**: an achievement with a `season` in `src/shared/achievements/AchievementCatalog.js` counts only ratings created inside that window (inclusive local days; `since` skips windows before the first season) and repeats the dates of the `SeasonalThemeService` season it names, which `tests/seasonalTheme.test.cjs` enforces. Its points stay out of `maxPoints()`, so adding one never moves rank thresholds. Until it is earned, a visible one shows its window on the card and in the dialog.
+
 - **Release notes**: `WhatsNewService` stores installation acknowledgement in
   `chrome.storage.local.whatsNewV1`; `WhatsNewDialog` opens from Navigation and
   popup after language initialization, independently of auth/Firebase. Settings

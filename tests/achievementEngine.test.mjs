@@ -4,6 +4,7 @@ import {
     computeMetrics,
     evaluate,
     evaluateAll,
+    inSeason,
     longestStreak,
     maxPoints,
     mergeUnlocks,
@@ -68,6 +69,7 @@ assert.equal(metrics.reviews, 2);
 assert.equal(metrics.longReviews, 1);
 assert.equal(metrics.nightRatings, 1);
 assert.equal(metrics.halloweenHorror, 1);
+assert.equal(metrics.newYearRatings, 0, 'early January 2026 belongs to the 2025 holidays, before the first New Year season');
 assert.equal(metrics.streak, 2);
 assert.equal(metrics.reactionsReceived, 7);
 assert.equal(metrics.reactionsGiven, 6);
@@ -78,6 +80,53 @@ assert.equal(metrics.collectionItems, 3);
 assert.equal(metrics.pinned, 2);
 assert.equal(metrics.accountDays, 365);
 assert.equal(metrics.distinctScores, 3);
+
+// Seasonal windows: inclusive local days. New Year crosses the turn of the year
+// and counts from the 2026 season on; Halloween counts every year.
+const at = (y, m, d, h = 12, min = 0) => new Date(y, m - 1, d, h, min).getTime();
+const NEW_YEAR = ACHIEVEMENTS_BY_ID.new_year.season;
+const HALLOWEEN = ACHIEVEMENTS_BY_ID.halloween.season;
+assert.equal(inSeason(NEW_YEAR, at(2026, 12, 14, 23, 59)), false);
+assert.equal(inSeason(NEW_YEAR, at(2026, 12, 15, 0, 0)), true);
+assert.equal(inSeason(NEW_YEAR, at(2026, 12, 31, 23, 59)), true);
+assert.equal(inSeason(NEW_YEAR, at(2027, 1, 1, 0, 0)), true);
+assert.equal(inSeason(NEW_YEAR, at(2027, 1, 14, 23, 59)), true);
+assert.equal(inSeason(NEW_YEAR, at(2027, 1, 15, 0, 0)), false);
+assert.equal(inSeason(NEW_YEAR, at(2027, 6, 1)), false);
+assert.equal(inSeason(NEW_YEAR, at(2027, 12, 20)), true, 'every later season counts');
+assert.equal(inSeason(NEW_YEAR, at(2028, 1, 5)), true);
+assert.equal(inSeason(NEW_YEAR, at(2025, 12, 20)), false, 'holidays before the first season do not count');
+assert.equal(inSeason(NEW_YEAR, at(2026, 1, 10)), false, 'January 2026 belongs to the 2025 season');
+assert.equal(inSeason(HALLOWEEN, at(2026, 10, 16, 23, 59)), false);
+assert.equal(inSeason(HALLOWEEN, at(2026, 10, 17, 0, 0)), true);
+assert.equal(inSeason(HALLOWEEN, at(2026, 11, 7, 23, 59)), true);
+assert.equal(inSeason(HALLOWEEN, at(2026, 11, 8, 0, 0)), false);
+assert.equal(inSeason(HALLOWEEN, at(2019, 10, 31)), true);
+assert.equal(inSeason(NEW_YEAR, 0), false);
+assert.equal(inSeason(NEW_YEAR, Number.NaN), false);
+assert.equal(inSeason(undefined, at(2026, 12, 20)), false);
+
+// New Year counts any rated title inside the season, cached or not.
+const holidayRatings = [
+    { movieId: 1, rating: 7, createdAt: { seconds: at(2026, 12, 15, 0, 5) / 1000 } },
+    { movieId: 2, rating: 8, createdAt: new Date(at(2027, 1, 14, 23, 50)) },
+    { movieId: 404, rating: 6, createdAt: at(2026, 12, 31, 23, 59) },
+    { movieId: 3, rating: 9, createdAt: at(2027, 1, 15, 0, 1) },
+    { movieId: 1, rating: 5, createdAt: at(2025, 12, 25) },
+    { movieId: 2, rating: 0, createdAt: at(2026, 12, 20) },
+    { movieId: 3, rating: 4 }
+];
+assert.equal(computeMetrics({ ratings: holidayRatings, movies }).newYearRatings, 3);
+const newYearDef = ACHIEVEMENTS_BY_ID.new_year;
+const tenEvenings = Array.from({ length: 10 }, (_, index) => ({ movieId: index + 1, rating: 7, createdAt: at(2026, 12, 28 + index, 21) }));
+assert.equal(evaluate(newYearDef, computeMetrics({ ratings: tenEvenings }).newYearRatings).tier, 1, 'ten films from 28 December to 6 January');
+assert.equal(evaluate(newYearDef, computeMetrics({ ratings: tenEvenings.slice(1) }).newYearRatings).tier, 0);
+assert.equal(newYearDef.oneOff, true);
+assert.ok(!newYearDef.hidden, 'the season goal is shown before it is earned');
+
+// Seasonal points are a bonus: they count in the total, not in the maximum ranks are shares of.
+assert.equal(maxPoints(), ACHIEVEMENTS.filter(def => !def.season).reduce((sum, def) => sum + pointsFor(def, def.tiers.length), 0));
+assert.equal(totalPoints({ new_year: { tier: 1 }, halloween: { tier: 1 } }), 200);
 
 // Streak: consecutive days, gaps reset it.
 assert.equal(longestStreak([day(2026, 0, 1), day(2026, 0, 1, 20), day(2026, 0, 2), day(2026, 0, 3), day(2026, 0, 5)]), 3);
@@ -160,5 +209,30 @@ const halfway = rankFor((thresholds[2] + thresholds[3]) / 2);
 assert.equal(halfway.level, 3);
 assert.ok(Math.abs(halfway.progress - 0.5) < 1e-9);
 for (let level = 1; level <= 7; level++) assert.match(renderAvatarFrame(level), /^<svg class="rank-frame"/);
+
+// The card and the dialog say when a seasonal achievement can be earned.
+globalThis.document = { getElementById: () => null, addEventListener() {} };
+const { AchievementsView } = await import('../src/shared/achievements/AchievementsView.js');
+const viewFor = lang => new AchievementsView({
+    i18n: { currentLocale: lang, get: key => key.split('.').reduce((node, part) => node?.[part], locales[lang]) },
+    db: null,
+    profileService: null
+});
+const ruView = viewFor('ru');
+const enView = viewFor('en');
+const chip = text => `<span class="ach-chip">${text}</span>`;
+assert.equal(ruView.seasonChip(newYearDef, at(2026, 11, 17)), chip('С 15 декабря'));
+assert.equal(ruView.seasonChip(newYearDef, at(2026, 12, 15, 0, 0)), chip('До 14 января'));
+assert.equal(ruView.seasonChip(newYearDef, at(2027, 1, 14, 23, 59)), chip('До 14 января'));
+assert.equal(ruView.seasonChip(newYearDef, at(2027, 1, 15, 0, 0)), chip('С 15 декабря'));
+assert.equal(enView.seasonChip(newYearDef, at(2026, 11, 17)), chip('From 15 December'));
+assert.equal(enView.seasonChip(newYearDef, at(2026, 12, 20)), chip('Until 14 January'));
+assert.equal(ruView.item('new_year', 'condition', { n: 10, ...ruView.seasonDates(newYearDef) }), 'Оценить 10 фильмов с 15 декабря по 14 января');
+assert.equal(enView.item('new_year', 'condition', { n: 10, ...enView.seasonDates(newYearDef) }), 'Rate 10 films between 15 December and 14 January');
+assert.match(ruView.cardHTML(newYearDef), /<span class="ach-chip">(С 15 декабря|До 14 января)<\/span>/);
+assert.equal(ruView.seasonChip(ACHIEVEMENTS_BY_ID.halloween, at(2026, 10, 20)), '', 'a secret achievement keeps its dates');
+assert.equal(ruView.seasonChip(rater, at(2026, 12, 20)), '');
+ruView.stored = { new_year: { tier: 1, at: { 1: '2026-12-20T18:00:00.000Z' } } };
+assert.equal(ruView.seasonChip(newYearDef, at(2026, 12, 20)), '', 'an earned achievement needs no dates');
 
 console.log('Achievement engine tests passed');

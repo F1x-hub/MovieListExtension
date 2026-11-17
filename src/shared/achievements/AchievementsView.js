@@ -8,7 +8,7 @@
  * recomputed here); other users see the tiers stored on their user document.
  */
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID, CATEGORIES } from './AchievementCatalog.js';
-import { frameLevel, rankFor, totalPoints } from './AchievementEngine.js';
+import { frameLevel, inSeason, rankFor, totalPoints } from './AchievementEngine.js';
 import { renderAvatarFrame, renderBadge } from './AchievementBadge.js';
 import { AchievementService } from './AchievementService.js';
 
@@ -156,6 +156,26 @@ export class AchievementsView {
         return def.hidden && this.tierOf(def.id) === 0;
     }
 
+    /** A season boundary as «15 декабря» / "15 December": day before month, as the texts write dates. */
+    seasonDay({ month, day }) {
+        const locale = this.i18n.currentLocale === 'ru' ? 'ru-RU' : 'en-GB';
+        return new Date(2000, month - 1, day).toLocaleDateString(locale, { day: 'numeric', month: 'long' });
+    }
+
+    /** {start, end} for a seasonal achievement's condition text. */
+    seasonDates(def) {
+        return def.season ? { start: this.seasonDay(def.season.start), end: this.seasonDay(def.season.end) } : {};
+    }
+
+    /** When a seasonal achievement not earned yet can be earned: until its last day while the season runs, otherwise from its first. */
+    seasonChip(def, now = Date.now()) {
+        if (!def.season || this.tierOf(def.id) > 0 || this.isSecret(def)) return '';
+        const text = inSeason(def.season, now)
+            ? this.t('season_until', { date: this.seasonDay(def.season.end) })
+            : this.t('season_from', { date: this.seasonDay(def.season.start) });
+        return `<span class="ach-chip">${escape(text)}</span>`;
+    }
+
     render() {
         this.el.achLoader.hidden = true;
         const totalTiers = ACHIEVEMENTS.reduce((sum, def) => sum + def.tiers.length, 0);
@@ -231,7 +251,7 @@ export class AchievementsView {
         const shareChip = share === null ? '' : `<span class="ach-chip">${escape(this.t('share', { n: share }))}</span>`;
         return `<button type="button" class="ach-card ach-card--${state}${secret ? ' ach-card--secret' : ''}" data-id="${def.id}">
             <span class="ach-card__badge${tier === 0 ? ' is-locked' : ''}">${renderBadge(def, Math.max(1, tier))}</span>
-            <span class="ach-card__chips">${level}${shareChip}</span>
+            <span class="ach-card__chips">${level}${shareChip}${this.seasonChip(def)}</span>
             <span class="ach-card__name">${escape(name)}</span>
             <span class="ach-card__progress">${escape(progressText)}</span>
             <span class="ach-bar" aria-hidden="true"><span style="width:${width}%"></span></span>
@@ -303,13 +323,14 @@ export class AchievementsView {
             share === null ? '' : `<span class="ach-chip">${escape(this.t('share', { n: share }))}</span>`,
             earned && date
                 ? `<span class="ach-chip ach-chip--ok">${escape(this.t('obtained', { date: new Date(date).toLocaleDateString(this.locale) }))}</span>`
-                : `<span class="ach-chip">${escape(this.t('not_obtained'))}</span>`
+                : `<span class="ach-chip">${escape(this.t('not_obtained'))}</span>`,
+            this.seasonChip(def)
         ].join('');
         this.el.achDialogBadge.className = `ach-dialog__badge${earned ? '' : ' is-locked'}`;
         this.el.achDialogBadge.innerHTML = renderBadge(def, index, { title: this.item(def.id, 'name') });
         const name = secret ? this.t('hidden_name') : this.item(def.id, 'name');
         this.el.achDialogTitle.textContent = def.oneOff ? name : `${name} · ${ROMAN[index - 1]}`;
-        this.el.achDialogCondition.textContent = secret ? this.t('hidden_text') : this.item(def.id, 'condition', { n: def.tiers[index - 1].toLocaleString(this.locale) });
+        this.el.achDialogCondition.textContent = secret ? this.t('hidden_text') : this.item(def.id, 'condition', { n: def.tiers[index - 1].toLocaleString(this.locale), ...this.seasonDates(def) });
         this.el.achDialogLevel.hidden = def.oneOff;
         this.el.achDialogLevel.textContent = this.t('tier', { n: `${index} / ${def.tiers.length}` });
         this.el.achDialogText.textContent = secret ? '' : this.item(def.id, 'text');

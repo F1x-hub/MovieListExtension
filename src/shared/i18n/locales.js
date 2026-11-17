@@ -991,6 +991,8 @@ export const locales = {
             maxed: "All tiers earned",
             hidden_name: "Secret achievement",
             hidden_text: "The condition is revealed once earned.",
+            season_until: "Until {date}",
+            season_from: "From {date}",
             close: "Close",
             prev: "Previous tier",
             next: "Next tier",
@@ -1043,7 +1045,8 @@ export const locales = {
                 first_step: { name: "First step", condition: "Rate your first film", text: "This is where it all begins." },
                 full_spectrum: { name: "Full spectrum", condition: "Use every score from 1 to 10", text: "You know the worth of both a 1 and a 10." },
                 night_owl: { name: "Night owl", condition: "Rate {n} films between 2 and 5 a.m.", text: "The best films are watched at night." },
-                halloween: { name: "Halloween", condition: "Rate {n} horror films between 17 October and 7 November", text: "Spooky good." }
+                halloween: { name: "Halloween", condition: "Rate {n} horror films between 17 October and 7 November", text: "Spooky good." },
+                new_year: { name: "Films under the tree", condition: "Rate {n} films between {start} and {end}", text: "A blanket, tangerines and films all holiday long." }
             }
         },
         profile: {
@@ -3107,6 +3110,8 @@ export const locales = {
             maxed: "Все ступени получены",
             hidden_name: "Секретное достижение",
             hidden_text: "Условие откроется после получения.",
+            season_until: "До {date}",
+            season_from: "С {date}",
             close: "Закрыть",
             prev: "Предыдущая ступень",
             next: "Следующая ступень",
@@ -3159,7 +3164,8 @@ export const locales = {
                 first_step: { name: "Первый шаг", condition: "Поставить первую оценку", text: "С этого всё начинается." },
                 full_spectrum: { name: "Весь спектр", condition: "Использовать все оценки от 1 до 10", text: "Вы знаете цену и единице, и десятке." },
                 night_owl: { name: "Сова", condition: "Поставить {n} оценок между 2 и 5 часами ночи", text: "Лучшие фильмы смотрятся ночью." },
-                halloween: { name: "Хэллоуин", condition: "Оценить {n} фильмов ужасов с 17 октября по 7 ноября", text: "Страшно интересно." }
+                halloween: { name: "Хэллоуин", condition: "Оценить {n} фильмов ужасов с 17 октября по 7 ноября", text: "Страшно интересно." },
+                new_year: { name: "Кино под ёлкой", condition: "Оценить {n} фильмов с {start} по {end}", text: "Плед, мандарины и кино на все праздники." }
             }
         },
         profile: {

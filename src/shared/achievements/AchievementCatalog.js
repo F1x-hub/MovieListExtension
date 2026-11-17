@@ -4,6 +4,13 @@
  * `achievements.items.<id>` locale keys; tier visuals come from the tier index
  * (AchievementBadge), so adding an achievement means one entry here, one icon
  * with its illustrated scene (AchievementScenes) and its locale text.
+ *
+ * A seasonal achievement has a `season`: the local dates whose ratings count,
+ * inclusive (months are 1-based; an end month before the start month falls in
+ * the next year). `id` names the SeasonalThemeService season whose dates it
+ * keeps, and windows that start before `since` do not count. Seasonal points
+ * are a bonus: they add to the total but not to the maximum that ranks are
+ * shares of, because they can be earned only in their season.
  */
 
 export const CATEGORIES = ['ratings', 'variety', 'watching', 'lists', 'community', 'marathon', 'profile', 'special'];
@@ -49,7 +56,11 @@ export const ACHIEVEMENTS = [
     { id: 'first_step', category: 'special', icon: 'flag', metric: 'ratings', tiers: [1], oneOff: true },
     { id: 'full_spectrum', category: 'special', icon: 'chart', metric: 'distinctScores', tiers: [10], oneOff: true },
     { id: 'night_owl', category: 'special', icon: 'moon', metric: 'nightRatings', tiers: [10], oneOff: true, hidden: true },
-    { id: 'halloween', category: 'special', icon: 'pumpkin', metric: 'halloweenHorror', tiers: [5], oneOff: true, hidden: true }
+    { id: 'halloween', category: 'special', icon: 'pumpkin', metric: 'halloweenHorror', tiers: [5], oneOff: true, hidden: true,
+        season: { id: 'halloween', start: { month: 10, day: 17 }, end: { month: 11, day: 7 } } },
+    // The New Year season first ran in 2026, so earlier holidays do not count.
+    { id: 'new_year', category: 'special', icon: 'tree', metric: 'newYearRatings', tiers: [10], oneOff: true,
+        season: { id: 'newyear', start: { month: 12, day: 15 }, end: { month: 1, day: 14 }, since: 2026 } }
 ];
 
 export const ACHIEVEMENTS_BY_ID = Object.fromEntries(ACHIEVEMENTS.map(def => [def.id, def]));

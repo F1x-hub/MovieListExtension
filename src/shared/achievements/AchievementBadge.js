@@ -197,7 +197,8 @@ const GLYPHS = {
     flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>',
     chart: '<path d="M3 3v18h18"/><path d="M7 16v-3"/><path d="M11 16v-6"/><path d="M15 16v-9"/><path d="M19 16V4"/>',
     moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
-    pumpkin: '<ellipse cx="12" cy="14.5" rx="9" ry="7"/><path d="M12 7.5c-2.5 2-2.5 12 0 14"/><path d="M12 7.5c2.5 2 2.5 12 0 14"/><path d="M12 7.5V4c1-1 2.5-1 3 0"/>'
+    pumpkin: '<ellipse cx="12" cy="14.5" rx="9" ry="7"/><path d="M12 7.5c-2.5 2-2.5 12 0 14"/><path d="M12 7.5c2.5 2 2.5 12 0 14"/><path d="M12 7.5V4c1-1 2.5-1 3 0"/>',
+    tree: '<path d="M12 2 7 8h3l-4 6h3l-4 6h14l-4-6h3l-4-6h3z"/><path d="M12 20v2"/>'
 };
 
 function glyph(icon, level, p, cy) {

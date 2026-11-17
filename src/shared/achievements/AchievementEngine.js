@@ -50,12 +50,24 @@ export function longestStreak(timestamps) {
     return best;
 }
 
-function isHalloweenSeason(time) {
+/**
+ * Whether a moment falls in a catalog `season`, by local calendar day. A window
+ * crossing New Year's Eve belongs to the year it starts in, like the seasons of
+ * SeasonalThemeService.
+ */
+export function inSeason(season, time) {
     const date = new Date(time);
-    const month = date.getMonth();
-    const day = date.getDate();
-    return (month === 9 && day >= 17) || (month === 10 && day <= 7);
+    if (!season || !time || Number.isNaN(date.getTime())) return false;
+    const crosses = season.end.month < season.start.month;
+    const startYear = crosses && date.getMonth() + 1 < season.start.month ? date.getFullYear() - 1 : date.getFullYear();
+    if (season.since && startYear < season.since) return false;
+    const start = new Date(startYear, season.start.month - 1, season.start.day);
+    const dayAfterEnd = new Date(crosses ? startYear + 1 : startYear, season.end.month - 1, season.end.day + 1);
+    return date >= start && date < dayAfterEnd;
 }
+
+const HALLOWEEN = ACHIEVEMENTS_BY_ID.halloween.season;
+const NEW_YEAR = ACHIEVEMENTS_BY_ID.new_year.season;
 
 /**
  * Every metric the catalog counts.
@@ -74,7 +86,7 @@ export function computeMetrics(data = {}) {
     const scores = new Set();
     const metrics = {
         ratings: 0, series: 0, tens: 0, lows: 0, classics: 0, anime: 0, cartoons: 0,
-        reviews: 0, longReviews: 0, nightRatings: 0, halloweenHorror: 0, hours: 0
+        reviews: 0, longReviews: 0, nightRatings: 0, halloweenHorror: 0, newYearRatings: 0, hours: 0
     };
     let minutes = 0;
     const times = [];
@@ -91,6 +103,7 @@ export function computeMetrics(data = {}) {
             times.push(time);
             const hour = new Date(time).getHours();
             if (hour >= 2 && hour < 5) metrics.nightRatings++;
+            if (inSeason(NEW_YEAR, time)) metrics.newYearRatings++;
         }
         const text = [rating.comment, rating.review].find(value => typeof value === 'string' && value.trim());
         if (text) {
@@ -107,7 +120,7 @@ export function computeMetrics(data = {}) {
         if (isSeries) metrics.series++;
         if (movieGenres.includes('аниме') || movie.type === 'anime') metrics.anime++;
         if (movieGenres.includes('мультфильм') || movie.type === 'cartoon' || movie.type === 'animated-series') metrics.cartoons++;
-        if (time && isHalloweenSeason(time) && movieGenres.includes('ужасы')) metrics.halloweenHorror++;
+        if (inSeason(HALLOWEEN, time) && movieGenres.includes('ужасы')) metrics.halloweenHorror++;
         const year = Number(movie.year);
         if (Number.isInteger(year) && year >= 1880 && year <= 2100) {
             decades.add(Math.floor(year / 10));
@@ -196,8 +209,9 @@ export function totalPoints(stored = {}) {
     return Object.entries(stored).reduce((sum, [id, entry]) => sum + pointsFor(ACHIEVEMENTS_BY_ID[id], Number(entry?.tier) || 0), 0);
 }
 
+/** The maximum ranks are shares of; seasonal points are a bonus on top (see the catalog). */
 export function maxPoints() {
-    return ACHIEVEMENTS.reduce((sum, def) => sum + pointsFor(def, def.tiers.length), 0);
+    return ACHIEVEMENTS.reduce((sum, def) => sum + (def.season ? 0 : pointsFor(def, def.tiers.length)), 0);
 }
 
 /**
