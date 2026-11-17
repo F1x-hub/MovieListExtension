@@ -16,7 +16,8 @@ const rules = read('rules/firestore.rules');
 const storageRules = read('rules/storage.rules');
 const firebaseConfig = read('firebase.json');
 const functions = read('functions/index.js');
-const movieDetails = read('src/pages/movie-details/movie-details.js');
+// Comment reactions on Movie Details live in UserRatingsPanel.js, installed onto the page.
+const movieDetails = read('src/pages/movie-details/movie-details.js') + '\n' + read('src/pages/movie-details/UserRatingsPanel.js');
 const search = read('src/pages/search/search.js');
 
 assert.ok(service.includes("const COMMENT_REACTION_CONFIG_COLLECTION = 'settings';"));
@@ -42,7 +43,7 @@ assert.ok(commentsCss.includes('.comment-reaction-btn.is-active {\n    border-co
 assert.ok(commentsCss.includes('.comment-reaction-picker-btn.is-active {\n    border-color: transparent;'));
 assert.ok(commentsCss.includes('.comment-reaction-emoji {\n    font-size: 15.75px;'));
 assert.ok(commentsCss.includes('.comment-reaction-visual {\n    display: inline-grid;'));
-assert.ok(commentsCss.includes('border-radius: 4px;\n    line-height: 1;\n    overflow: hidden;'));
+assert.ok(commentsCss.includes('border-radius: var(--radius-sm);\n    line-height: 1;\n    overflow: hidden;'));
 assert.ok(commentsCss.includes('.comment-reaction-image {\n    display: block;\n    max-width: 100%;\n    max-height: 100%;'));
 assert.ok(adminService.includes('async getCommentReactionConfig(force = false)'));
 assert.ok(adminService.includes('async saveCommentReactionConfig(reactions, currentAdminId)'));

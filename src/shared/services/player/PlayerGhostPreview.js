@@ -697,9 +697,13 @@ class GhostPlayer {
 
     }
 
-    // The same "1:05" / "1:02:05" as the control dock, so hover and dock agree.
     _formatTime(seconds) {
-        return global.PlayerMediaControls.Timeline.formatTime(seconds);
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        const mm = String(m).padStart(2, '0');
+        const ss = String(s).padStart(2, '0');
+        return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
     }
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────

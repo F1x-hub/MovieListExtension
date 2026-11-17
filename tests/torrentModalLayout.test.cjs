@@ -34,6 +34,7 @@ const captureDir = process.env.TORRENT_CAPTURE_DIR || os.tmpdir();
             for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080], [390, 844], [910, 512]]) {
                 await page.setViewportSize({ width, height });
                 await page.setContent(html);
+                await page.addScriptTag({ path: path.join(root, 'src/shared/utils/Utils.js') });
                 await page.addScriptTag({ path: path.join(root, 'src/pages/movie-details/TorrentSourcePanel.js') });
                 await page.addScriptTag({ path: path.join(root, 'src/shared/components/SortControl.js') });
                 await page.addScriptTag({ path: path.join(root, 'src/shared/components/FilterControls.js') });

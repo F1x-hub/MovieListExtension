@@ -165,7 +165,7 @@
 }
 
 .comment-reaction-emoji {
-    font-size: var(--font-size-base);
+    font-size: 15.75px; /* tuned to the reaction artwork, not a text size */
     line-height: 1;
 }
 

@@ -3,6 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { MovieDetailsTorrentPanelMethods: Panel } = require('../src/pages/movie-details/TorrentSourcePanel.js');
+// Movie Details loads Utils.js; the panel calls it as a global.
+globalThis.Utils ??= require('../src/shared/utils/Utils.js');
 const { PlaybackController } = require('../src/shared/services/player/PlaybackController');
 const { TorrentAdapter } = require('../src/shared/services/player/adapters/TorrentAdapter');
 

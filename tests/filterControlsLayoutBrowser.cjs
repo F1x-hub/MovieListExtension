@@ -59,7 +59,8 @@ async function fixture(page, baseUrl, surface, theme) {
     }
     await page.addScriptTag({ content: read('src/shared/i18n/locales.js').replace('export const locales', 'window.testLocales') });
     await page.addScriptTag({ content: read('src/shared/i18n/I18n.js').replace(/^import .*;\r?\n/gm, '').replace('export const i18n', 'const i18n').replace('export { I18n };', '').replace('this.locales = locales;', 'this.locales = window.testLocales;') });
-    for (const file of ['src/shared/config/discoveryFilters.js', 'src/shared/components/NumberStepper.js', 'src/shared/components/FilterControls.js', 'src/shared/components/SortControl.js']) {
+    // The pages load Utils.js too; Random formats its vote slider with Utils.formatCompactNumber.
+    for (const file of ['src/shared/utils/Utils.js', 'src/shared/config/discoveryFilters.js', 'src/shared/components/NumberStepper.js', 'src/shared/components/FilterControls.js', 'src/shared/components/SortControl.js']) {
         await page.addScriptTag({ content: read(file) });
     }
     await page.addScriptTag({ content: read(`src/pages/${surface}/${surface}.js`).replace(/^import .*;\r?\n/gm, '') + `\nwindow.FixtureManager = ${surfaces[surface].manager};` });

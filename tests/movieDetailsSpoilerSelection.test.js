@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const source = fs.readFileSync('src/pages/movie-details/movie-details.js', 'utf8');
+// The popup methods live in UserRatingsPanel.js, installed onto MovieDetails.
+const source = ['src/pages/movie-details/movie-details.js', 'src/pages/movie-details/UserRatingsPanel.js']
+    .map(file => fs.readFileSync(file, 'utf8')).join('\n');
 const styles = fs.readFileSync('src/pages/movie-details/movie-details.css', 'utf8');
 
 assert.match(source, /this\.setupEventListeners\(\);\s*this\.setupCommentReactionListeners\(\);\s*this\.initSelectionPopup\(\);/,

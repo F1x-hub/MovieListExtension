@@ -94,10 +94,19 @@ async function main() {
         let expectedExplicitPages = 0;
         harness.context.on('page', () => { additionalPages += 1; });
         const assertNoNewPages = label => assert.equal(additionalPages, expectedExplicitPages, `${label} must not open automatic tabs`);
-        const assertResolverClean = async label => assert.equal(await page.evaluate(() => {
+        // The resolver frame leaves in the resolve's `finally`, after its answer settles, so it is
+        // awaited (up to 3s) rather than checked at once: an immediate read raced that cleanup.
+        const resolverFrames = () => {
             const source = chrome.runtime.getURL('src/pages/hdrezka-resolver/resolver.html');
             return [...document.querySelectorAll('iframe')].filter(frame => frame.src.startsWith(source)).length;
-        }), 0, `${label} removes the hidden resolver iframe`);
+        };
+        const assertResolverClean = async label => {
+            await page.waitForFunction(() => {
+                const source = chrome.runtime.getURL('src/pages/hdrezka-resolver/resolver.html');
+                return ![...document.querySelectorAll('iframe')].some(frame => frame.src.startsWith(source));
+            }, null, { timeout: 3000 }).catch(() => {});
+            assert.equal(await page.evaluate(resolverFrames), 0, `${label} removes the hidden resolver iframe`);
+        };
         const baselineRules = await page.evaluate(async () => (await chrome.declarativeNetRequest.getSessionRules()).map(rule => rule.id));
         const discovery = await page.evaluate(async () => {
             window.hdService = new HdrezkaSessionService();
