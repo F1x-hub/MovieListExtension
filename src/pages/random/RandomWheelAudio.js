@@ -2,6 +2,13 @@ const WHEEL_AUDIO_PATHS = {
     spin: 'src/shared/assets/audio/random-wheel-spin.mp3',
     winner: 'src/shared/assets/audio/random-wheel-winner.mp3'
 };
+// A season with its own wheel music replaces both tracks while its decor is on.
+const SEASONAL_WHEEL_AUDIO_PATHS = {
+    newyear: {
+        spin: 'src/shared/assets/audio/random-wheel-spin-newyear.ogg',
+        winner: 'src/shared/assets/audio/random-wheel-winner-newyear.ogg'
+    }
+};
 const SPIN_FADE_SECONDS = 1.2;
 
 /** Page-local audio: one looping spin or one result cue, tied to the wheel lifecycle. */
@@ -119,17 +126,20 @@ export class RandomWheelAudio {
     }
 
     _getBuffer(kind) {
-        let promise = this.buffers.get(kind);
+        // Read on every play, so a page left open across a season boundary follows it.
+        const season = globalThis.SeasonalThemeService?.getActiveDecor?.()?.id;
+        const path = (SEASONAL_WHEEL_AUDIO_PATHS[season] || WHEEL_AUDIO_PATHS)[kind];
+        let promise = this.buffers.get(path);
         if (!promise) {
-            promise = this._loadBuffer(kind);
-            this.buffers.set(kind, promise);
-            promise.catch(() => this.buffers.delete(kind));
+            promise = this._loadBuffer(path);
+            this.buffers.set(path, promise);
+            promise.catch(() => this.buffers.delete(path));
         }
         return promise;
     }
 
-    async _loadBuffer(kind) {
-        const response = await fetch(chrome.runtime.getURL(WHEEL_AUDIO_PATHS[kind]));
+    async _loadBuffer(path) {
+        const response = await fetch(chrome.runtime.getURL(path));
         if (!response.ok) throw new Error('Wheel audio unavailable');
         return this.context.decodeAudioData(await response.arrayBuffer());
     }

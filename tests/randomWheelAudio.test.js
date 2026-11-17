@@ -11,7 +11,7 @@ const audioCode = fs.readFileSync(path.join(root, 'src/pages/random/RandomWheelA
 const pageCode = fs.readFileSync(path.join(root, 'src/pages/random/random.js'), 'utf8');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-function audioHarness({ fetchAudio = async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(1) }), supported = true, volume = 1 } = {}) {
+function audioHarness({ fetchAudio = async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(1) }), supported = true, volume = 1, season = null } = {}) {
     let now = 0;
     const sources = [];
     const requests = [];
@@ -66,10 +66,11 @@ function audioHarness({ fetchAudio = async () => ({ ok: true, arrayBuffer: async
         AudioContext: supported ? Context : undefined,
         performance: { now: () => now },
         fetch: url => { requests.push(url); return fetchAudio(url); },
-        chrome: { runtime: { getURL: p => `chrome-extension://test/${p}` } }
+        chrome: { runtime: { getURL: p => `chrome-extension://test/${p}` } },
+        SeasonalThemeService: { getActiveDecor: () => (season ? { id: season } : null) }
     };
     runInNewContext(`${audioCode.replace('export class', 'class')}\nglobalThis.RandomWheelAudio = RandomWheelAudio;`, context);
-    return { audio: new context.RandomWheelAudio(volume), sources, requests, gains, setNow: n => { now = n; }, get resumes() { return resumes; } };
+    return { audio: new context.RandomWheelAudio(volume), sources, requests, gains, setNow: n => { now = n; }, setSeason: id => { season = id; }, get resumes() { return resumes; } };
 }
 
 // The master volume controls both tracks independently of their playback envelopes.
@@ -194,6 +195,32 @@ for (const action of ['stop', 'expire', 'finish']) {
     }
     await flush();
     assert.equal(h.sources.length, 0, `${action} must invalidate late audio`);
+}
+
+// The New Year decor swaps both tracks; any other season, or the decor switched off, keeps the regular ones.
+{
+    const h = audioHarness({ season: 'newyear' });
+    h.audio.startSpin(2000);
+    await flush();
+    h.audio.finish();
+    await flush();
+    assert.deepEqual(h.requests.map(url => url.split('/').pop()), ['random-wheel-spin-newyear.ogg', 'random-wheel-winner-newyear.ogg']);
+    assert.equal(h.sources[0].loop, true);
+    assert.equal(h.sources[1].loop, false);
+    for (const other of ['halloween', null]) {
+        h.setSeason(other);
+        h.audio.startSpin(2000);
+        await flush();
+        h.audio.finish();
+        await flush();
+    }
+    assert.deepEqual(h.requests.slice(2).map(url => url.split('/').pop()), ['random-wheel-spin.mp3', 'random-wheel-winner.mp3'],
+        'Regular tracks load once and are reused when no season owns the wheel music');
+    h.setSeason('newyear');
+    h.audio.startSpin(2000);
+    await flush();
+    assert.equal(h.requests.length, 4, 'Returning to the season reuses its decoded tracks');
+    h.audio.stop();
 }
 
 // A failed asset request can recover on a later spin.
@@ -327,6 +354,35 @@ for (const options of [{ supported: false }, { fetchAudio: async () => ({ ok: fa
     assert.equal(volumePanel.hidden, true, 'Cancellation must reset the collapsed volume state');
     assert.equal(volumeButton.getAttribute('aria-expanded'), 'false');
 
+    // The last marathon movie is picked at once: no wheel, no music.
+    {
+        const overlay = dom.window.document.getElementById('rollAnimOverlay');
+        const rollButton = dom.window.document.createElement('button');
+        rollButton.dataset.marathonAction = 'roll';
+        dom.window.document.body.appendChild(rollButton);
+        let rolls = 0;
+        const queued = id => ({ id, kpId: id, title: `Movie ${id}`, state: 'queued' });
+        manager._renderMarathon = () => {};
+        manager._syncMarathonActionState = () => {};
+        manager.marathonService = { rollNext: async () => { rolls++; return null; } };
+        manager.marathonState = { round: { roundId: 1, status: 'active', currentItemId: null }, items: [queued(1), { ...queued(2), state: 'watched' }] };
+        manager._bindMarathonActions();
+        calls.length = 0;
+        rollButton.click();
+        await flush();
+        assert.equal(rolls, 1, 'The last movie must be picked by the button itself');
+        assert.equal(overlay.classList.contains('hidden'), true, 'One remaining movie must not open the wheel');
+        assert.deepEqual(calls, [], 'One remaining movie must not start wheel audio');
+
+        manager.marathonState.items = [queued(1), queued(2)];
+        rollButton.click();
+        await flush();
+        assert.equal(rolls, 1, 'Several movies wait for the spin button');
+        assert.equal(overlay.classList.contains('hidden'), false, 'Several movies still open the wheel');
+        dom.window.document.getElementById('rollCloseBtn').click();
+        rollButton.remove();
+    }
+
     manager._showRollAnimation(manager.pool, 0);
     manager._stopRollAnimation();
     const beforeStaleFrame = calls.length;
@@ -349,7 +405,7 @@ for (const options of [{ supported: false }, { fetchAudio: async () => ({ ok: fa
     dom.window.close();
 }
 
-for (const name of ['spin', 'winner']) {
-    assert.ok(fs.statSync(path.join(root, `src/shared/assets/audio/random-wheel-${name}.mp3`)).size > 1000);
+for (const file of ['spin.mp3', 'winner.mp3', 'spin-newyear.ogg', 'winner-newyear.ogg']) {
+    assert.ok(fs.statSync(path.join(root, `src/shared/assets/audio/random-wheel-${file}`)).size > 1000);
 }
 console.log('Random wheel audio: timing, looping, smooth fades, live/saved volume, lifecycle, cancellation and failure checks passed.');
