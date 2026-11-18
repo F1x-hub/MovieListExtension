@@ -1,8 +1,10 @@
 import { t, escapeHtml } from '../games/gamesI18n.js';
 
 /**
- * Battleship news on every extension page except the game's own: a challenge,
- * an opponent who joined your game, your turn in a game nobody has open.
+ * Networked-game news on every extension page except the game's own: a
+ * challenge, an opponent who joined your game, your turn in a game nobody has
+ * open. Battleship uses it as it is; chess passes its own `config`
+ * (ChessNotifier.js), and both share one stack of notices.
  *
  * Firestore cost: one listener on the player's own `battleshipPlayers/{uid}`
  * document, started by Navigation only when mini-games are switched on. What
@@ -13,9 +15,6 @@ import { t, escapeHtml } from '../games/gamesI18n.js';
  */
 
 export const NOTIFIED_STORAGE_KEY = 'battleshipNotifiedV1';
-const COLLECTION = 'battleshipPlayers';
-const CHANNEL = 'movielist-battleship';
-const PAGE_PATH = 'src/pages/battleship/battleship.html';
 const ROOT_ID = 'battleshipNotices';
 const KEEP_MS = 3 * 24 * 60 * 60 * 1000;
 const MAX_KEYS = 80;
@@ -23,7 +22,8 @@ const MAX_VISIBLE = 3;
 const PING_WAIT_MS = 200;
 const INVITE_VISIBLE_MS = 2 * 60 * 1000;
 const NEWS_VISIBLE_MS = 20 * 1000;
-const KIND_PRIORITY = { invite: 0, rematch: 0, joined: 1, turn: 2 };
+const KIND_PRIORITY = { invite: 0, rematch: 0, joined: 1, draw: 1, turn: 2 };
+const PRESENCE_KINDS = new Set(['turn', 'joined', 'draw']);
 
 const tb = (key, params) => t(`battleship.${key}`, params);
 
@@ -86,21 +86,36 @@ function defaultStorage() {
     };
 }
 
-function defaultPageUrl(gameId) {
-    const path = `${PAGE_PATH}?game=${encodeURIComponent(gameId)}`;
-    return globalThis.chrome?.runtime?.getURL ? globalThis.chrome.runtime.getURL(path) : `/${path}`;
+function pageUrlFor(pagePath) {
+    return gameId => {
+        const path = `${pagePath}?game=${encodeURIComponent(gameId)}`;
+        return globalThis.chrome?.runtime?.getURL ? globalThis.chrome.runtime.getURL(path) : `/${path}`;
+    };
 }
+
+/** Where a game keeps its player documents, its page and the texts of its notices. */
+export const BATTLESHIP_NOTIFIER_CONFIG = Object.freeze({
+    source: 'battleship',
+    collection: 'battleshipPlayers',
+    channel: 'movielist-battleship',
+    pagePath: 'src/pages/battleship/battleship.html',
+    storageKey: NOTIFIED_STORAGE_KEY,
+    prefix: 'battleship',
+    events: battleshipEvents
+});
 
 export class BattleshipNotifier {
     constructor({
         db,
         uid,
+        config = BATTLESHIP_NOTIFIER_CONFIG,
         document: doc = globalThis.document,
         storage = defaultStorage(),
         now = () => Date.now(),
-        pageUrl = defaultPageUrl,
+        pageUrl = pageUrlFor(config.pagePath),
         channelFactory = name => (typeof BroadcastChannel === 'function' ? new BroadcastChannel(name) : null)
     }) {
+        this.config = config;
         this.db = db;
         this.uid = uid;
         this.document = doc;
@@ -119,7 +134,7 @@ export class BattleshipNotifier {
 
     start() {
         if (this.unsubscribe || !this.db || !this.uid) return;
-        this.unsubscribe = this.db.collection(COLLECTION).doc(this.uid).onSnapshot(snapshot => {
+        this.unsubscribe = this.db.collection(this.config.collection).doc(this.uid).onSnapshot(snapshot => {
             this.player = snapshot.exists ? snapshot.data() : null;
             this.flush();
         }, error => {
@@ -134,7 +149,10 @@ export class BattleshipNotifier {
         this.document.removeEventListener('visibilitychange', this.handleVisibility);
         this.timers.forEach(timer => clearTimeout(timer));
         this.timers.clear();
-        this.document.getElementById(ROOT_ID)?.remove();
+        // The stack is shared with the other games: take only our notices away.
+        const root = this.document.getElementById(ROOT_ID);
+        root?.querySelectorAll(`[data-source="${this.config.source}"]`).forEach(notice => notice.remove());
+        if (root && !root.children.length) root.remove();
     }
 
     flush() {
@@ -148,12 +166,12 @@ export class BattleshipNotifier {
     async flushNow() {
         if (!this.unsubscribe || this.document.visibilityState !== 'visible') return;
         const now = this.now();
-        const events = battleshipEvents(this.player, this.uid, now);
+        const events = this.config.events(this.player, this.uid, now);
         if (!events.length) return;
         const seen = pruneNotified(await this.readSeen(), now);
         const fresh = events.filter(event => !seen[event.key]);
         if (!fresh.length) return;
-        const needsPresence = fresh.some(event => event.kind === 'turn' || event.kind === 'joined');
+        const needsPresence = fresh.some(event => PRESENCE_KINDS.has(event.kind));
         const openGames = needsPresence ? await this.openGames() : new Set();
         const visible = [];
         const silenced = [];
@@ -170,9 +188,9 @@ export class BattleshipNotifier {
         [...shown].reverse().forEach(event => this.show(event));
     }
 
-    /** Game codes shown by open Battleship pages, collected for a moment. */
+    /** Game codes shown by open pages of this game, collected for a moment. */
     async openGames() {
-        const channel = this.channelFactory(CHANNEL);
+        const channel = this.channelFactory(this.config.channel);
         if (!channel) return new Set();
         const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         const games = new Set();
@@ -189,7 +207,7 @@ export class BattleshipNotifier {
 
     async readSeen() {
         try {
-            return (await this.storage?.get(NOTIFIED_STORAGE_KEY)) || {};
+            return (await this.storage?.get(this.config.storageKey)) || {};
         } catch {
             return {};
         }
@@ -197,7 +215,7 @@ export class BattleshipNotifier {
 
     async writeSeen(seen) {
         try {
-            await this.storage?.set(NOTIFIED_STORAGE_KEY, seen);
+            await this.storage?.set(this.config.storageKey, seen);
         } catch {
             // Without storage a reload may show the same news once more.
         }
@@ -209,24 +227,29 @@ export class BattleshipNotifier {
             root = this.document.createElement('section');
             root.id = ROOT_ID;
             root.className = 'battleship-notices';
-            root.setAttribute('aria-label', tb('notify.title'));
+            root.setAttribute('aria-label', this.translate('notify.title'));
             this.document.body.append(root);
         }
         return root;
     }
 
+    translate(key, params) {
+        return t(`${this.config.prefix}.${key}`, params);
+    }
+
     text(event) {
-        return tb(`notify.${event.kind === 'turn' ? 'your_turn' : event.kind}`, { name: event.name });
+        return this.translate(`notify.${event.kind === 'turn' ? 'your_turn' : event.kind}`, { name: event.name });
     }
 
     show(event) {
         const doc = this.document;
         const root = this.root();
-        [...root.children].find(child => child.dataset.key === event.key)?.remove();
+        [...root.children].find(child => child.dataset.key === event.key && child.dataset.source === this.config.source)?.remove();
         const notice = doc.createElement('div');
         notice.className = 'battleship-notice';
         notice.dataset.key = event.key;
         notice.dataset.kind = event.kind;
+        notice.dataset.source = this.config.source;
         notice.setAttribute('role', event.kind === 'invite' || event.kind === 'rematch' ? 'alert' : 'status');
         const photo = typeof event.photo === 'string' && /^https:\/\//i.test(event.photo) ? event.photo : null;
         const initial = String(event.name || '?').trim().charAt(0).toLocaleUpperCase() || '?';
@@ -235,12 +258,12 @@ export class BattleshipNotifier {
                 ? `<img src="${escapeHtml(photo)}" alt="" referrerpolicy="no-referrer">`
                 : escapeHtml(initial)}</span>
             <span class="battleship-notice__copy">
-                <strong>${escapeHtml(tb('notify.title'))}</strong>
+                <strong>${escapeHtml(this.translate('notify.title'))}</strong>
                 <span>${escapeHtml(this.text(event))}</span>
             </span>
             <span class="battleship-notice__actions">
-                <a class="battleship-notice__open" href="${escapeHtml(this.pageUrl(event.gameId))}">${escapeHtml(tb('notify.open'))}</a>
-                <button class="battleship-notice__close" type="button" aria-label="${escapeHtml(tb('notify.later'))}" title="${escapeHtml(tb('notify.later'))}">×</button>
+                <a class="battleship-notice__open" href="${escapeHtml(this.pageUrl(event.gameId))}">${escapeHtml(this.translate('notify.open'))}</a>
+                <button class="battleship-notice__close" type="button" aria-label="${escapeHtml(this.translate('notify.later'))}" title="${escapeHtml(this.translate('notify.later'))}">×</button>
             </span>`;
         const dismiss = () => notice.remove();
         notice.querySelector('.battleship-notice__close').addEventListener('click', dismiss);

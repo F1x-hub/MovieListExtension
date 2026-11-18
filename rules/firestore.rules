@@ -770,6 +770,25 @@ service cloud.firestore {
       allow list, create, update, delete: if false;
     }
 
+    // Networked chess, the same shape as Battleship: every write goes through the
+    // server-owned `chess` function (Admin SDK), which replays and checks each
+    // move and runs the clocks. A game is readable by its players, a player
+    // document only by that player and the lobby of open games by approved users.
+    match /chessGames/{gameId} {
+      allow get: if isAuthenticated() && (request.auth.uid in resource.data.players || isAdmin());
+      allow list, create, update, delete: if false;
+    }
+
+    match /chessPlayers/{playerUid} {
+      allow get: if isOwner(playerUid);
+      allow list, create, update, delete: if false;
+    }
+
+    match /chessLobby/{lobbyId} {
+      allow get: if isApprovedUser() || isAdmin();
+      allow list, create, update, delete: if false;
+    }
+
     // Users collection
     match /users/{userId} {
       // Everyone reads their own profile (the approval check on login runs while

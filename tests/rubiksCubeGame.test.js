@@ -260,11 +260,13 @@ assert.equal(actionGame.container.querySelector('.rubiks-controls-drawer').open,
 assert.equal(actionDom.window.document.activeElement, moveButton);
 actionGame.stop();
 
-// The vendored three.js subset exports everything the renderer imports.
+// The vendored three.js subset exports everything the 3D games import.
 const rendererSource = readFileSync(new URL('../src/shared/games/RubiksCubeRenderer.js', import.meta.url), 'utf8');
-const imported = rendererSource.match(/import \{([^}]+)\} from '[^']*three\.rubiks\.min\.js'/)[1]
-    .split(',').map(name => name.trim()).filter(Boolean);
-const three = await import('../libs/three.rubiks.min.js');
-imported.forEach(name => assert.ok(three[name], `libs/three.rubiks.min.js exports ${name}`));
+assert.match(rendererSource, /from '\.\.\/\.\.\/\.\.\/libs\/three\.games\.min\.js'/);
+const { importedNames } = await import('../scripts/vendor-three.mjs');
+const imported = importedNames();
+assert.ok(imported.includes('WebGLRenderer') && imported.includes('LatheGeometry'), 'cube and chess imports are collected');
+const three = await import('../libs/three.games.min.js');
+imported.forEach(name => assert.ok(three[name], `libs/three.games.min.js exports ${name}`));
 
 console.log('✅ Rubik cube state tests passed!');

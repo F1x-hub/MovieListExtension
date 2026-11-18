@@ -3,7 +3,7 @@
   "description": "Cloud Functions for MovieList Extension",
   "main": "index.js",
   "scripts": {
-    "lint": "node --check index.js && node ../node_modules/eslint/bin/eslint.js --config eslint.config.cjs seriesEpisodeAggregation.js tests/seriesEpisodeAggregation.test.cjs achievementStats.js tests/achievementStats.test.cjs battleship.js battleshipRules.js",
+    "lint": "node --check index.js && node ../node_modules/eslint/bin/eslint.js --config eslint.config.cjs seriesEpisodeAggregation.js tests/seriesEpisodeAggregation.test.cjs achievementStats.js tests/achievementStats.test.cjs battleship.js battleshipRules.js chess.js chessRules.js",
     "test": "node tests/seriesEpisodeAggregation.test.cjs && node tests/achievementStats.test.cjs"
   },
   "dependencies": {

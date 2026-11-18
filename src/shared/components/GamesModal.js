@@ -25,6 +25,7 @@ const SVG_ICONS = {
     WORD_GUESS: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M7 9h.01M11 9h.01M15 9h.01M7 13h.01M11 13h.01M15 13h.01"></path><path d="M7 17h10"></path></svg>`,
     RUBIKS: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"></path><path d="M12 12 4 7.5M12 12l8-4.5M12 12v9"></path></svg>`,
     BATTLESHIP: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15h18l-2.4 4.5H5.4z"></path><path d="M7 15v-3h4v-2.5h3V12h3v3"></path><path d="M12.5 9.5V5"></path></svg>`,
+    CHESS: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 21h12"></path><path d="M8 21c.3-3.2 1.8-5.6 4.4-7.2-2.2.2-3.9 1-5.4 2.4L5.3 14.6c.9-3.6 3.3-7 6.8-9.3V3l2.9 1.4c4.3.8 6.6 4.4 6.4 9.9-.1 2.6-.7 4.8-1.5 6.7"></path><path d="M14.5 8.5h.01"></path></svg>`,
     VOLUME_HIGH: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`,
     VOLUME_MUTE: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`,
     CLOSE: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`
@@ -134,6 +135,11 @@ export class GamesModal {
                                 <a class="game-menu-card game-menu-card--battleship" role="menuitem" href="${escapeHtml(chrome.runtime.getURL('src/pages/battleship/battleship.html'))}">
                                     <span class="game-menu-icon">${SVG_ICONS.BATTLESHIP}</span>
                                     <span class="game-menu-card-copy"><strong>${escapeHtml(t('menu.battleship.title'))}</strong><small>${escapeHtml(t('menu.battleship.subtitle'))}</small></span>
+                                    <span class="game-menu-arrow" aria-hidden="true">↗</span>
+                                </a>
+                                <a class="game-menu-card game-menu-card--chess" role="menuitem" href="${escapeHtml(chrome.runtime.getURL('src/pages/chess/chess.html'))}">
+                                    <span class="game-menu-icon">${SVG_ICONS.CHESS}</span>
+                                    <span class="game-menu-card-copy"><strong>${escapeHtml(t('menu.chess.title'))}</strong><small>${escapeHtml(t('menu.chess.subtitle'))}</small></span>
                                     <span class="game-menu-arrow" aria-hidden="true">↗</span>
                                 </a>
                             </div>

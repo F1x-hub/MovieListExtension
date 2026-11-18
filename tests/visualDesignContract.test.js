@@ -33,6 +33,8 @@ const migrationGuardFiles = {
 const exceptionScopedFiles = [
     // Game boards: hits keep the semantic danger red, always drawn as a cross.
     'src/pages/battleship/battleship.css',
+    // Chess: porcelain and obsidian piece glyphs and the flat board's stone squares.
+    'src/pages/chess/chess.css',
     'src/pages/bookmarks/bookmarks.css',
     'src/pages/calendar/calendar.css',
     'src/pages/settings/settings.css',

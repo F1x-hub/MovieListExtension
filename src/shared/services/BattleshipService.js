@@ -9,6 +9,11 @@
  * a skewed local clock.
  */
 
+import { normalizeGameCode, profileDisplayName, searchApprovedPlayers } from './OnlinePlayers.js';
+
+// Shared with chess; re-exported for the Battleship page and its tests.
+export { normalizeGameCode, profileDisplayName };
+
 export const BATTLESHIP_FUNCTION_URL = 'https://us-central1-movielistdb-13208.cloudfunctions.net/battleship';
 export const BATTLESHIP_PAGE_PATH = 'src/pages/battleship/battleship.html';
 export const BATTLESHIP_CHANNEL = 'movielist-battleship';
@@ -16,8 +21,6 @@ export const TURN_IDLE_MS = 5 * 60 * 1000;
 export const PLACING_IDLE_MS = 5 * 60 * 1000;
 export const TOUCH_INTERVAL_MS = 2 * 60 * 1000;
 export const CODE_LENGTH = 6;
-const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
-const SEARCH_LIMIT = 8;
 // A clock sample older than this is replaced even by a slower round trip.
 const CLOCK_SAMPLE_TTL_MS = 60 * 1000;
 
@@ -32,41 +35,11 @@ export class BattleshipError extends Error {
     }
 }
 
-/** A typed game code ("k7q-2mx", "K7Q 2MX", a pasted link) as the canonical code, or null. */
-export function normalizeGameCode(value) {
-    const text = String(value ?? '').trim();
-    const fromLink = /[?&]game=([A-Za-z0-9]{6})\b/.exec(text)?.[1];
-    const code = (fromLink || text).replace(/[\s-]+/g, '').toUpperCase();
-    return CODE_PATTERN.test(code) ? code : null;
-}
-
 export function battleshipPageUrl(gameId = null) {
     const query = gameId ? `?game=${encodeURIComponent(gameId)}` : '';
     const runtime = globalThis.chrome?.runtime;
     if (runtime?.getURL) return runtime.getURL(`${BATTLESHIP_PAGE_PATH}${query}`);
     return `../battleship/battleship.html${query}`;
-}
-
-/** The name a profile shows, following the owner's display preference. */
-export function profileDisplayName(profile) {
-    if (!profile) return '';
-    if (profile.displayNameFormat === 'username' && profile.username) return String(profile.username);
-    const fullName = [profile.firstName, profile.lastName].map(part => String(part || '').trim()).filter(Boolean).join(' ');
-    return fullName || String(profile.displayName || profile.username || '').trim();
-}
-
-function safeHttpsUrl(value) {
-    const text = String(value ?? '').trim();
-    if (!text || text.length > 2048) return null;
-    try {
-        return new URL(text).protocol === 'https:' ? text : null;
-    } catch {
-        return null;
-    }
-}
-
-function capitalize(text) {
-    return text ? text.charAt(0).toLocaleUpperCase() + text.slice(1) : text;
 }
 
 export class BattleshipService {
@@ -227,43 +200,9 @@ export class BattleshipService {
         return this._subscribe(this._requireDb().collection('battleshipLobby').doc('open'), onData, onError);
     }
 
-    /**
-     * Approved players whose username, first name or display name starts with
-     * the text. Three small prefix queries; Firestore matching is case-sensitive,
-     * so names are tried capitalized and usernames lowercased.
-     */
+    /** Approved players whose name or @username starts with the text. */
     async searchPlayers(text) {
-        const query = String(text ?? '').trim().replace(/^@/, '');
-        if (query.length < 2) return [];
-        const db = this._requireDb();
-        const users = db.collection('users');
-        const prefix = (field, value) => users.where(field, '>=', value).where(field, '<=', `${value}\uf8ff`).limit(SEARCH_LIMIT).get();
-        const lower = query.toLocaleLowerCase();
-        const capital = capitalize(query);
-        const answers = await Promise.allSettled([
-            prefix('usernameLower', lower),
-            prefix('firstName', capital),
-            prefix('displayName', capital)
-        ]);
-        if (answers.every(answer => answer.status === 'rejected')) throw answers[0].reason;
-        const selfUid = this.currentUser()?.uid || null;
-        const players = new Map();
-        for (const answer of answers) {
-            if (answer.status !== 'fulfilled') continue;
-            for (const doc of answer.value.docs) {
-                const profile = doc.data() || {};
-                if (doc.id === selfUid || players.has(doc.id)) continue;
-                if (profile.approvalStatus && profile.approvalStatus !== 'approved') continue;
-                const name = profileDisplayName(profile);
-                if (!name) continue;
-                players.set(doc.id, {
-                    uid: doc.id,
-                    name,
-                    username: profile.username ? String(profile.username) : null,
-                    photo: safeHttpsUrl(profile.photoURL)
-                });
-            }
-        }
-        return [...players.values()].slice(0, SEARCH_LIMIT);
+        if (String(text ?? '').trim().replace(/^@/, '').length < 2) return [];
+        return searchApprovedPlayers(this._requireDb(), text, { selfUid: this.currentUser()?.uid || null });
     }
 }

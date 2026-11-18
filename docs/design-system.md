@@ -37,7 +37,11 @@ Color is allowed only when it carries content or an unavoidable semantic:
 2. external provider or brand marks such as IMDb, Kinopoisk, Telegram, or Google;
 3. game boards, pieces, and game-specific feedback (the Battleship board draws
    hulls in the content colour and hits in the semantic danger red, always as a
-   cross, with misses as dots; its page chrome stays neutral);
+   cross, with misses as dots; its page chrome stays neutral; the chess board is porcelain
+   and obsidian pieces on grey stone, with a steel tint for the last move and the
+   danger red only for check and a clock under twenty seconds, each next to a
+   text or an icon; the flat board and the piece glyphs reuse those greys, and
+   the chess page chrome stays neutral);
 4. essential success, warning, or danger feedback;
 5. seasonal decoration owned by `SeasonalThemeService` (see below);
 6. collection icons: the franchise tiles from

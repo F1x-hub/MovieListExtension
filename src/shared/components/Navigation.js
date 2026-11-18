@@ -9,6 +9,22 @@ class Navigation {
     static MEDIA_PLAYER_SETUP_KEY = 'mediaplayer_setup_v1';
     // Setup errors that mean "set up, but the service does not answer right now".
     static MEDIA_PLAYER_TRANSIENT_ERRORS = new Set(['connection_failed', 'timeout', 'torrent_not_configured', 'engine_closed']);
+    // Networked games with news for other pages. Imports stay literal: the page
+    // bundler keeps a script with a relative import() out of a bundle.
+    static GAME_NOTIFIERS = [
+        {
+            property: 'battleshipNotifier',
+            pagePath: '/src/pages/battleship/',
+            label: 'Battleship',
+            load: () => import('./BattleshipNotifier.js').then(module => module.BattleshipNotifier)
+        },
+        {
+            property: 'chessNotifier',
+            pagePath: '/src/pages/chess/',
+            label: 'Chess',
+            load: () => import('./ChessNotifier.js').then(module => module.ChessNotifier)
+        }
+    ];
 
     /**
      * Whether the person has connected MediaPlayer in Settings. Downloads exist only
@@ -502,8 +518,8 @@ class Navigation {
                         btn.style.display = changes.showGames.newValue ? 'inline-flex' : 'none';
                     }
                     this.showGames = Boolean(changes.showGames.newValue);
-                    if (this.showGames && this.user) this.startBattleshipNotifier(this.user);
-                    else this.stopBattleshipNotifier();
+                    if (this.showGames && this.user) this.startGameNotifiers(this.user);
+                    else this.stopGameNotifiers();
                 }
                 if (area === 'local' && (changes.mediaPlayerEnabled || changes[Navigation.MEDIA_PLAYER_SETUP_KEY])) {
                     void this.refreshDownloadsEntry();
@@ -1400,45 +1416,61 @@ class Navigation {
     }
 
     /**
-     * Battleship challenges and turns on every page but the game's own. Only
-     * with mini-games switched on: it holds one listener on the player's own
-     * document, so nobody who never plays pays for it.
+     * News from the networked games (Battleship, chess) on every page but the
+     * game's own. Only with mini-games switched on: each holds one listener on
+     * the player's own document, so nobody who never plays pays for it.
      * @param {Object} user - Firebase user
      */
-    startBattleshipNotifier(user) {
+    startGameNotifiers(user) {
+        Navigation.GAME_NOTIFIERS.forEach(entry => this.startGameNotifier(entry, user));
+    }
+
+    stopGameNotifiers() {
+        Navigation.GAME_NOTIFIERS.forEach(entry => this.stopGameNotifier(entry));
+    }
+
+    startGameNotifier(entry, user) {
         const uid = user?.uid;
-        const onGamePage = typeof location !== 'undefined' && location.pathname.includes('/src/pages/battleship/');
+        const onGamePage = typeof location !== 'undefined' && location.pathname.includes(entry.pagePath);
+        const state = this.gameNotifierState(entry);
         if (!uid || !this.showGames || onGamePage) {
-            this.stopBattleshipNotifier();
+            this.stopGameNotifier(entry);
             return;
         }
-        if (this._battleshipNotifierUid === uid) return;
-        this.stopBattleshipNotifier();
-        this._battleshipNotifierUid = uid;
-        const token = this._battleshipNotifierToken;
+        if (state.uid === uid) return;
+        this.stopGameNotifier(entry);
+        state.uid = uid;
+        const token = state.token;
         const manager = typeof firebaseManager !== 'undefined' ? firebaseManager : null;
         (async () => {
             // Like the reaction inbox: wait until Firebase itself is signed in as this uid.
             await manager?.waitForAuthReady?.(10000);
-            if (token !== this._battleshipNotifierToken || manager?.auth?.currentUser?.uid !== uid || !manager.db) {
-                if (token === this._battleshipNotifierToken) this._battleshipNotifierUid = null;
+            if (token !== state.token || manager?.auth?.currentUser?.uid !== uid || !manager.db) {
+                if (token === state.token) state.uid = null;
                 return;
             }
-            const { BattleshipNotifier } = await import('./BattleshipNotifier.js');
-            if (token !== this._battleshipNotifierToken) return;
-            this.battleshipNotifier = new BattleshipNotifier({ db: manager.db, uid });
-            this.battleshipNotifier.start();
+            const Notifier = await entry.load();
+            if (token !== state.token) return;
+            this[entry.property] = new Notifier({ db: manager.db, uid });
+            this[entry.property].start();
         })().catch(error => {
-            if (token === this._battleshipNotifierToken) this._battleshipNotifierUid = null;
-            console.warn('Navigation: Battleship notifications unavailable', error);
+            if (token === state.token) state.uid = null;
+            console.warn(`Navigation: ${entry.label} notifications unavailable`, error);
         });
     }
 
-    stopBattleshipNotifier() {
-        this._battleshipNotifierToken = (this._battleshipNotifierToken || 0) + 1;
-        this._battleshipNotifierUid = null;
-        this.battleshipNotifier?.stop();
-        this.battleshipNotifier = null;
+    stopGameNotifier(entry) {
+        const state = this.gameNotifierState(entry);
+        state.token += 1;
+        state.uid = null;
+        this[entry.property]?.stop();
+        this[entry.property] = null;
+    }
+
+    gameNotifierState(entry) {
+        this._gameNotifierStates = this._gameNotifierStates || {};
+        if (!this._gameNotifierStates[entry.property]) this._gameNotifierStates[entry.property] = { uid: null, token: 0 };
+        return this._gameNotifierStates[entry.property];
     }
 
     async updateUserDisplay(user) {
@@ -1469,7 +1501,7 @@ class Navigation {
 
                 // Non-blocking: unread reactions on the user's ratings.
                 this.checkReactionNotifications(user);
-                this.startBattleshipNotifier(user);
+                this.startGameNotifiers(user);
 
                 // Get display name based on user preference
                 let displayText = Navigation.displayTextFor(null, user);
@@ -1581,7 +1613,7 @@ class Navigation {
                 this.updateWatchlistCount();
                 this.updateFavoritesCount();
             } else {
-                this.stopBattleshipNotifier();
+                this.stopGameNotifiers();
                 // Hide user profile, show sign in button
                 if (userProfile) userProfile.style.display = 'none';
                 if (signInBtn) signInBtn.style.display = 'flex';

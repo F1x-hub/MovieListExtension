@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="games.chess.page_title">Шахматы</title>
+    <link rel="stylesheet" href="../../shared/styles/common.css">
+    <script defer src="../../shared/components/NumberStepper.js"></script>
+    <link rel="stylesheet" href="../../shared/styles/theme.css">
+    <link rel="stylesheet" href="../../shared/styles/components.css">
+    <link rel="stylesheet" href="../../shared/styles/navigation.css">
+    <link rel="stylesheet" href="chess.css">
+    <script src="../../shared/services/ThemeService.js"></script>
+    <script src="../../shared/services/SeasonalThemeService.js"></script>
+    <link rel="icon" type="image/png" sizes="16x16" href="../../shared/assets/icons/app/favicon16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="../../shared/assets/icons/app/favicon32.png">
+</head>
+<body class="dark-theme">
+    <main class="main-content chess-page" id="chessPage">
+        <div class="chess-shell">
+            <header class="chess-header">
+                <div class="chess-header__copy">
+                    <h1 class="chess-title" data-i18n="games.chess.title">Шахматы</h1>
+                    <p class="chess-subtitle" id="chessSubtitle" data-i18n="games.chess.subtitle">С ботом или с другими пользователями расширения</p>
+                </div>
+                <div class="chess-header__tools">
+                    <button class="chess-icon-btn" id="chessMuteBtn" type="button" aria-pressed="false">
+                        <svg class="chess-icon-sound-on" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+                        <svg class="chess-icon-sound-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+                        <span class="sr-only" id="chessMuteLabel"></span>
+                    </button>
+                </div>
+            </header>
+
+            <div class="chess-toast" id="chessToast" role="status" aria-live="polite" hidden></div>
+
+            <section class="chess-view chess-view--center" id="chessLoading" aria-busy="true">
+                <div class="app-loader app-loader--section" role="status">
+                    <div class="app-loader__indicator" aria-hidden="true"></div>
+                    <span class="app-loader__label" data-i18n="games.chess.loading">Загружаем…</span>
+                </div>
+            </section>
+
+            <section class="chess-view" id="chessLobby" hidden>
+                <div class="chess-lobby">
+                    <section class="chess-panel" aria-labelledby="chessBotTitle">
+                        <h2 class="chess-panel__title" id="chessBotTitle">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M12 8V4"></path><circle cx="12" cy="3" r="1"></circle><path d="M9 13h.01M15 13h.01M9 17h6"></path></svg>
+                            <span data-i18n="games.chess.lobby.bot_title">С ботом</span>
+                        </h2>
+                        <p class="chess-panel__lead" data-i18n="games.chess.lobby.bot_lead">Бот играет у вас в браузере, без интернета. Ход можно отменить, а подсказка покажет сильный ответ.</p>
+                        <div class="chess-levels" role="radiogroup" id="chessLevels" data-i18n="[aria-label]games.chess.lobby.level_label"></div>
+                        <div class="chess-field">
+                            <span class="chess-field__label" id="chessSideLabel" data-i18n="games.chess.lobby.side_label">Играть за</span>
+                            <div class="chess-choices" role="radiogroup" aria-labelledby="chessSideLabel" id="chessSides"></div>
+                        </div>
+                        <div class="chess-start-actions">
+                            <button class="btn btn-primary" type="button" data-action="start-bot" data-i18n="games.chess.lobby.start_bot">Начать партию</button>
+                        </div>
+                        <p class="chess-hint chess-bot-record" id="chessBotRecord"></p>
+                        <div class="chess-resume" id="chessResume" hidden></div>
+                    </section>
+
+                    <section class="chess-panel" aria-labelledby="chessOnlineTitle">
+                        <h2 class="chess-panel__title" id="chessOnlineTitle">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                            <span data-i18n="games.chess.lobby.online_title">Онлайн</span>
+                        </h2>
+                        <p class="chess-panel__lead" data-i18n="games.chess.lobby.online_lead">С другими пользователями расширения. Ходы проверяет сервер, рейтинг меняется после каждой партии.</p>
+
+                        <div class="chess-guest" id="chessGuest" hidden>
+                            <p data-i18n="games.chess.guest.text">Онлайн-партии идут между пользователями расширения, поэтому нужен аккаунт. С ботом можно играть и без него.</p>
+                            <button class="btn btn-primary" id="chessSignInBtn" type="button" data-i18n="games.chess.guest.sign_in">Войти</button>
+                        </div>
+
+                        <div id="chessOnlineControls">
+                            <div class="chess-field">
+                                <span class="chess-field__label" id="chessClockLabel" data-i18n="games.chess.lobby.clock_label">Контроль времени</span>
+                                <div class="chess-choices" role="radiogroup" aria-labelledby="chessClockLabel" id="chessClocks"></div>
+                            </div>
+                            <div class="chess-field">
+                                <span class="chess-field__label" id="chessOnlineSideLabel" data-i18n="games.chess.lobby.side_label">Играть за</span>
+                                <div class="chess-choices" role="radiogroup" aria-labelledby="chessOnlineSideLabel" id="chessOnlineSides"></div>
+                            </div>
+                            <div class="chess-start-grid">
+                                <button class="chess-start-card" type="button" data-action="create-public">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                                    <span class="chess-start-card__copy">
+                                        <strong data-i18n="games.chess.lobby.create_public">Открытая игра</strong>
+                                        <small data-i18n="games.chess.lobby.create_public_hint">Её увидят все, присоединиться может любой</small>
+                                    </span>
+                                </button>
+                                <button class="chess-start-card" type="button" data-action="create-private">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                                    <span class="chess-start-card__copy">
+                                        <strong data-i18n="games.chess.lobby.create_private">Игра по коду</strong>
+                                        <small data-i18n="games.chess.lobby.create_private_hint">Получите код и отправьте его другу</small>
+                                    </span>
+                                </button>
+                            </div>
+
+                            <form class="chess-field-row" id="chessJoinForm" novalidate>
+                                <label class="chess-field chess-field--inline">
+                                    <span class="chess-field__label" data-i18n="games.chess.lobby.join_label">Код игры</span>
+                                    <input class="chess-input chess-input--code" id="chessJoinCode" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="80" aria-describedby="chessJoinError" data-i18n="[placeholder]games.chess.lobby.join_placeholder">
+                                </label>
+                                <button class="btn btn-secondary" type="submit" data-i18n="games.chess.lobby.join_button">Войти в игру</button>
+                                <p class="chess-field-error" id="chessJoinError" role="alert" hidden></p>
+                            </form>
+
+                            <div class="chess-field">
+                                <label class="chess-field__label" for="chessPlayerSearch" data-i18n="games.chess.lobby.challenge_label">Вызвать игрока</label>
+                                <input class="chess-input" id="chessPlayerSearch" type="search" autocomplete="off" spellcheck="false" maxlength="40" aria-describedby="chessPlayerSearchHint" aria-controls="chessPlayerResults" data-i18n="[placeholder]games.chess.lobby.challenge_placeholder">
+                                <p class="chess-hint" id="chessPlayerSearchHint" data-i18n="games.chess.lobby.challenge_hint">Имя или @username, хотя бы две буквы</p>
+                                <ul class="chess-list" id="chessPlayerResults" aria-live="polite"></ul>
+                            </div>
+                        </div>
+                    </section>
+
+                    <aside class="chess-lobby__side" id="chessLobbySide">
+                        <section class="chess-panel" id="chessInvitesPanel" aria-labelledby="chessInvitesTitle" hidden>
+                            <h2 class="chess-panel__title chess-panel__title--small" id="chessInvitesTitle" data-i18n="games.chess.lobby.invites_title">Вам бросили вызов</h2>
+                            <ul class="chess-list" id="chessInvites"></ul>
+                        </section>
+                        <section class="chess-panel" aria-labelledby="chessMyGamesTitle">
+                            <h2 class="chess-panel__title chess-panel__title--small" id="chessMyGamesTitle" data-i18n="games.chess.lobby.my_games_title">Ваши партии</h2>
+                            <ul class="chess-list" id="chessMyGames"></ul>
+                        </section>
+                        <section class="chess-panel" aria-labelledby="chessOpenGamesTitle">
+                            <h2 class="chess-panel__title chess-panel__title--small" id="chessOpenGamesTitle" data-i18n="games.chess.lobby.open_title">Открытые игры</h2>
+                            <ul class="chess-list" id="chessOpenGames" aria-live="polite"></ul>
+                        </section>
+                        <section class="chess-panel" aria-labelledby="chessRatingTitle">
+                            <h2 class="chess-panel__title chess-panel__title--small" id="chessRatingTitle" data-i18n="games.chess.lobby.rating_title">Ваш рейтинг</h2>
+                            <dl class="chess-stats" id="chessStats"></dl>
+                            <ul class="chess-list" id="chessRecent"></ul>
+                        </section>
+                    </aside>
+                </div>
+            </section>
+
+            <section class="chess-view" id="chessGame" hidden></section>
+        </div>
+    </main>
+
+    <script src="../../../libs/firebase-app-compat.js"></script>
+    <script src="../../../libs/firebase-auth-compat.js"></script>
+    <script src="../../../libs/firebase-firestore-compat.js"></script>
+    <script src="../../shared/firestore.js"></script>
+    <script src="../../shared/services/UserService.js"></script>
+    <script src="../../shared/utils/Utils.js"></script>
+    <script src="../../shared/utils/IconUtils.js"></script>
+    <script src="../../shared/utils/Icons.js"></script>
+    <script src="../../shared/components/BackToTop.js"></script>
+    <script src="../../shared/components/ConfirmDialog.js"></script>
+    <script src="../../shared/components/Navigation.js"></script>
+    <script src="../../shared/games/chess/ChessRules.js"></script>
+    <script src="chess.js" type="module"></script>
+</body>
+</html>

@@ -24,6 +24,7 @@ const { createWatchRoomsStagingHandler } = require("./watchRoomsStaging");
 const { createExpiredWatchRoomCleanup } = require("./watchRoomCleanup");
 const { createRandomMarathonHandler } = require("./randomMarathon");
 const { createBattleshipHandler } = require("./battleship");
+const { createChessHandler } = require("./chess");
 const {
   buildMovieRatingProjection,
   isAggregateRelevantRatingChange,
@@ -288,6 +289,23 @@ exports.battleship = onRequest(
     memory: "256MiB",
   },
   createBattleshipHandler({
+    db,
+    auth: getAuth(app),
+  })
+);
+
+/**
+ * Referee for networked chess between extension users. Firestore is the
+ * read/subscription surface; this endpoint owns every game change, replays and
+ * checks each move, runs the clocks and moves ratings.
+ */
+exports.chess = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+  },
+  createChessHandler({
     db,
     auth: getAuth(app),
   })

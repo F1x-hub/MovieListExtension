@@ -19,7 +19,7 @@ import {
     Vector2,
     Vector3,
     WebGLRenderer
-} from '../../../libs/three.rubiks.min.js';
+} from '../../../libs/three.games.min.js';
 import { dot, moveFromLayerTurn } from './RubiksCubeModel.js';
 
 const STICKER_COLORS = {

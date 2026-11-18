@@ -40,6 +40,8 @@ lists, provider-aware playback, and Firebase synchronization in one interface.
 - Take a break with the mini-games, among them networked Battleship against other
   extension users: an open game, a code for a friend or a challenge by name, with
   every shot refereed on the server.
+- Play chess on a real 3D board: against a bot with six levels, or online against
+  other extension users with clocks, draw offers, rematches and ratings.
 - Preview frames and their timestamps while hovering over the custom player's
   timeline when a direct video or HLS preview source is available.
   This includes native Rutube and torrent streams and supported Ex-FS/KinoGo
@@ -274,7 +276,8 @@ settings and pairing. See the
 | `npm run test-word-guess` | Run WordGuess data, controller, and persistence tests |
 | `npm run test-games-modal` | Run mini-games launcher, Rubik's Cube, games regression and movie quiz tests |
 | `npm run test:battleship` | Verify the Battleship rules, the `battleship` Cloud Function on an in-memory Firestore, fleet placement, the client and the cross-page notices; the two-browser game is `npm run test:e2e -- battleship` |
-| `npm run vendor:three` | Rebuild the three.js subset in `libs/three.rubiks.min.js` used by the Rubik's Cube (after upgrading `three`) |
+| `npm run test:chess` | Verify the chess rules (perft, SAN, draws), the bot, the `chess` Cloud Function on an in-memory Firestore, the local store, clocks, notices and strings; the two-browser game is `npm run test:e2e -- chess` |
+| `npm run vendor:three` | Rebuild `libs/three.games.min.js`, the three.js subset shared by the Rubik's Cube and chess (after upgrading `three` or importing new names from it) |
 | `npm run test:visual-design` | Verify the monochrome palette and shared UI token contract |
 | `npm run test:seasonal-theme` | Check seasonal decor dates and that seasonal achievements keep them, opt-out, Settings preview and the Home season banner |
 | `npm run test:new-year-browser` | Run the built extension with a pinned clock through the New Year season: sign, gifts, countdown, snow and reduced motion |
@@ -454,6 +457,10 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+### Features
+
+- Chess («Шахматы») in 3D, on its own page opened from a new card in the mini-games menu. The board and pieces are real WebGL geometry on three.js, like the Rubik's Cube: turned Staunton-style pieces with shadows and reflections, stone tiles with gaps between them, captured pieces set down on the table beside the board. Move by dragging or by two clicks; legal moves are marked, the last move and a check are lit, the camera orbits, flips, zooms and switches to a top view, the arrow keys and Enter play from the keyboard, and the move list replays earlier positions. A browser without WebGL gets a flat board with the same controls. Against the bot: six levels from «Новичок» to «Мастер» (an alpha-beta engine in a Web Worker with a small opening book; the weaker levels choose with noise and make human-sized mistakes), either colour, takebacks, a hint drawn as an arrow, the game saved after every move so it can be continued later, and a record per level. Online, between extension users: an open game, a private game by code or link, or a challenge by name; 3 + 2, 5 + 3, 10 + 5, 15 + 10 or no clock (a day per move), draw offers, resignation, an abort before the first moves, a rematch with colours swapped, Elo ratings with recent results, and notices on other pages for a challenge, an accepted game, your move and a draw offer. The new `chess` Cloud Function replays and checks every move on the same rules file the page uses (`functions/chessRules.js` is a byte-for-byte copy) and runs the clocks on server time; the Firestore rules let players only read. Checked by `npm run test:chess` (perft against the reference counts, rules, bot, function, client) and by two browsers against the Firebase emulators with the real handler and rules (`npm run test:e2e -- chess`); the bot game was also played in the built extension on the 3D board, the flat board, both themes and a phone width. The Firestore rules and the `chess` function were deployed to `movielistdb-13208` on 2026-11-18: the published rules were read back and match the project file, and the live function answers CORS, foreign origins, wrong methods and missing or invalid sign-in as tested; no game between two real accounts has been played yet.
+
 ### Fixes
 
 - Player: the episode arrows in the player's own control bar now match the ones in its header. The page tells the player whether the title and source can change the episode and whether there is a previous or a next one, and the player hides or disables its arrows to match. Before, the dock's `display: grid !important` kept both arrows on screen on every film and on Rutube, where they did nothing; «back» on the first episode looked active on every source; and on Seasonvar neither arrow changed the episode (they pressed a list entry that has only an address) while still reporting progress and a watched mark for the episode they named. Seasonvar's arrows now ask the page for the episode, as AnimeGo's do.
@@ -463,6 +470,10 @@ keeps npm-compatible three-component semver metadata.
 - Player: on Rutube, which plays one video found by title, the series hint no longer asks to choose the episode «в плеере источника», where Rutube has no episode list; it says that the video was found by title and may not be the chosen episode.
 - Player: in a narrow player the header buttons no longer cover the title. The player narrows with the window's height too, while the header turned its buttons into icons only for windows under 600px; it now follows the player's own width: «Предыдущая», «Серии» and «Следующая» become icons below 880px, every header button below 640px, and buttons that still do not fit move to their own row.
 - The player fixes above were checked by `npm test`, with the new `tests/playerEpisodeArrows.test.cjs` and the host checks in `tests/playerEpisodeNavigationBridge.test.js` (both now part of `npm run test:pro-player`), and in the owner's Chrome: Seasonvar's bottom arrows move S1E1→S1E2→S1E1, «back» is disabled on S1E1 for KinoGo, Ex-FS and Seasonvar, both arrow pairs still change KinoGo and Ex-FS episodes, Rutube and films show no episode arrows, a picture click pauses and resumes on Rutube, HDRezka, Seasonvar, KinoGo and Ex-FS (once per click), Ex-FS stays on S1E1 when its frame reopens on S1E2, VidSrc is reported unavailable, and a 702px player shows its title with the episode buttons as icons in both themes. One KinoGo S1E2→S1E3 press loaded nothing within 25 s, as already noted in `docs/TASKS.md`, and the next press worked. AnimeGo, watch rooms and broadcasts were not played again after the change.
+
+### Refactor
+
+- The Rubik's Cube and chess load one vendored three.js subset, `libs/three.games.min.js`, which replaces `libs/three.rubiks.min.js`; `npm run vendor:three` now collects the names every game module imports, and chess added about 5 KB to it instead of a second copy of three.js. Battleship and chess share the player search and game-code helpers (`src/shared/services/OnlinePlayers.js`) and one configurable notifier that keeps the notices of both games in one stack; the Battleship tests and its two-browser game still pass.
 
 </details>
 
