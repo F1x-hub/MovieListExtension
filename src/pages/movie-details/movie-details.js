@@ -1,6 +1,5 @@
 import { i18n } from '../../shared/i18n/I18n.js';
-import { isSpidermanMovie } from '../../shared/config/spidermanMovies.js';
-import { isStarWarsMovie } from '../../shared/config/starwarsMovies.js';
+import { getRatingTheme } from '../../shared/config/franchiseRatingThemes.js';
 import { getRatingIconMarkup } from '../../shared/components/RatingIcons.js';
 import { CustomDatePicker, CustomTimePicker } from '../../shared/components/CustomDateTimePicker.js';
 
@@ -12603,7 +12602,7 @@ if (typeof installMovieDetailsMetaRenderer === 'function') {
     console.error('[MovieDetails] MetaRenderer.js is not loaded; movie metadata cannot render');
 }
 if (typeof installMovieDetailsUserRatings === 'function') {
-    installMovieDetailsUserRatings(MovieDetailsManager, () => ({ getRatingIconMarkup, createAppError, isSpidermanMovie, isStarWarsMovie }));
+    installMovieDetailsUserRatings(MovieDetailsManager, () => ({ getRatingIconMarkup, createAppError, getRatingTheme }));
 } else if (typeof window !== 'undefined' && window.document) {
     console.error('[MovieDetails] UserRatingsPanel.js is not loaded; user ratings and reviews are unavailable');
 }

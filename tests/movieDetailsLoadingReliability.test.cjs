@@ -432,7 +432,7 @@ function firebase(services = {}) {
             removeAttribute(name) { delete this.attributes[name]; },
             appendChild() {}, querySelectorAll: () => [], focus() {}
         });
-        Object.assign(context, { isSpidermanMovie: () => false, isStarWarsMovie: () => false, getRatingIconMarkup: () => '' });
+        Object.assign(context, { getRatingTheme: () => '', getRatingIconMarkup: () => '' });
         Object.assign(context.document, { createElement: element, activeElement: null });
         const body = element();
         const dialog = { ...element(), style: { display: 'none' }, querySelector: selector => (selector === '.rating-modal-body' ? body : null) };

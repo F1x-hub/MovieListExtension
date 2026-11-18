@@ -2358,6 +2358,8 @@
     background: transparent;
     position: relative;
     z-index: 10;
+    /* Franchise icons size themselves to this width (cqi), see .franchise-rating-icon. */
+    container-type: inline-size;
 }
 
 .rating-status {
@@ -2445,6 +2447,54 @@
     .star-rating-btn.starwars-rating-btn {
         padding: 1px;
     }
+}
+
+/* Iron Man, Avengers, Superman and Dune: one 32px size for all four sets. In a
+   narrow dialog it shrinks, so ten buttons (2px padding) and nine 4px gaps stay
+   in one row down to 20px icons. */
+.star-rating-btn:has(> .franchise-rating-icon) {
+    padding: 2px;
+}
+
+.franchise-rating-icon {
+    display: block;
+    width: clamp(20px, calc(10cqi - 8px), 32px);
+    aspect-ratio: 1;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+}
+
+.ironman-rating-icon {
+    background-image: url('../../shared/assets/icons/ratings/ironman-rating-inactive.svg');
+}
+
+.star-rating-btn:is(.active, .hover) .ironman-rating-icon {
+    background-image: url('../../shared/assets/icons/ratings/ironman-rating-active.svg');
+}
+
+.avengers-rating-icon {
+    background-image: url('../../shared/assets/icons/ratings/avengers-rating-inactive.svg');
+}
+
+.star-rating-btn:is(.active, .hover) .avengers-rating-icon {
+    background-image: url('../../shared/assets/icons/ratings/avengers-rating-active.svg');
+}
+
+.superman-rating-icon {
+    background-image: url('../../shared/assets/icons/ratings/superman-rating-inactive.svg');
+}
+
+.star-rating-btn:is(.active, .hover) .superman-rating-icon {
+    background-image: url('../../shared/assets/icons/ratings/superman-rating-active.svg');
+}
+
+.dune-rating-icon {
+    background-image: url('../../shared/assets/icons/ratings/dune-rating-inactive.svg');
+}
+
+.star-rating-btn:is(.active, .hover) .dune-rating-icon {
+    background-image: url('../../shared/assets/icons/ratings/dune-rating-active.svg');
 }
 
 .star-rating-btn.active,

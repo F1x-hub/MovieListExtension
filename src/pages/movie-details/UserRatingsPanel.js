@@ -16,8 +16,7 @@
 let readDeps = () => ({});
 const getRatingIconMarkup = (...args) => readDeps().getRatingIconMarkup(...args);
 const createAppError = (...args) => readDeps().createAppError(...args);
-const isSpidermanMovie = (...args) => readDeps().isSpidermanMovie(...args);
-const isStarWarsMovie = (...args) => readDeps().isStarWarsMovie(...args);
+const getRatingTheme = (...args) => readDeps().getRatingTheme(...args);
 
 class MovieDetailsUserRatingsMethods {
     async loadAndDisplayUserRatings(movieId) {
@@ -886,15 +885,12 @@ class MovieDetailsUserRatingsMethods {
         this.elements.ratingMovieMeta.textContent = metaParts.join(' • ');
 
         this.elements.ratingStars.innerHTML = '';
-        const isSpiderman = isSpidermanMovie(movie);
-        const isStarWars = isStarWarsMovie(movie);
-        const ratingIcon = getRatingIconMarkup({ isSpiderman, isStarWars });
+        const ratingTheme = getRatingTheme(movie);
+        const ratingIcon = getRatingIconMarkup(ratingTheme);
 
         for (let i = 1; i <= 10; i++) {
             const btn = document.createElement('button');
-            btn.className = 'star-rating-btn';
-            btn.classList.toggle('spiderman-rating-btn', isSpiderman);
-            btn.classList.toggle('starwars-rating-btn', isStarWars);
+            btn.className = ratingTheme ? `star-rating-btn ${ratingTheme}-rating-btn` : 'star-rating-btn';
             btn.dataset.rating = i;
             btn.type = 'button';
             btn.setAttribute('aria-label', `Оценить на ${i} из 10`);

@@ -49,7 +49,15 @@ Color is allowed only when it carries content or an unavoidable semantic:
    at the icon's size and always next to the collection's name. They use flat
    colours and opacity only (no gradients, masks or clip paths, which need ids),
    and none reproduces a logo or wordmark. Collections cannot use uploaded
-   pictures: that feature was removed, and an old picture shows the folder icon.
+   pictures: that feature was removed, and an old picture shows the folder icon;
+7. franchise rating icons: in the film page's rating dialog, films of
+   Spider-Man, Star Wars, Iron Man, Avengers, Superman and Dune are rated with
+   their own pictures instead of stars (`src/shared/assets/icons/ratings/`,
+   chosen by `src/shared/config/franchiseRatingThemes.js`). The selected look is
+   coloured and the unselected one grey, and the status line above the row
+   («Ваша оценка: 7») and each button's `aria-pressed` say the score as well.
+   The pictures added for Iron Man, Avengers, Superman and Dune share one size,
+   read at 16–20px in both themes, and reproduce no logo or wordmark.
 
 Exceptions must remain local, documented, and visually subordinate to the
 neutral interface. Semantic states require a label, icon, shape, border style, or

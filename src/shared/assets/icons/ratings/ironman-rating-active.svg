@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<defs>
+<radialGradient id="glow" cx="32" cy="32" r="32" gradientUnits="userSpaceOnUse"><stop offset=".6" stop-color="#36c5ff" stop-opacity=".7"/><stop offset="1" stop-color="#36c5ff" stop-opacity="0"/></radialGradient>
+<linearGradient id="steel" x1="32" y1="6" x2="32" y2="58" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f5f7fa"/><stop offset=".55" stop-color="#bcc3cc"/><stop offset="1" stop-color="#78818c"/></linearGradient>
+<radialGradient id="well" cx="32" cy="32" r="20.5" gradientUnits="userSpaceOnUse"><stop offset=".5" stop-color="#1b7fb0"/><stop offset="1" stop-color="#052233"/></radialGradient>
+<radialGradient id="core" cx="32" cy="32" r="10" gradientUnits="userSpaceOnUse"><stop offset=".35" stop-color="#fff"/><stop offset="1" stop-color="#93ecff"/></radialGradient>
+<rect id="coil" x="29.1" y="12.6" width="5.8" height="7.8" rx="1.7"/>
+</defs>
+<circle cx="32" cy="32" r="32" fill="url(#glow)"/>
+<circle cx="32" cy="32" r="25.4" fill="url(#steel)" stroke="#232931" stroke-width="2"/>
+<circle cx="32" cy="32" r="20.6" fill="url(#well)" stroke="#47515d" stroke-width="1.4"/>
+<g fill="#b4f3ff">
+<use href="#coil"/><use href="#coil" transform="rotate(36 32 32)"/><use href="#coil" transform="rotate(72 32 32)"/><use href="#coil" transform="rotate(108 32 32)"/><use href="#coil" transform="rotate(144 32 32)"/><use href="#coil" transform="rotate(180 32 32)"/><use href="#coil" transform="rotate(216 32 32)"/><use href="#coil" transform="rotate(252 32 32)"/><use href="#coil" transform="rotate(288 32 32)"/><use href="#coil" transform="rotate(324 32 32)"/>
+</g>
+<circle cx="32" cy="32" r="10" fill="url(#core)" stroke="#e8fcff" stroke-width="1"/>
+<circle cx="32" cy="32" r="4.2" fill="#fff"/>
+<path d="M14.5 22.5A19.6 19.6 0 0 1 26 12.9" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" opacity=".75"/>
+</svg>

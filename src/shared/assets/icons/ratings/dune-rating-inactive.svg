@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<defs>
+<linearGradient id="skin" x1="14" y1="0" x2="50" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#c9cdd3"/><stop offset=".6" stop-color="#a1a7af"/><stop offset="1" stop-color="#7c838c"/></linearGradient>
+<path id="tooth" d="M-2.1-11.6H2.1L0-6.6Z"/>
+</defs>
+<path d="M19.5 57C18 46 15 36 13.4 25.6L49.6 19.6C50.4 31 47.6 44 45.5 57Z" fill="url(#skin)" stroke="#474c54" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M16.4 38.8C26 35.4 38 33.6 48.6 33.8M18.2 47.6C27.4 44.6 37.6 43.2 47 43.6" fill="none" stroke="#5f656e" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M14.6 31.4C24.6 27.8 38.4 25.6 49.4 26" fill="none" stroke="#5f656e" stroke-width="1.6" stroke-linecap="round" opacity=".7"/>
+<g transform="translate(31.5 21.6) rotate(-9) scale(1 .74)">
+<circle r="18.4" fill="#b8bdc4" stroke="#474c54" stroke-width="2"/>
+<circle r="15" fill="#80878f"/>
+<circle r="12.2" fill="#4a5058"/>
+<g fill="#d9dce0">
+<use href="#tooth"/><use href="#tooth" transform="rotate(25.7)"/><use href="#tooth" transform="rotate(51.4)"/><use href="#tooth" transform="rotate(77.1)"/><use href="#tooth" transform="rotate(102.9)"/><use href="#tooth" transform="rotate(128.6)"/><use href="#tooth" transform="rotate(154.3)"/><use href="#tooth" transform="rotate(180)"/><use href="#tooth" transform="rotate(205.7)"/><use href="#tooth" transform="rotate(231.4)"/><use href="#tooth" transform="rotate(257.1)"/><use href="#tooth" transform="rotate(282.9)"/><use href="#tooth" transform="rotate(308.6)"/><use href="#tooth" transform="rotate(334.3)"/>
+</g>
+<path d="M-15.6-6.4A16.6 16.6 0 0 1-4.6-15.9" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" opacity=".55"/>
+</g>
+<path d="M3.6 58.4C5.4 53 10.4 50.6 16 51.4 18.6 49.4 21.6 49 24 50.4 27 52.8 37.6 52.6 41.6 50 44.4 48.6 47.8 49 50 51 55.4 50.4 59.8 53.4 60.6 57.6 61 60 59.4 61.4 56.8 61.4H6.6C4.2 61.4 3 60.2 3.6 58.4Z" fill="#c3c7cd" stroke="#50555d" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M8.2 56.6C10.6 55 13.4 54.6 16 55M43.6 54.2C46.4 53.2 49.6 53.4 52 54.6" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" opacity=".6"/>
+</svg>

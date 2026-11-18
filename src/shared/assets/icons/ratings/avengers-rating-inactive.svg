@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<defs>
+<linearGradient id="steel" x1="14" y1="0" x2="48" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#d3d7dc"/><stop offset=".55" stop-color="#a8aeb6"/><stop offset="1" stop-color="#858c95"/></linearGradient>
+</defs>
+<g stroke="#454a52" stroke-width="1.6" stroke-linejoin="round">
+<path d="M17.6 41.8 9.6 30.6" stroke-width="10.2" stroke-linecap="round"/>
+<path d="M17.6 41.8 9.6 30.6" stroke="#a9afb7" stroke-width="7" stroke-linecap="round"/>
+<path d="M18 49h27l1.2 10.4a2 2 0 0 1-2 2.2H18.8a2 2 0 0 1-2-2.2Z" fill="#8f959e"/>
+<rect x="15.8" y="10.4" width="7.4" height="21" rx="3.7" fill="url(#steel)"/>
+<rect x="24" y="6.8" width="7.4" height="24.6" rx="3.7" fill="url(#steel)"/>
+<rect x="32.2" y="8.6" width="7.4" height="22.8" rx="3.7" fill="url(#steel)"/>
+<rect x="40.4" y="13.4" width="6.8" height="18" rx="3.4" fill="url(#steel)"/>
+<path d="M15 27h33v13.6c0 5.6-4 9.6-9.6 9.6H24.6C19 50.2 15 46.2 15 40.6Z" fill="url(#steel)"/>
+</g>
+<path d="M18.6 53.6h25.6" stroke="#5f656e" stroke-width="1.4"/>
+<path d="M17.4 16v8M25.6 12.4v10.4M33.8 14v9" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity=".5"/>
+<circle cx="30.4" cy="37" r="6.6" fill="#5c626b"/>
+<circle cx="30.4" cy="37" r="5" fill="#40454c"/>
+<g fill="#40454c" stroke="#5c626b" stroke-width=".9">
+<circle cx="19.5" cy="24.2" r="2.8"/>
+<circle cx="27.7" cy="23.4" r="2.8"/>
+<circle cx="35.9" cy="23.8" r="2.8"/>
+<circle cx="43.8" cy="25.4" r="2.6"/>
+<circle cx="12.6" cy="34.8" r="2.7"/>
+</g>
+</svg>

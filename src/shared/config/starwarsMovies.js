@@ -31,7 +31,9 @@ export const EXPLICIT_KINOPOISK_IDS = new Set([
 
 export const EXCLUDED_KINOPOISK_IDS = new Set();
 
-const STARWARS_TITLE_PATTERN = /зв[её]здны[еяm]?\s+войн[ыаменам]|star[\s-]?wars|мандалорец|mandalorian|асока|ahsoka|боба\s+фетт|boba\s+fett|андор|andor|кеноби|kenobi|бракованная\s+партия|bad\s+batch|аколит|acolyte/i;
+// «Андор» must be a whole word, or «Ящик Пандоры» and «Pandorum» match. «The Bad
+// Batch» is also a 2016 film; the Star Wars series is always titled «Star Wars: …».
+const STARWARS_TITLE_PATTERN = /зв[её]здны[еяm]?\s+войн[ыаменам]|star[\s-]?wars|мандалорец|mandalorian|асока|ahsoka|боба\s+фетт|boba\s+fett|(?<![а-яё])андор(?![а-яё])|\bandor\b|кеноби|kenobi|бракованная\s+партия|аколит|acolyte/i;
 
 export function isStarWarsMovie(movie) {
     if (!movie) return false;
