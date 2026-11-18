@@ -215,8 +215,11 @@ function playerNavigateEvent(direction, source, origin) {
         await ask(harness.activeFrameWindow);
         assert.deepStrictEqual(posts, [{ type: 'PLAYER_EPISODE_NAVIGATION_STATE', enabled: true, hasPrevious: true, hasNext: false }],
             'a frame that loads after the last change gets the current state');
+        assert.strictEqual(recomputed, 2,
+            'and the canonical picker mode again: it is sent for 3 s only, and a slow source mounts later');
         await ask({});
         assert.strictEqual(posts.length, 1, 'only the active frame may ask');
+        assert.strictEqual(recomputed, 2);
     }
 
     {

@@ -7793,8 +7793,12 @@ class MovieDetailsManager {
                     this.updatePlayerNavigationControls();
                 }
             } else if (event.data.type === 'PLAYER_EPISODE_NAVIGATION_REQUEST') {
+                // The frame has just built its player. The canonical picker mode is sent
+                // only for 3 s after a navigation update, and a source that took longer to
+                // mount (KinoGo's search) never got it, so the provider's own move to the
+                // next episode never reached the header. The recompute sends it again.
+                this.updatePlayerNavigationControls();
                 if (this.playerEpisodeNavigation) this.publishPlayerEpisodeNavigation(this.playerEpisodeNavigation, { force: true });
-                else this.updatePlayerNavigationControls();
             } else if (event.data.type === 'PLAYER_EPISODE_NAVIGATE') {
                 await this.requestPlayerEpisodeNavigation(event.data.direction);
             } else if (event.data.type === 'UPDATE_WATCHING_PROGRESS') {
@@ -7920,6 +7924,9 @@ class MovieDetailsManager {
                             }
                             this.playbackController.updateSelection(updatePayload);
                             this.updatePlayerHeaderTitle();
+                            // The arrows and the player's own bar describe the episode
+                            // around this one now, not the one the provider left.
+                            this.updatePlayerNavigationControls();
                         }
                     }
                 }

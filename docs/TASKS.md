@@ -91,11 +91,6 @@ have been measured only in the rig so far.
   series tried (Breaking Bad, The Simpsons) all came through `stravers.live`, where
   «Следующая» works. A series with only the balancer's frame has not been seen: it would
   say it cannot open the episode, though Ex-FS changes episodes on that same player.
-- **«Следующая» on KinoGo stayed black once.** S1E2 of Breaking Bad showed `0:00 / 0:01` for the
-  26 seconds the run waited. It did not return in 17 later presses, and nothing recorded whether
-  that window was visible. Chrome loads no media for a hidden page that has played nothing yet,
-  which explains the other stalls seen, but this frame had just played S1E1, and pressing
-  «Следующая» in a minimized window worked. The cause is unknown.
 - **VidSrc** did not answer from this network in any run. `vidsrc-embed.ru` and
   `vidsrc-embed.su` are silent; `vsembed.ru` answers with a page that showed only black in a
   frame, and `vidsrc.me` redirects to an unrelated host. It now runs last, so it costs

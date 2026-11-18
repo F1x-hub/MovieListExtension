@@ -239,11 +239,12 @@ class PlaybackController {
         }
 
         // Flush previous selection's progress if changing to a different episode
-        if (this.currentSelection && (
-            this.currentSelection.seasonNumber !== selection.seasonNumber ||
-            this.currentSelection.episodeNumber !== selection.episodeNumber ||
-            this.currentSelection.kinopoiskId !== selection.kinopoiskId
-        )) {
+        const changesEpisode = Boolean(this.currentSelection && (
+            this.currentSelection.seasonNumber !== normalized.seasonNumber ||
+            this.currentSelection.episodeNumber !== normalized.episodeNumber ||
+            this.currentSelection.kinopoiskId !== normalized.kinopoiskId
+        ));
+        if (changesEpisode) {
             this.flushProgress({ force: true });
             this._notifyCancelAutoNext();
         }
@@ -261,6 +262,9 @@ class PlaybackController {
                 seasonNumber: normalized.seasonNumber != null ? normalized.seasonNumber : null,
                 episodeNumber: normalized.episodeNumber != null ? normalized.episodeNumber : null
             };
+            // The flush above has taken the old episode's time. Kept here, it would be
+            // saved as the new episode's position before the new one reports its own.
+            if (changesEpisode) this._resetRuntimePosition(normalized.initialTimestamp);
         }
 
         if (typeof this.onSelectionChange === 'function') {
@@ -302,7 +306,21 @@ class PlaybackController {
             ...this.currentSelection,
             ...patch
         };
+        // A position belongs to its episode: a patch that moves to another episode
+        // without its own position (the provider's own episode change) starts it from
+        // the beginning instead of carrying over the old episode's time.
+        const movesEpisode = ['seasonNumber', 'episodeNumber'].some(key => patch?.[key] != null
+            && Number(patch[key]) !== Number(this.currentSelection[key]));
+        if (movesEpisode && patch.initialTimestamp == null) merged.initialTimestamp = 0;
         this.setSelection(merged);
+    }
+
+    /** The runtime position of media that has not reported its own yet. */
+    _resetRuntimePosition(initialTimestamp = 0) {
+        const start = Number(initialTimestamp);
+        this.runtimeState.currentTime = Number.isFinite(start) && start > 0 ? start : 0;
+        this.runtimeState.duration = 0;
+        this.currentTimestamp = Math.floor(this.runtimeState.currentTime);
     }
 
     /**
@@ -921,11 +939,16 @@ class PlaybackController {
                 };
             }
 
-            this.runtimeState.mediaIdentity = {
+            const appliedIdentity = {
                 kinopoiskId: selection.kinopoiskId || null,
                 seasonNumber: selection.seasonNumber != null ? selection.seasonNumber : null,
                 episodeNumber: selection.episodeNumber != null ? selection.episodeNumber : null
             };
+            const previousIdentity = this.runtimeState.mediaIdentity || {};
+            const movesMedia = ['kinopoiskId', 'seasonNumber', 'episodeNumber']
+                .some(key => String(previousIdentity[key] ?? '') !== String(appliedIdentity[key] ?? ''));
+            this.runtimeState.mediaIdentity = appliedIdentity;
+            if (movesMedia) this._resetRuntimePosition(selection.initialTimestamp);
             this.currentTimestamp = selection.initialTimestamp || 0;
             this._notifyRuntimeListeners();
             return {
@@ -1370,8 +1393,15 @@ class PlaybackController {
             }
         }
 
-        const effectiveSeasonNum = seasonNum != null ? seasonNum : this.runtimeState.mediaIdentity.seasonNumber;
-        const effectiveEpisodeNum = episodeNum != null ? episodeNum : this.runtimeState.mediaIdentity.episodeNumber;
+        // A frame that cannot read its provider's menus (the Allplay balancers behind
+        // KinoGo) reports the time alone. That time belongs to the episode the player
+        // shows, so it keeps that episode: saved without it, every report erased the
+        // episode and «Смотреть» started the series over at S1E1.
+        const isSeriesSelection = Boolean(currentSelection && currentSelection.mediaType !== 'movie');
+        const selectionSeasonNum = isSeriesSelection ? currentSelection.seasonNumber : null;
+        const selectionEpisodeNum = isSeriesSelection ? currentSelection.episodeNumber : null;
+        const effectiveSeasonNum = seasonNum ?? this.runtimeState.mediaIdentity.seasonNumber ?? selectionSeasonNum ?? null;
+        const effectiveEpisodeNum = episodeNum ?? this.runtimeState.mediaIdentity.episodeNumber ?? selectionEpisodeNum ?? null;
 
         const incomingIdentity = {
             kinopoiskId: incomingMovieId,
@@ -1411,8 +1441,8 @@ class PlaybackController {
         const targetMovieId = data.movieId || (this.currentSelection ? this.currentSelection.kinopoiskId : null);
         if (this.progressService && targetMovieId) {
             const progressPayload = {
-                season: data.season != null ? data.season : (seasonNum != null ? `${seasonNum} сезон` : null),
-                episode: data.episode != null ? data.episode : (episodeNum != null ? `${episodeNum} серия` : null),
+                season: effectiveSeasonNum != null ? `${effectiveSeasonNum} сезон` : (data.season ?? null),
+                episode: effectiveEpisodeNum != null ? `${effectiveEpisodeNum} серия` : (data.episode ?? null),
                 timestamp,
                 movieId: targetMovieId,
                 movieTitle: this.currentSelection?.title || ''

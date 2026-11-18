@@ -67,6 +67,9 @@
     let canonicalSelectionContext = null;
     let canonicalSelectionReady = false;
     let canonicalSelectionStabilizingUntil = 0;
+    // The provider has been on the host's episode since the host last named one: it
+    // applied the host's request or loaded that episode (noticeLoadedMenuEpisode).
+    let canonicalSelectionConfirmed = false;
     let lastNativeSelectionKey = null;
     let roomSyncSubscriptionId = null;
     let roomSyncTelemetryVideo = null;
@@ -967,6 +970,7 @@
             canonicalSelectionContext = null;
             canonicalSelectionReady = false;
             canonicalSelectionStabilizingUntil = 0;
+            canonicalSelectionConfirmed = false;
             lastNativeSelectionKey = null;
         } else if (event.data?.type === 'SEASONVAR_PLAYBACK_STATE') {
             structuredPlaybackState = event.data;
@@ -982,6 +986,7 @@
             const activeStabilizationUntil = canonicalSelectionStabilizingUntil > Date.now()
                 ? canonicalSelectionStabilizingUntil
                 : 0;
+            const previousHostKey = selectionKey(canonicalSelectionContext);
             canonicalPickerRequested = Boolean(event.data.enabled);
             canonicalSelectionContext = canonicalPickerRequested
                 && Number.isInteger(Number(event.data.seasonNumber))
@@ -998,6 +1003,8 @@
                 }
                 : null;
             canonicalSelectionReady = !canonicalPickerRequested || !canonicalSelectionContext;
+            // The host repeats its episode often; only another one needs confirming again.
+            if (selectionKey(canonicalSelectionContext) !== previousHostKey) canonicalSelectionConfirmed = false;
             // Initial canonical-mode messages describe host intent; they do
             // not prove that the provider DOM has applied it yet. Only an
             // acknowledged APPLY_PLAYBACK_SELECTION starts the short
@@ -1053,6 +1060,7 @@
             };
             canonicalSelectionReady = false;
             canonicalSelectionStabilizingUntil = 0;
+            canonicalSelectionConfirmed = false;
             console.info('[ExFsBridgeTrace] cleaner selection message received', {
                 requestId: request.requestId,
                 providerId: request.providerId || null,
@@ -1089,6 +1097,7 @@
                     lastNativeSelectionKey = selectionKey(nativeSelectionOperation);
                     canonicalSelectionReady = true;
                     canonicalSelectionStabilizingUntil = Date.now() + 2500;
+                    canonicalSelectionConfirmed = true;
                 }
                 if (ownsOperation) {
                     nativeSelectionOperation = null;
@@ -2649,6 +2658,18 @@
                 .native-player-wrapper .player-control-dock .player-control-button:active {
                     transform: scale(.94);
                 }
+                /* The rules above are !important, so without this a disabled control (an
+                   episode arrow with nothing behind it) looked and hovered like a live one.
+                   Same cue as the header's disabled arrows: a flat dashed frame. */
+                .native-player-wrapper .player-control-dock .player-control-button:disabled,
+                .native-player-wrapper .player-control-dock .player-control-button:disabled:hover {
+                    color: rgba(255, 255, 255, .42) !important;
+                    background: transparent !important;
+                    border-color: rgba(255, 255, 255, .2) !important;
+                    border-style: dashed !important;
+                    cursor: not-allowed !important;
+                    transform: none !important;
+                }
                 .native-player-wrapper .player-control-dock .player-control-button svg {
                     width: 22px !important;
                     height: 22px !important;
@@ -3965,27 +3986,80 @@
             let lastProgressUpdate = 0;
             const PROGRESS_UPDATE_INTERVAL = 30000; // 30 seconds
 
-            const reportProgressToHost = (media) => media.addEventListener('timeupdate', () => {
-                const now = Date.now();
-                if (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
-                    lastProgressUpdate = now;
-
-                    const timestamp = Math.floor(media.currentTime);
-                    const info = getActiveSeriesInfo();
-
-                    // Send progress to parent window
-                    if (window.parent && media.currentTime > 0 && !isNaN(media.duration)) {
-                        const progressData = {
-                            type: 'UPDATE_WATCHING_PROGRESS',
-                            timestamp: timestamp,
-                            season: info.season,
-                            episode: info.episode
-                        };
-
-                        postToHost(progressData);
-                    }
+            // At the end of an episode Allplay plays the next one by itself. The host owns
+            // the episode in canonical mode and never heard of it: its header kept the old
+            // episode, and the new one's reports were set aside as another episode's, so
+            // «Смотреть» went back to the finished one. A media that loads with another
+            // episode than the host's, once the frame has been on the host's episode and
+            // with no host request in flight, is the provider's own move, reported as one
+            // made there. A frame still opening on its own episode is not.
+            const noticeLoadedMenuEpisode = (labels) => {
+                const seasonNumber = readNativeSelectionNumber(labels.season);
+                const episodeNumber = readNativeSelectionNumber(labels.episode);
+                if (!seasonNumber || !episodeNumber) return;
+                if (broadcastState || !canonicalPickerRequested || !canonicalSelectionContext) return;
+                const key = selectionKey({ seasonNumber, episodeNumber });
+                const hostKey = selectionKey(canonicalSelectionContext);
+                if (key === hostKey) {
+                    canonicalSelectionConfirmed = true;
+                    return;
                 }
-            });
+                if (!canonicalSelectionConfirmed || nativeSelectionOperation
+                    || canonicalSelectionStabilizingUntil > Date.now()) return;
+                lastNativeSelectionKey = key;
+                canonicalSelectionContext = { ...canonicalSelectionContext, seasonNumber, episodeNumber };
+                console.info('[ExFsBridgeTrace] provider moved to another episode', { seasonNumber, episodeNumber, from: hostKey });
+                postToHost({
+                    type: 'EPISODE_CHANGED',
+                    seasonNumber,
+                    episode: episodeNumber,
+                    episodeNumber,
+                    season: `${seasonNumber} сезон`,
+                    origin: 'USER_PROVIDER_SELECTION',
+                    providerId: canonicalSelectionContext.providerId || null,
+                    selectionVersion: canonicalSelectionContext.selectionVersion ?? null,
+                    providerState: 'NATIVE_DOM'
+                });
+            };
+
+            const reportProgressToHost = (media) => {
+                // Allplay names the episode only in its menus, and marks the next one there
+                // while the old one still plays. Read when the media's metadata loads, as the
+                // local position key is, the episode is the one playing, so a report from
+                // that moment names the old episode and the host sets it aside instead of
+                // giving the old episode's time to the new one.
+                let loadedMenuEpisode = null;
+                const rememberMenuEpisode = () => {
+                    loadedMenuEpisode = { season: allplayMenuLabel('seasonType1'), episode: allplayMenuLabel('episodeType1') };
+                    // startProviderVideo tells the episode being left by this key.
+                    media.mreLoadedMenuKey = readAllplayMenuKey();
+                    noticeLoadedMenuEpisode(loadedMenuEpisode);
+                };
+                media.addEventListener('loadedmetadata', rememberMenuEpisode);
+                if (media.readyState >= 1) rememberMenuEpisode();
+
+                media.addEventListener('timeupdate', () => {
+                    const now = Date.now();
+                    if (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
+                        lastProgressUpdate = now;
+
+                        const timestamp = Math.floor(media.currentTime);
+                        const info = getActiveSeriesInfo();
+
+                        // Send progress to parent window
+                        if (window.parent && media.currentTime > 0 && !isNaN(media.duration)) {
+                            const progressData = {
+                                type: 'UPDATE_WATCHING_PROGRESS',
+                                timestamp: timestamp,
+                                season: info.season || loadedMenuEpisode?.season || null,
+                                episode: info.episode || loadedMenuEpisode?.episode || null
+                            };
+
+                            postToHost(progressData);
+                        }
+                    }
+                });
+            };
             reportProgressToHost(video);
 
             // Left Controls Group
@@ -4676,7 +4750,16 @@
                     updateVisibility();
                     hideLoader();
                 });
-                
+
+                // A new source (Allplay attaches the episode's stream to the element it
+                // started with a placeholder) pauses the media without a pause event, and
+                // the buttons went on showing «pause» over a stopped video.
+                ['emptied', 'loadstart'].forEach(kind => videoEl.addEventListener(kind, () => {
+                    if (videoEl !== permanentVideo) return;
+                    updatePlayBtnIcon();
+                    updateVisibility();
+                }));
+
                 videoEl.addEventListener('timeupdate', updateTime);
                 videoEl.addEventListener('loadedmetadata', () => {
                     updateTime();
@@ -4758,6 +4841,10 @@
                 syncPendingMediaState(videoEl);
                 trackLocalProgress(videoEl);
                 reportProgressToHost(videoEl);
+                // The provider's next episode is often playing before it is swapped in, so
+                // no play event follows, and the buttons kept the ended episode's «play».
+                updatePlayBtnIcon();
+                updateVisibility();
             };
 
             volumeBtn.addEventListener('click', (e) => {
@@ -6202,6 +6289,27 @@
 
     let cancelProviderStart = null;
 
+    /** The episode Allplay's menus mark now, as `season:episode`, or null outside Allplay. */
+    function readAllplayMenuKey() {
+        const label = type => document.querySelector(`[data-select="${type}"] .select__drop-item.active`)?.textContent;
+        const seasonNumber = readNativeSelectionNumber(label('seasonType1'));
+        const episodeNumber = readNativeSelectionNumber(label('episodeType1'));
+        return seasonNumber && episodeNumber ? selectionKey({ seasonNumber, episodeNumber }) : null;
+    }
+
+    // On another episode Allplay pauses the element it leaves and builds a new one, which
+    // waits for its own play control. Played again, the old element resumed the episode
+    // being left and counted as started, and the new one stayed on its 0:00 / 0:01
+    // placeholder. The old element is known by the episode it was loaded with.
+    const isLeavingAllplayEpisode = video => {
+        const loaded = video?.mreLoadedMenuKey;
+        const current = loaded ? readAllplayMenuKey() : null;
+        return Boolean(current && loaded !== current);
+    };
+    const findNextAllplayVideo = () => Array.from(document.querySelectorAll('video.allplay__video'))
+        .find(item => item !== permanentVideo && !item.closest('.native-player-wrapper')
+            && (item.src || item.currentSrc)) || null;
+
     /**
      * A provider's player fetches nothing until its video is told to play, and a source
      * it is still swapping cancels a play() in flight, so this asks until the video runs.
@@ -6222,13 +6330,18 @@
         window.addEventListener('pointerdown', cancel, true);
         window.addEventListener('keydown', cancel, true);
         const attempt = () => {
-            const video = permanentVideo || document.querySelector('video');
-            if ((video && !video.paused && video.readyState >= 2) || Date.now() >= deadline) {
+            const video = findNextAllplayVideo() || permanentVideo || document.querySelector('video');
+            const leaving = isLeavingAllplayEpisode(video);
+            if ((video && !leaving && !video.paused && video.readyState >= 2) || Date.now() >= deadline) {
                 cancel();
                 return;
             }
             timer = setTimeout(attempt, PROVIDER_START_RETRY_MS);
-            if (video?.paused) tryPlay(video).catch(error => { if (error?.name === 'NotAllowedError') cancel(); });
+            if (!video?.paused || leaving) return;
+            // A new Allplay element is not adopted yet, so its play() is not routed to the
+            // provider's control until it is bridged here.
+            bridgeProviderPlayStart(video);
+            tryPlay(video).catch(error => { if (error?.name === 'NotAllowedError') cancel(); });
         };
         attempt();
     }
