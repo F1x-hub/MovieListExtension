@@ -2262,9 +2262,6 @@ export const locales = {
                 nomination: "Nomination",
                 winner: "Winner",
                 nominee: "Nominee",
-                category_winner: "Winner: {name}",
-                recipient: "Awarded to: {name}",
-                nominee_person: "Nominee: {name}",
                 show_all: "Show all awards ({count})"
             },
             actors_tab: {
@@ -2488,8 +2485,21 @@ export const locales = {
             age: "Age",
             years_old: "years old",
             years_at_death: "years old at death",
+            age_years: { one: "{count} year", other: "{count} years" },
+            at_death: "aged {age}",
+            awards: "Awards",
             aliases: "Other names",
             show_more_aliases: "Show more"
+        },
+        awards: {
+            win: "Win",
+            nomination: "Nomination",
+            wins: { one: "{count} win", other: "{count} wins" },
+            nominations: { one: "{count} nomination", other: "{count} nominations" },
+            ceremonies: { one: "{count} ceremony", other: "{count} ceremonies" },
+            category_winner: "Category winner: {name}",
+            show_more: "Show the rest ({count})",
+            show_less: "Show less"
         }
     },
     ru: {
@@ -4757,9 +4767,6 @@ export const locales = {
                 nomination: "Номинация",
                 winner: "Победитель",
                 nominee: "Номинация",
-                category_winner: "Победитель: {name}",
-                recipient: "Награду получил(а): {name}",
-                nominee_person: "Номинант: {name}",
                 show_all: "Показать все награды ({count})"
             },
             actors_tab: {
@@ -4983,8 +4990,21 @@ export const locales = {
             age: "Возраст",
             years_old: "лет",
             years_at_death: "лет на момент смерти",
+            age_years: { one: "{count} год", few: "{count} года", many: "{count} лет", other: "{count} года" },
+            at_death: "в возрасте {age}",
+            awards: "Награды",
             aliases: "Другие имена",
             show_more_aliases: "Показать ещё"
+        },
+        awards: {
+            win: "Победа",
+            nomination: "Номинация",
+            wins: { one: "{count} победа", few: "{count} победы", many: "{count} побед", other: "{count} победы" },
+            nominations: { one: "{count} номинация", few: "{count} номинации", many: "{count} номинаций", other: "{count} номинации" },
+            ceremonies: { one: "{count} премия", few: "{count} премии", many: "{count} премий", other: "{count} премии" },
+            category_winner: "Победитель категории: {name}",
+            show_more: "Показать остальные ({count})",
+            show_less: "Свернуть"
         }
     }
 };

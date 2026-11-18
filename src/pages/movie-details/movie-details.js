@@ -925,9 +925,6 @@ class MovieDetailsManager {
             if (tabBtn) {
                 this.refreshSeasonsProgress();
             }
-            if (e.target.closest('.tab-btn[data-tab="awards"]') && this.selectedMovie) {
-                void this.hydrateAwardCategoryWinners(this.selectedMovie);
-            }
             if (e.target.closest('.tab-btn[data-tab="actors"]') && this.selectedMovie) {
                 void this.hydrateActorAges(this.selectedMovie);
             }
@@ -1816,8 +1813,9 @@ class MovieDetailsManager {
             this.perf?.mark('md:aggregation-ready');
             if (!this.isPageContextCurrent(pageContext)) return;
             
-            // Parse awards in background
-            if (!movie.awards || movie.awards.length === 0) {
+            // Parse awards in background; awards kept before every ceremony was read
+            // (only the Oscar and the Golden Globe) are read again once.
+            if (!movie.awards || movie.awards.length === 0 || MovieDetailsManager.awardsNeedRefresh(movie)) {
                 this.loadAwardsInBackground(movieId, movie, pageContext);
             }
             
@@ -1880,6 +1878,15 @@ class MovieDetailsManager {
             || (rating(complete, 'imdb') > 0 && rating(rendered, 'imdb') <= 0);
     }
 
+    /**
+     * True when the movie's awards were parsed by an older AwardsParsingService, which
+     * kept only the Oscar and the Golden Globe and no people or films.
+     */
+    static awardsNeedRefresh(movie) {
+        const current = typeof AwardsParsingService !== 'undefined' ? Number(AwardsParsingService.SCHEMA_VERSION) || 0 : 0;
+        return Array.isArray(movie?.awards) && movie.awards.length > 0 && Number(movie.awardsSchema || 0) < current;
+    }
+
     async withMovieLoadDeadline(work, timeoutMs = 25000) {
         let timer;
         try {
@@ -1940,11 +1947,12 @@ class MovieDetailsManager {
                 : await awardsParser.getAwards(movieId);
 
             if (!this.isPageContextCurrent(pageContext)) return;
-            
+
             if (awards && awards.length > 0) {
                 movie.awards = awards;
-                this.updateAwardsUI(awards);
-                
+                movie.awardsSchema = AwardsParsingService.SCHEMA_VERSION;
+                this.updateAwardsUI(awards, movie);
+
                 // Update cache if available
                 if (firebaseManager && firebaseManager.getMovieCacheService) {
                     const movieCacheService = firebaseManager.getMovieCacheService();
@@ -1957,89 +1965,75 @@ class MovieDetailsManager {
     }
 
     /**
-     * Second line of an award row: who from this movie won or was nominated,
-     * and, for a lost nomination, who won the category instead.
+     * Who won the categories this movie lost, from the Kinopoisk ceremony pages. A
+     * ceremony page is large, so one is read only when its card scrolls into view on the
+     * Awards tab (a hidden tab or a folded card never does). The same page also names the
+     * person a category went to when the film's own page did not.
      */
-    formatAwardDetail(award) {
-        const parts = [];
-        if (award?.recipient) {
-            const key = award.win === true ? 'recipient' : 'nominee_person';
-            parts.push(i18n.get(`movie_details.awards_tab.${key}`).replace('{name}', award.recipient));
+    observeAwardGroups(movie, pageContext = this.capturePageContext(movie)) {
+        this._awardGroupObserver?.disconnect();
+        this._awardGroupObserver = null;
+        const pane = typeof document !== 'undefined' && typeof document.getElementById === 'function'
+            ? document.getElementById('tab-awards')
+            : null;
+        if (!pane?.querySelectorAll || !Array.isArray(movie?.awards) || typeof AwardsParsingService === 'undefined') return;
+
+        const groups = [...pane.querySelectorAll('.award-group')]
+            .filter(group => group.querySelector('.award-row[data-award-win="false"][data-award-nomination-url]'));
+        if (!groups.length) return;
+        if (typeof IntersectionObserver !== 'function') {
+            groups.forEach(group => void this.hydrateAwardGroup(movie, group, pageContext));
+            return;
         }
-        if (award?.win !== true && award?.categoryWinner) {
-            parts.push(i18n.get('movie_details.awards_tab.category_winner').replace('{name}', award.categoryWinner));
-        }
-        return parts.join(' · ');
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (!entry.isIntersecting) return;
+                observer.unobserve(entry.target);
+                void this.hydrateAwardGroup(movie, entry.target, pageContext);
+            });
+        }, { rootMargin: '200px 0px' });
+        groups.forEach(group => observer.observe(group));
+        this._awardGroupObserver = observer;
     }
 
-    /**
-     * Look up each award category on the Kinopoisk ceremony page: who from this
-     * movie won or was nominated, and who won the categories the movie lost.
-     * Runs lazily when the Awards tab is opened.
-     */
-    async hydrateAwardCategoryWinners(movie, pageContext = this.capturePageContext(movie)) {
-        if (!movie || !Array.isArray(movie.awards) || typeof AwardsParsingService === 'undefined') return;
-        this._awardWinnersHydrations = this._awardWinnersHydrations || new WeakMap();
-        if (this._awardWinnersHydrations.has(movie)) return this._awardWinnersHydrations.get(movie);
-
-        const hydration = (async () => {
+    async hydrateAwardGroup(movie, group, pageContext) {
+        try {
             const parser = this._awardsParser || (this._awardsParser = new AwardsParsingService());
-            const awardKey = (award) => `${award.name}|${award.nominationName}|${award.year}|${award.win === true}`;
-            // Awards cached before category links were stored: re-read them once.
-            if (movie.awards.some(award => award && !award.nominationUrl)) {
-                const movieId = movie.kinopoiskId || movie.id;
-                const fresh = movieId ? await parser.getAwards(movieId) : [];
-                if (!this.isPageContextCurrent(pageContext)) return;
-                const urls = new Map(fresh.filter(a => a.nominationUrl).map(a => [awardKey(a), a.nominationUrl]));
-                movie.awards.forEach(award => {
-                    if (!award.nominationUrl && urls.has(awardKey(award))) award.nominationUrl = urls.get(awardKey(award));
-                });
-            }
-
             const movieId = String(movie.kinopoiskId || movie.id || '');
-            await Promise.all(movie.awards
-                .filter(award => award?.nominationUrl && !award.categoryResolved)
-                .map(async (award) => {
-                    const category = await parser.getCategoryInfo(award.nominationUrl);
-                    if (!category || !this.isPageContextCurrent(pageContext)) return;
+            const rows = [...group.querySelectorAll('.award-row[data-award-index][data-award-nomination-url]')];
+            await Promise.all(rows.map(async row => {
+                const index = Number(row.getAttribute('data-award-index'));
+                const award = movie.awards[index];
+                if (!award?.nominationUrl || award.categoryResolved) return;
+                const category = await parser.getCategoryInfo(award.nominationUrl);
+                if (!category || !this.isPageContextCurrent(pageContext)) return;
 
-                    // Who from this movie won / was nominated (actor, director...), when Kinopoisk names a person.
+                if (!award.recipients?.length) {
                     const ownEntries = award.win === true
                         ? [category.winner].filter(entry => entry && entry.filmIds.includes(movieId))
                         : category.nominees.filter(entry => entry.filmIds.includes(movieId));
                     const people = ownEntries.map(entry => entry.person).filter(Boolean);
-                    if (people.length) award.recipient = people.join(', ');
-                    if (award.win !== true && category.winner && !category.winner.filmIds.includes(movieId)) {
-                        award.categoryWinner = category.winner.label;
-                    }
-                    award.categoryResolved = true;
-
-                    document.querySelectorAll('#tab-awards .award-row[data-award-nomination-url]').forEach(row => {
-                        if (row.getAttribute('data-award-nomination-url') !== award.nominationUrl
-                            || row.getAttribute('data-award-win') !== String(award.win === true)) return;
-                        const label = row.querySelector('.award-category-winner');
-                        const detail = this.formatAwardDetail(award);
-                        if (!label || !detail) return;
-                        label.textContent = detail;
-                        label.hidden = false;
-                    });
-                }));
-        })().catch(error => {
+                    if (people.length) award.recipients = people.map(name => ({ name, kinopoiskId: null }));
+                }
+                if (award.win !== true && category.winner && !category.winner.filmIds.includes(movieId)) {
+                    award.categoryWinner = category.winner.label;
+                }
+                award.categoryResolved = true;
+                if (row.isConnected && typeof AwardsList !== 'undefined') {
+                    row.outerHTML = AwardsList.renderRow(award, index, { mode: 'film', i18n });
+                }
+            }));
+        } catch (error) {
             console.warn('Award category winners lookup failed', error);
-        });
-
-        this._awardWinnersHydrations.set(movie, hydration);
-        return hydration;
+        }
     }
 
-    updateAwardsUI(awards) {
+    updateAwardsUI(awards, movie = this.selectedMovie) {
         // Update tab content
         const tabPane = document.getElementById('tab-awards');
         if (tabPane) {
             tabPane.innerHTML = this.renderAwardsTab(awards);
-            if (tabPane.classList.contains('active') && this.selectedMovie) {
-                void this.hydrateAwardCategoryWinners(this.selectedMovie);
-            }
+            if (movie) this.observeAwardGroups(movie);
         }
 
         // Update tab button state
@@ -2048,24 +2042,10 @@ class MovieDetailsManager {
             if (awards && awards.length > 0) {
                 tabBtn.classList.remove('disabled');
                 tabBtn.removeAttribute('disabled');
-                
-                // If the user is somehow already on the awards tab (unlikely but possible if they clicked fast), nothing else needed as content is updated
             } else {
                 tabBtn.classList.add('disabled');
                 tabBtn.setAttribute('disabled', 'true');
             }
-        }
-        
-        // Setup show all awards button event listener again since we replaced the HTML
-        const showAllAwardsBtn = tabPane ? tabPane.querySelector('.btn-show-all-awards') : null;
-        if (showAllAwardsBtn) {
-            showAllAwardsBtn.addEventListener('click', function() {
-                this.style.display = 'none';
-                const hiddenGrid = this.previousElementSibling;
-                if (hiddenGrid && hiddenGrid.classList.contains('awards-grid-hidden')) {
-                    hiddenGrid.style.display = 'grid';
-                }
-            });
         }
     }
 
@@ -2763,19 +2743,9 @@ class MovieDetailsManager {
         this.setupActorsGridVisibility();
         this.setProtectedControlsEnabled(this.authVerified);
         void this.syncRandomPoolAction(movie);
-        
-        // Setup show all awards button
-        const showAllAwardsBtn = this.elements.movieDetailsContainer.querySelector('.btn-show-all-awards');
-        if (showAllAwardsBtn) {
-            showAllAwardsBtn.addEventListener('click', function() {
-                this.style.display = 'none';
-                const hiddenGrid = this.previousElementSibling;
-                if (hiddenGrid && hiddenGrid.classList.contains('awards-grid-hidden')) {
-                    hiddenGrid.style.display = 'grid';
-                }
-            });
-        }
-        
+        // «Показать остальные» on the Awards tab is handled by AwardsList itself.
+        this.observeAwardGroups(movie);
+
         // Setup poster zoom listener
         const posterImg = this.elements.movieDetailsContainer.querySelector('.movie-detail-page-poster');
         if (posterImg && typeof window.ImageLightbox !== 'undefined') {
@@ -4962,100 +4932,11 @@ class MovieDetailsManager {
         }
     }
 
-    groupAwardsForDisplay(awards) {
-        const groups = new Map();
-
-        (Array.isArray(awards) ? awards : []).forEach((award, index) => {
-            const name = String(award?.name || '').trim();
-            const year = award?.year ?? '';
-            const key = `${name}\u0000${year}`;
-            let group = groups.get(key);
-
-            if (!group) {
-                group = {
-                    name,
-                    year,
-                    wins: 0,
-                    nominations: 0,
-                    items: [],
-                    firstIndex: index
-                };
-                groups.set(key, group);
-            }
-
-            group.items.push(award);
-            if (award?.win === true) group.wins += 1;
-            else group.nominations += 1;
-        });
-
-        return Array.from(groups.values()).sort((a, b) => {
-            const aYear = Number(a.year);
-            const bYear = Number(b.year);
-            const aHasYear = Number.isFinite(aYear);
-            const bHasYear = Number.isFinite(bYear);
-
-            if (aHasYear !== bHasYear) return aHasYear ? -1 : 1;
-            if (aHasYear && aYear !== bYear) return bYear - aYear;
-
-            const nameOrder = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-            return nameOrder || a.firstIndex - b.firstIndex;
-        });
-    }
-
     renderAwardsTab(awards) {
-        if (!awards || awards.length === 0) {
+        if (!awards || awards.length === 0 || typeof AwardsList === 'undefined') {
             return `<div class="no-data-placeholder"><p>${i18n.get('movie_details.awards_tab.no_data')}</p></div>`;
         }
-
-        const groups = this.groupAwardsForDisplay(awards);
-        const visibleGroups = [];
-        let visibleAwardCount = 0;
-        for (const group of groups) {
-            if (visibleAwardCount >= 6) break;
-            visibleGroups.push(group);
-            visibleAwardCount += group.items.length;
-        }
-        const hiddenGroups = groups.slice(visibleGroups.length);
-        const hasMoreThan6 = hiddenGroups.length > 0;
-
-        const getAwardIcon = (name) => {
-            if (name.includes('Оскар')) return '<img src="/src/shared/assets/icons/awards/oscar.png" alt="Oscar" class="award-icon-img">';
-            if (name.includes('Золотой глобус')) return '<img src="/src/shared/assets/icons/awards/golden-globe.png" alt="Golden Globe" class="award-icon-img">';
-            return '';
-        };
-
-        const renderAwardGroup = (group) => `
-            <section class="award-group" aria-label="${this.escapeHtml(`${group.name}${group.year ? ` ${group.year}` : ''}`)}">
-                <header class="award-group-header">
-                    <div class="award-icon-container">${getAwardIcon(group.name)}</div>
-                    <div class="award-group-heading">
-                        <h3 class="award-group-title">${this.escapeHtml(group.name || i18n.get('movie_details.awards_tab.nomination'))}${group.year ? ` <span class="award-group-year">· ${this.escapeHtml(group.year)}</span>` : ''}</h3>
-                        <div class="award-group-summary">
-                            ${group.wins > 0 ? `${group.wins} ${this.escapeHtml(i18n.get('movie_details.awards_tab.winner'))}` : ''}${group.wins > 0 && group.nominations > 0 ? ' · ' : ''}${group.nominations > 0 ? `${group.nominations} ${this.escapeHtml(i18n.get('movie_details.awards_tab.nominee'))}` : ''}
-                        </div>
-                    </div>
-                </header>
-                <div class="award-rows">
-                    ${group.items.map((award) => {
-                        const detail = this.formatAwardDetail(award);
-                        return `
-                        <div class="award-row"${award.nominationUrl ? ` data-award-nomination-url="${this.escapeHtml(award.nominationUrl)}" data-award-win="${award.win === true}"` : ''}>
-                            <span class="award-nomination">${this.escapeHtml(award.nominationName || i18n.get('movie_details.awards_tab.nomination'))}<span class="award-category-winner"${detail ? '' : ' hidden'}>${this.escapeHtml(detail)}</span></span>
-                            <span class="award-badge ${award.win === true ? 'winner' : 'nominee'}">${award.win === true ? i18n.get('movie_details.awards_tab.winner') : i18n.get('movie_details.awards_tab.nominee')}</span>
-                        </div>
-                    `;
-                    }).join('')}
-                </div>
-            </section>
-        `;
-
-        return `
-            <div class="awards-grid">${visibleGroups.map(renderAwardGroup).join('')}</div>
-            ${hasMoreThan6 ? `
-                <div class="awards-grid awards-grid-hidden" style="display: none;">${hiddenGroups.map(renderAwardGroup).join('')}</div>
-                <button class="btn-show-all-awards">${i18n.get('movie_details.awards_tab.show_all').replace('{count}', awards.length)}</button>
-            ` : ''}
-        `;
+        return AwardsList.render(awards, { mode: 'film', i18n, idPrefix: 'movieAwards' });
     }
 
     createMovieFramesSection(movie) {
@@ -10982,16 +10863,6 @@ class MovieDetailsManager {
                 const hiddenContainer = showFactsBtn.previousElementSibling;
                 if (hiddenContainer && hiddenContainer.classList.contains('facts-list-hidden')) {
                     hiddenContainer.style.display = 'flex';
-                }
-                return;
-            }
-
-            const showAwardsBtn = e.target.closest('.btn-show-all-awards');
-            if (showAwardsBtn) {
-                showAwardsBtn.style.display = 'none';
-                const hiddenContainer = showAwardsBtn.previousElementSibling;
-                if (hiddenContainer && hiddenContainer.classList.contains('awards-grid-hidden')) {
-                    hiddenContainer.style.display = 'grid';
                 }
                 return;
             }

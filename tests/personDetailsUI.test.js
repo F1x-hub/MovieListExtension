@@ -10,6 +10,7 @@
 
 import assert from 'node:assert';
 import fs from 'node:fs';
+import vm from 'node:vm';
 import { PersonDetailsPageController } from '../src/pages/person-details/person-details.js';
 
 const personDetailsCss = fs.readFileSync('src/pages/person-details/person-details.css', 'utf8');
@@ -243,7 +244,8 @@ console.log('\n--- 4. Testing Facts Rendering & Expand Toggle ---');
     assert.ok(!factsHtml.includes('style="display: none'), 'Facts visibility does not use inline styles');
     assert.ok(!factsHtml.includes('person-fact-bullet'), 'Facts do not introduce text bullet icons');
     assert.ok(personDetailsCss.includes('.person-fact-item::before'), 'Facts use a structural CSS marker');
-    assert.ok(personDetailsCss.includes('.light-theme .person-fact-item'), 'Facts have a light-theme contrast override');
+    assert.ok(/\.person-fact-item \{[^}]*color: var\(--ui-color-content-muted\)/.test(personDetailsCss), 'Facts take their colour from the theme tokens in both themes');
+    assert.ok(/\.person-facts__list \{[^}]*max-width: 75ch/.test(personDetailsCss), 'Facts keep a readable line length');
     assert.ok(personDetailsCss.includes('.btn-toggle-facts'), 'Facts expansion control has dedicated compact styling');
 
     const shortFactsHtml = controller.renderFacts({ facts: facts.slice(0, 5) });
@@ -362,17 +364,21 @@ console.log('\n--- 6. Testing Filmography Filters & Initial 20-Item Bounds ---')
     assert.ok(!movieCardCss.includes('person-details-card-fallback'), 'Shared MovieCard CSS remains untouched by page-specific selectors');
 
     // 6.7 Person hero remains content-driven and responsive
-    assert.ok(personDetailsCss.includes('grid-template-columns: 190px minmax(0, 1fr)'), 'Desktop hero keeps a compact portrait column');
+    assert.ok(personDetailsCss.includes('grid-template-columns: 200px minmax(0, 1fr)'), 'Desktop hero keeps a compact portrait column');
     assert.ok(personDetailsCss.includes('aspect-ratio: 3 / 4'), 'Hero portrait preserves a stable headshot ratio');
     assert.ok(!/^\.person-hero\s*\{[^}]*\b(?:height|min-height):/ms.test(personDetailsCss), 'Hero has no fixed height or min-height');
     assert.ok(personDetailsCss.includes('@media (max-width: 640px)'), 'Hero has a narrow responsive breakpoint');
     assert.ok(personDetailsCss.includes('grid-template-columns: 1fr;'), 'Hero stacks into one column on mobile');
-    assert.ok(personDetailsCss.includes('.light-theme .person-badge'), 'Profession chips retain a light-theme contrast override');
+    assert.ok(!personDetailsCss.includes('.person-badge') && !personDetailsJs.includes('person-badge'), 'Professions are one line of text, not a row of chips');
+    assert.ok(!/backdrop-filter/.test(personDetailsCss), 'The hero is a flat surface without a blur');
     assert.ok(!personDetailsCss.includes('person-hero__meta::before'), 'Missing metadata does not use a reserved placeholder row');
     assert.ok(personDetailsCss.includes('font-variant-numeric: tabular-nums'), 'Section counts use quiet numeric styling');
     assert.ok(!personDetailsCss.includes('.person-section__count {\n    font-size: 14px'), 'Section counts no longer use oversized pill styling');
     assert.ok(personDetailsCss.includes('.filmography-filter-pill {'), 'Filmography filter selector remains scoped');
-    assert.ok(/\.filmography-filter-pill \{\s*padding: 6px 14px;\s*border-radius: var\(--radius-sm\);/.test(personDetailsCss), 'Filmography filters use compact rectangular controls');
+    // The page's own white "active" skin lost to filter-controls.css in the dark theme
+    // and left dark text on a dark button; the filters now use the shared look alone.
+    assert.ok(!/\.filmography-filter-pill[^{]*\.active/.test(personDetailsCss), 'Filmography filters do not restyle the shared active choice');
+    assert.ok(!/\.filmography-filter-pill \{[^}]*(?:background|color):/.test(personDetailsCss), 'Filmography filters keep the shared FilterChoice colours');
     assert.ok(personDetailsCss.includes('.carousel-nav-btn {'), 'Carousel controls remain scoped to PersonDetails');
     assert.ok(personDetailsCss.includes('z-index: 20;'), 'Carousel controls stay above hovered movie cards');
     assert.ok(personDetailsCss.includes('.person-details-content .movie-card-component.mc-variant-search {'), 'PersonDetails movie cards use local rectangular styling');
@@ -579,5 +585,105 @@ console.log('\n--- 10. Testing Full Page Controller Load Simulation ---');
     assert.ok(personContainer.innerHTML.includes('filmographySection'));
 
     console.log('  ✅ 10.1 Full page loading, rendering, and content mounting completed successfully');
+
+    // ==========================================
+    // 11. HERO DATES, AGE AND AWARDS
+    // ==========================================
+    console.log('\n--- 11. Testing Hero Dates and the Awards Section ---');
+
+    vm.runInThisContext(fs.readFileSync('src/shared/components/AwardsList.js', 'utf8'), { filename: 'AwardsList.js' });
+    assert.ok(window.AwardsList && typeof window.AwardsList.render === 'function', 'AwardsList loads as a classic script');
+    assert.ok(personDetailsHtml.indexOf('AwardsList.js') < personDetailsHtml.indexOf('src="person-details.js"'), 'AwardsList loads before the page renderer');
+    assert.ok(personDetailsHtml.includes('../../shared/styles/awards.css'), 'The page loads the shared awards stylesheet');
+
+    const awardsController = new PersonDetailsPageController();
+    awardsController.i18n.currentLocale = 'ru';
+    assert.strictEqual(awardsController.formatPersonDate('1974-11-11'), '11 ноября 1974', 'Dates read as words, without «г.»');
+    assert.strictEqual(awardsController.formatPersonDate('1974'), '1974', 'A year alone stays a year');
+    assert.strictEqual(awardsController.formatAge(52), '52 года');
+    assert.strictEqual(awardsController.formatAge(51), '51 год');
+    assert.strictEqual(awardsController.formatAge(11), '11 лет');
+    const deceasedHero = awardsController.renderHero({ name: 'Шон Коннери', birthday: '1930-08-25', deathday: '2020-10-31', professions: ['Актёр', 'Продюсер'] });
+    assert.ok(deceasedHero.includes('31 октября 2020 · в возрасте 90 лет'), 'Date of death names the age at death');
+    assert.ok(deceasedHero.includes('Актёр · Продюсер'), 'Professions read as one line, with separators a screen reader keeps');
+    assert.ok(deceasedHero.includes('id="personHeroAwards"') && /id="personHeroAwards"[^>]*hidden/.test(deceasedHero), 'The hero awards link waits hidden');
+
+    const pending = awardsController.renderAwardsSection(null);
+    assert.ok(/id="personAwardsSection"[^>]* hidden>/.test(pending), 'The awards section waits hidden until awards load');
+
+    const personAwards = [
+        { name: 'Премия канала MTV', slug: 'mtv', year: 2014, nominationName: 'Лучший поцелуй', win: false, recipients: [], films: [{ title: 'Титаник', kinopoiskId: 2213 }] },
+        { name: 'Оскар', slug: 'oscar', year: 2014, nominationName: 'Лучшая мужская роль', win: false, recipients: [], films: [{ title: 'Волк с Уолл-стрит', kinopoiskId: 462360 }] },
+        { name: 'Оскар', slug: 'oscar', year: 2016, nominationName: 'Лучшая мужская роль', nominationUrl: '/awards/oscar/2016/#nom1840', win: true, recipients: [], films: [{ title: 'Выживший', kinopoiskId: 499327 }] }
+    ];
+    const awardsHtml = awardsController.renderAwardsSection(personAwards);
+    assert.ok(!/id="personAwardsSection"[^>]* hidden>/.test(awardsHtml), 'Loaded awards show the section');
+    assert.ok(awardsHtml.includes('awards-list--person'), 'The person mode of the shared list is used');
+    assert.ok(awardsHtml.indexOf('>Оскар<') < awardsHtml.indexOf('>Премия канала MTV<'), 'The Oscar comes before smaller ceremonies');
+    assert.ok(awardsHtml.indexOf('Выживший') < awardsHtml.indexOf('Волк с Уолл-стрит'), 'Rows run from the latest year');
+    assert.ok(awardsHtml.includes('href="../movie-details/movie-details.html?movieId=499327"'), 'Every row links its film');
+    assert.ok(awardsHtml.includes('award-status--win') && awardsHtml.includes('Победа') && awardsHtml.includes('Номинация'), 'Status is a word, not a colour');
+    assert.ok(awardsHtml.includes('1 победа · 1 номинация'), 'Group counts use Russian plural forms');
+
+    const elements = document._elements;
+    elements.personAwardsSection = { hidden: true, innerHTML: '' };
+    elements.personHeroAwards = { hidden: true, innerHTML: '' };
+    const requested = [];
+    awardsController.awardsService = {
+        async getPersonAwards(id) {
+            requested.push(id);
+            return personAwards;
+        }
+    };
+    const request = new AbortController();
+    awardsController.personRequestController = request;
+    await awardsController.loadPersonAwards({ identity: { provider: 'TMDB', kpPersonId: null }, _meta: {} }, request);
+    assert.deepStrictEqual(requested, [], 'A TMDB person without a verified Kinopoisk ID asks for no awards');
+    await awardsController.loadPersonAwards({ identity: { provider: 'TMDB', kpPersonId: null }, _meta: { kpPersonMatch: { id: 37859 } } }, request);
+    await awardsController.loadPersonAwards({ identity: { provider: 'TMDB', kpPersonId: null }, _meta: { kpPersonMatch: { id: 37859 } } }, request);
+    assert.deepStrictEqual(requested, [37859], 'The matched Kinopoisk ID is asked once');
+    assert.strictEqual(elements.personAwardsSection.hidden, false, 'Loaded awards reveal the section');
+    assert.ok(elements.personAwardsSection.innerHTML.includes('awards-list'), 'The section is filled');
+    assert.strictEqual(elements.personHeroAwards.hidden, false, 'The hero links to the awards');
+    assert.ok(elements.personHeroAwards.innerHTML.includes('<strong>1</strong> победа') && elements.personHeroAwards.innerHTML.includes('<strong>2</strong> номинации'), 'The hero shows the totals');
+
+    const staleRequest = new AbortController();
+    const stale = new PersonDetailsPageController();
+    stale.awardsService = { async getPersonAwards() { return personAwards; } };
+    stale.personRequestController = new AbortController();
+    elements.personAwardsSection = { hidden: true, innerHTML: '' };
+    await stale.loadPersonAwards({ identity: { kpPersonId: 1 } }, staleRequest);
+    assert.strictEqual(elements.personAwardsSection.hidden, true, 'Awards of a page that was left are not shown');
+
+    console.log('  ✅ 11.1 Dates and ages read naturally; awards load once, in order, with films and plural counts');
+
+    // Kinopoisk's shared «no poster» picture is not artwork.
+    const posterController = new PersonDetailsPageController();
+    const placeholder = 'https://kinopoisk-ru.clstorage.net/no-poster';
+    const posterPerson = {
+        filmography: {
+            acting: [
+                { kinopoiskId: 1, name: 'A', posterUrl: placeholder },
+                { kinopoiskId: 2, name: 'B', posterUrl: placeholder },
+                { kinopoiskId: 3, name: 'C', posterUrl: placeholder },
+                { kinopoiskId: 4, name: 'D', posterUrl: 'https://avatars.mds.yandex.net/get-kinopoisk-image/real-d' },
+                { kinopoiskId: 5, name: 'E', posterUrl: 'https://avatars.mds.yandex.net/get-kinopoisk-image/shared-e' }
+            ],
+            production: [
+                { kinopoiskId: 5, name: 'E', posterUrl: 'https://avatars.mds.yandex.net/get-kinopoisk-image/shared-e' },
+                { kinopoiskId: 5, name: 'E', posterUrl: 'https://avatars.mds.yandex.net/get-kinopoisk-image/shared-e' }
+            ]
+        },
+        knownFor: []
+    };
+    posterController.refreshPlaceholderPosters(posterPerson);
+    assert.strictEqual(posterController.personPosterUrl(posterPerson.filmography.acting[0]), null, 'A picture shared by three films is the placeholder');
+    assert.strictEqual(posterController.personPosterUrl(posterPerson.filmography.acting[3]), posterPerson.filmography.acting[3].posterUrl, 'A film’s own poster stays');
+    assert.strictEqual(posterController.personPosterUrl(posterPerson.filmography.production[0]), posterPerson.filmography.production[0].posterUrl, 'One film listed in several roles keeps its poster');
+    assert.ok(posterController.personCardState(posterPerson.filmography.acting[0]).includes('null'), 'Card state follows the placeholder rule, so a late change replaces the card');
+    const placeholderCard = posterController.createPersonMovieCard(posterPerson.filmography.acting[1]);
+    assert.ok(placeholderCard, 'A film behind the placeholder still renders its card');
+
+    console.log('  ✅ 11.2 Kinopoisk\'s shared «no poster» picture is replaced by the neutral placeholder');
     console.log('\n🎉 ALL Phase 2E PersonDetails UI & Safe Navigation Tests Passed Successfully!');
 })();

@@ -125,9 +125,7 @@ const actorCardMethod = extractMethod(movieDetailsSource, 'renderActorCard');
 const actorsTabMethod = extractMethod(movieDetailsSource, 'renderActorsTab');
 const actorsColumnCountMethod = extractMethod(movieDetailsSource, 'getActorsGridColumnCount');
 const actorsVisibilityMethod = extractMethod(movieDetailsSource, 'applyActorsGridVisibility');
-const awardsGroupingMethod = extractMethod(movieDetailsSource, 'groupAwardsForDisplay');
 const awardsRenderMethod = extractMethod(movieDetailsSource, 'renderAwardsTab');
-const awardDetailMethod = extractMethod(movieDetailsSource, 'formatAwardDetail');
 
 const managerClassCode = `
 (${MockMovieDetailsManager.toString()});
@@ -138,9 +136,7 @@ MockMovieDetailsManager.prototype.renderActorCard = function ${actorCardMethod.s
 MockMovieDetailsManager.prototype.renderActorsTab = function ${actorsTabMethod.slice(actorsTabMethod.indexOf('('))};
 MockMovieDetailsManager.prototype.getActorsGridColumnCount = function ${actorsColumnCountMethod.slice(actorsColumnCountMethod.indexOf('('))};
 MockMovieDetailsManager.prototype.applyActorsGridVisibility = function ${actorsVisibilityMethod.slice(actorsVisibilityMethod.indexOf('('))};
-MockMovieDetailsManager.prototype.groupAwardsForDisplay = function ${awardsGroupingMethod.slice(awardsGroupingMethod.indexOf('('))};
 MockMovieDetailsManager.prototype.renderAwardsTab = function ${awardsRenderMethod.slice(awardsRenderMethod.indexOf('('))};
-MockMovieDetailsManager.prototype.formatAwardDetail = function ${awardDetailMethod.slice(awardDetailMethod.indexOf('('))};
 `;
 
 eval(managerClassCode);
@@ -610,77 +606,164 @@ console.log('\\n--- Part 47: Actors Grid Continuity Regression Tests ---');
 }
 
 // ==========================================
-// PART 45 — TESTS: PHASE UI-4 COMPACT AWARDS GROUPS
+// PART 45 — TESTS: AWARDS TAB (shared AwardsList, every ceremony)
 // ==========================================
-console.log('\n--- Part 45: Phase UI-4 Compact Awards Group Tests ---');
+console.log('\n--- Part 45: Awards Tab Tests ---');
 {
-    i18n.locales.ru.movie_details.awards_tab = {
-        no_data: 'Нет информации о наградах',
-        nomination: 'Номинация',
-        winner: 'Победа',
-        nominee: 'Номинация',
-        category_winner: 'Победитель: {name}',
-        recipient: 'Награду получил(а): {name}',
-        nominee_person: 'Номинант: {name}',
-        show_all: 'Показать все награды ({count})'
+    const { locales } = await import('../src/shared/i18n/locales.js');
+    const realI18n = {
+        currentLocale: 'ru',
+        get(key) {
+            let value = locales[this.currentLocale];
+            for (const part of key.split('.')) value = value?.[part];
+            return value ?? key;
+        }
     };
+    const listWindow = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only' }).window;
+    listWindow.eval(readText('src/shared/components/AwardsList.js'));
+    const AwardsList = listWindow.AwardsList;
+    // Arrays made in the JSDOM window are compared as plain JSON.
+    const plain = value => JSON.parse(JSON.stringify(value));
+    globalThis.AwardsList = AwardsList;
+    globalThis.i18n.locales.ru.movie_details.awards_tab = { no_data: 'Нет информации о наградах' };
 
     const awards = [
-        { name: 'Оскар', year: 2022, nominationName: 'A', win: false },
-        { name: 'Оскар', year: 2022, nominationName: 'B', win: true },
-        { name: 'Оскар', year: 2021, nominationName: 'C', win: false },
-        { name: 'Unknown Festival', year: 2023, nominationName: 'D', win: false }
+        { name: 'Сатурн', slug: 'saturn', year: 2015, ceremonyPath: '/awards/saturn/2015/', nominationName: 'Лучший режиссер', nominationUrl: '/awards/saturn/2015/#nom1930', win: false, recipients: [{ name: 'Кристофер Нолан', kinopoiskId: 41477 }], films: [] },
+        { name: 'Оскар', slug: 'oscar', year: 2015, ceremonyPath: '/awards/oscar/2015/', nominationName: 'Лучший звук', nominationUrl: '/awards/oscar/2015/#nom1850', win: false, recipients: [], films: [] },
+        { name: 'Оскар', slug: 'oscar', year: 2015, ceremonyPath: '/awards/oscar/2015/', nominationName: 'Лучшие визуальные эффекты', nominationUrl: '/awards/oscar/2015/#nom1853', win: true, recipients: [], films: [] },
+        { name: 'Британская академия', slug: 'bafta', year: 2015, nominationName: 'Лучшая работа художника-постановщика', nominationUrl: '/awards/bafta/2015/#nom1786', win: false, recipients: [{ name: 'Нэйтан Краули', kinopoiskId: 1642584 }, { name: 'Гари Феттис', kinopoiskId: 1986331 }], films: [] }
     ];
     const snapshot = JSON.stringify(awards);
-    const groups = manager.groupAwardsForDisplay(awards);
-
-    assert.strictEqual(groups.length, 3, 'same award/year entries group together while years remain separate');
-    assert.strictEqual(groups[0].name, 'Unknown Festival');
-    assert.strictEqual(groups[0].year, 2023);
-    assert.strictEqual(groups[1].wins, 1);
-    assert.strictEqual(groups[1].nominations, 1);
-    assert.strictEqual(groups[1].items.length, 2);
-    assert.strictEqual(groups[2].year, 2021);
+    const groups = AwardsList.groupAwards(awards, 'film');
+    assert.deepStrictEqual(plain(groups.map(group => group.slug)), ['oscar', 'bafta', 'saturn'], 'ceremonies follow their rank, not the page order or the alphabet');
+    assert.deepStrictEqual(plain(groups[0].rows.map(row => row.category)), ['Лучшие визуальные эффекты', 'Лучший звук'], 'wins come before nominations within a ceremony');
+    assert.strictEqual(groups[0].wins, 1);
+    assert.strictEqual(groups[0].nominations, 1);
     assert.strictEqual(JSON.stringify(awards), snapshot, 'grouping must not mutate the input array');
+    const twoYears = AwardsList.groupAwards([
+        { name: 'Оскар', slug: 'oscar', year: 2021, nominationName: 'A', win: false },
+        { name: 'Оскар', slug: 'oscar', year: 2022, nominationName: 'B', win: true }
+    ], 'film');
+    assert.deepStrictEqual(plain(twoYears.map(group => group.year)), [2022, 2021], 'years of one ceremony stay separate, the latest first');
 
-    const singleHtml = manager.renderAwardsTab([{ name: 'Unknown Festival', year: 2024, nominationName: 'Best Effects', win: false }]);
-    assert(singleHtml.includes('award-group'), 'single award renders as a grouped section');
-    assert(singleHtml.includes('award-group-year') && singleHtml.includes('2024'), 'year is visible in group header');
-    assert(singleHtml.includes('award-row') && singleHtml.includes('Номинация'), 'status is visible as row text');
-    assert(singleHtml.includes('award-icon-container'), 'unknown award retains fallback icon container');
-    assert(!singleHtml.includes('award-card'), 'legacy oversized award cards are not rendered');
-
-    const nomineeUrl = '/awards/oscar/2018/#nom1850';
-    const pendingWinnerDoc = new JSDOM(manager.renderAwardsTab([{ name: 'Оскар', year: 2018, nominationName: 'Лучший звук', nominationUrl: nomineeUrl, win: false }])).window.document;
-    const pendingRow = pendingWinnerDoc.querySelector('.award-row');
-    assert.strictEqual(pendingRow.getAttribute('data-award-nomination-url'), nomineeUrl, 'nominee rows expose their ceremony category link');
+    const doc = new JSDOM(AwardsList.render(awards, { mode: 'film', i18n: realI18n, idPrefix: 'movieAwards' })).window.document;
+    assert.ok(doc.querySelector('.awards-list.awards-list--film'), 'the film mode of the shared list renders');
+    assert.strictEqual(doc.querySelector('.awards-summary').textContent.replace(/\s+/g, ' ').trim(), '1 победа · 3 номинации · 3 премии', 'summary counts with Russian plural forms');
+    assert.strictEqual(doc.querySelectorAll('.award-group').length, 3);
+    assert.strictEqual(doc.querySelector('.award-group__title').textContent.trim(), 'Оскар 2015', 'ceremony and year head each card');
+    assert.strictEqual(doc.querySelector('.award-group__summary').textContent, '1 победа · 1 номинация');
+    assert.ok(doc.querySelector('.award-group[data-ceremony="oscar"] .award-group__emblem svg'), 'each ceremony has a neutral emblem');
+    const winRow = doc.querySelector('.award-row[data-award-win="true"]');
+    assert.ok(winRow.classList.contains('award-row--win') && winRow.querySelector('.award-status--win').textContent.includes('Победа'), 'a win is a word and a filled icon, not a colour');
+    assert.ok(doc.querySelector('.award-row[data-award-win="false"] .award-status--nomination').textContent.includes('Номинация'));
+    const people = [...doc.querySelectorAll('.award-row__people a')];
+    assert.deepStrictEqual(people.map(link => [link.textContent, link.getAttribute('href')]), [
+        ['Нэйтан Краули', '../person-details/person-details.html?personKey=kp%3A1642584'],
+        ['Гари Феттис', '../person-details/person-details.html?personKey=kp%3A1986331'],
+        ['Кристофер Нолан', '../person-details/person-details.html?personKey=kp%3A41477']
+    ], 'the people a category went to link to their pages');
+    const pendingRow = doc.querySelector('.award-row[data-award-nomination-url="/awards/oscar/2015/#nom1850"]');
+    assert.strictEqual(pendingRow.getAttribute('data-award-index'), '1', 'rows point back at their award in the movie');
     assert.strictEqual(pendingRow.querySelector('.award-category-winner').hidden, true, 'category winner stays hidden until resolved');
-    const resolvedWinnerHtml = manager.renderAwardsTab([{ name: 'Оскар', year: 2018, nominationName: 'Лучший звук', nominationUrl: nomineeUrl, categoryWinner: 'Дюнкерк', win: false }]);
-    assert(resolvedWinnerHtml.includes('Победитель: Дюнкерк'), 'resolved category winner is shown under a nomination');
-    const peopleHtml = manager.renderAwardsTab([
-        { name: 'Золотой глобус', year: 1973, nominationName: 'Лучшая мужская роль (драма)', nominationUrl: '/awards/golden_globes/1973/#nom188', recipient: 'Марлон Брандо', win: true },
-        { name: 'Золотой глобус', year: 1973, nominationName: 'Лучшая мужская роль (драма)', nominationUrl: '/awards/golden_globes/1973/#nom188', recipient: 'Аль Пачино', win: false },
-        { name: 'Золотой глобус', year: 1973, nominationName: 'Лучшая мужская роль второго плана', nominationUrl: '/awards/golden_globes/1973/#nom225', recipient: 'Джеймс Каан', categoryWinner: 'Джоэл Грей — Кабаре', win: false }
-    ]);
-    assert(peopleHtml.includes('Награду получил(а): Марлон Брандо'), 'won rows name the person from this movie');
-    assert(peopleHtml.includes('Номинант: Аль Пачино') && !peopleHtml.includes('Победитель: Марлон'), 'a nomination lost to the same movie names its nominee, not the movie as winner');
-    assert(peopleHtml.includes('Номинант: Джеймс Каан · Победитель: Джоэл Грей — Кабаре'), 'lost nominations show both the nominee and the category winner');
-    assert(peopleHtml.includes('data-award-win="true"') && peopleHtml.includes('data-award-win="false"'), 'rows with the same category link stay distinguishable');
+    assert.ok(!doc.querySelector('.awards-toggle'), 'four awards need no «Показать остальные»');
 
-    const emptyHtml = manager.renderAwardsTab([]);
-    assert(emptyHtml.includes('Нет информации о наградах'), 'empty awards behavior remains unchanged');
+    const resolved = AwardsList.renderRow({ ...awards[1], categoryWinner: 'Одержимость' }, 1, { mode: 'film', i18n: realI18n });
+    assert.ok(resolved.includes('Победитель категории: Одержимость') && !resolved.includes(' hidden'), 'a lost nomination names the category winner once resolved');
+    const legacy = AwardsList.renderRow({ name: 'Золотой глобус', year: 1973, nominationName: 'Лучшая мужская роль (драма)', recipient: 'Марлон Брандо', win: true }, 0, { mode: 'film', i18n: realI18n });
+    assert.ok(legacy.includes('Марлон Брандо'), 'awards cached by the old parser keep their recipient text');
+    assert.ok(AwardsList.groupAwards([{ name: 'Золотой глобус', year: 1973, nominationName: 'X', win: true }], 'film')[0].slug === 'golden_globes', 'old cached awards still find their ceremony');
 
-    const awardsCss = readText('src/pages/movie-details/movie-details.css');
+    const many = Array.from({ length: 14 }, (_, index) => ({ name: index < 9 ? 'Оскар' : 'Сатурн', slug: index < 9 ? 'oscar' : 'saturn', year: 2024, nominationName: `Категория ${index}`, win: index % 3 === 0 }));
+    const manyDoc = new JSDOM(AwardsList.render(many, { mode: 'film', i18n: realI18n, idPrefix: 'movieAwards' })).window.document;
+    const toggle = manyDoc.querySelector('.awards-toggle');
+    assert.ok(toggle && toggle.classList.contains('btn'), 'long lists fold the rest behind a shared button');
+    assert.strictEqual(toggle.textContent.trim(), 'Показать остальные (5)');
+    assert.strictEqual(toggle.getAttribute('aria-expanded'), 'false');
+    const more = manyDoc.getElementById(toggle.getAttribute('aria-controls'));
+    assert.strictEqual(more.hidden, true, 'folded cards start hidden');
+    AwardsList.toggle(toggle);
+    assert.strictEqual(more.hidden, false);
+    assert.strictEqual(toggle.getAttribute('aria-expanded'), 'true');
+    assert.strictEqual(toggle.textContent, 'Свернуть');
+    AwardsList.toggle(toggle);
+    assert.strictEqual(more.hidden, true, 'the button folds them back');
+
+    const english = { ...realI18n, currentLocale: 'en' };
+    assert.ok(AwardsList.render(awards, { mode: 'film', i18n: english }).includes('Academy Awards'), 'the English interface names ceremonies in English');
+    assert.ok(AwardsList.render([{ name: '<img src=x onerror=alert(1)>', nominationName: '<script>', win: false }], { mode: 'film', i18n: realI18n }).includes('&lt;script&gt;'), 'award text is escaped');
+
+    const tabHtml = manager.renderAwardsTab.call(manager, awards);
+    assert.ok(tabHtml.includes('awards-list--film'), 'the Awards tab renders through AwardsList');
+    assert(manager.renderAwardsTab([]).includes('Нет информации о наградах'), 'empty awards behavior remains unchanged');
+
+    const awardsCss = readText('src/shared/styles/awards.css');
     assert(awardsCss.includes('.award-group {') && awardsCss.includes('.award-row {'), 'group and row presentation styles exist');
     assert(awardsCss.includes('overflow-wrap: anywhere'), 'long nomination text wraps without horizontal overflow');
-    assert(awardsCss.includes('.light-theme .award-badge.winner'), 'light theme winner treatment remains legible');
+    assert(!readText('src/pages/movie-details/movie-details.css').includes('.award-'), 'the film page keeps no award styles of its own');
+    assert(!/#[0-9a-f]{3,8}\b|rgba?\(/i.test(awardsCss), 'awards take every colour from theme tokens');
+    assert(readText('src/pages/movie-details/movie-details.html').includes('../../shared/styles/awards.css'), 'the film page loads the shared awards stylesheet');
     assert(!movieDetailsSource.includes('awards.sort('), 'awards renderer no longer mutates source order');
     assert(movieDetailsSource.includes('isPageContextCurrent(pageContext)'), 'page-generation guard remains in awards loading path');
     assert(movieDetailsSource.includes('loadAwardsInBackground'), 'awards redesign keeps existing loading path');
+    assert(movieDetailsSource.includes('MovieDetailsManager.awardsNeedRefresh(movie)'), 'awards kept before every ceremony was read are read again');
+    assert(/new IntersectionObserver\(/.test(extractMethod(movieDetailsSource, 'observeAwardGroups')), 'ceremony pages load only for cards in view');
 
-    console.log('  ✅ 20. Grouping, counts, deterministic order, compact rows, fallback, themes, and guard contracts verified');
+    // Lazy category winners: a card asks for its ceremony page only once it is in view.
+    const observeMethod = extractMethod(movieDetailsSource, 'observeAwardGroups');
+    // extractMethod finds plain methods; this one is async.
+    const hydrateMethod = extractMethod(movieDetailsSource.replace('async hydrateAwardGroup(', 'hydrateAwardGroup('), 'hydrateAwardGroup');
+    const lazy = new MockMovieDetailsManager();
+    lazy.observeAwardGroups = eval(`(function ${observeMethod.slice(observeMethod.indexOf('('))})`);
+    lazy.hydrateAwardGroup = eval(`(async function ${hydrateMethod.slice(hydrateMethod.indexOf('('))})`);
+    lazy.capturePageContext = () => ({ generation: 1, kinopoiskId: '258687' });
+    lazy.isPageContextCurrent = () => true;
+    const page = new JSDOM(`<div id="tab-awards">${AwardsList.render(awards, { mode: 'film', i18n: realI18n, idPrefix: 'movieAwards' })}</div>`).window.document;
+    const observers = [];
+    const previous = { document: globalThis.document, IntersectionObserver: globalThis.IntersectionObserver, AwardsParsingService: globalThis.AwardsParsingService, i18n: globalThis.i18n };
+    globalThis.document = page;
+    globalThis.i18n = realI18n;
+    globalThis.IntersectionObserver = class {
+        constructor(callback) { this.callback = callback; this.targets = new Set(); observers.push(this); }
+        observe(target) { this.targets.add(target); }
+        unobserve(target) { this.targets.delete(target); }
+        disconnect() { this.targets.clear(); }
+    };
+    const lookups = [];
+    globalThis.AwardsParsingService = class {
+        async getCategoryInfo(url) {
+            lookups.push(url);
+            return url.endsWith('#nom1850')
+                ? { winner: { label: 'Одержимость', person: null, filmIds: ['725190'] }, nominees: [{ label: 'Интерстеллар', person: null, filmIds: ['258687'] }] }
+                : { winner: { label: 'Интерстеллар', person: null, filmIds: ['258687'] }, nominees: [] };
+        }
+    };
+    try {
+        const movie = { kinopoiskId: 258687, awards: JSON.parse(snapshot) };
+        lazy.observeAwardGroups(movie);
+        const observer = observers.at(-1);
+        assert.deepStrictEqual([...observer.targets].map(group => group.getAttribute('data-ceremony')), ['oscar', 'bafta', 'saturn'], 'only cards with a lost nomination wait for their ceremony page');
+        assert.strictEqual(lookups.length, 0, 'nothing is read before a card is in view');
+        const oscarCard = page.querySelector('.award-group[data-ceremony="oscar"]');
+        observer.callback([{ isIntersecting: false, target: oscarCard }]);
+        assert.strictEqual(lookups.length, 0, 'a card out of view reads nothing');
+        observer.callback([{ isIntersecting: true, target: oscarCard }]);
+        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert.deepStrictEqual(lookups.sort(), ['/awards/oscar/2015/#nom1850', '/awards/oscar/2015/#nom1853'], 'the card in view reads its own categories only');
+        assert.ok(!observer.targets.has(oscarCard), 'a card is read once');
+        const lostRow = page.querySelector('.award-row[data-award-nomination-url="/awards/oscar/2015/#nom1850"]');
+        assert.ok(lostRow.querySelector('.award-category-winner:not([hidden])').textContent.includes('Победитель категории: Одержимость'), 'the lost nomination names the winner in place');
+        assert.strictEqual(movie.awards[1].categoryWinner, 'Одержимость', 'the movie keeps the winner for its cache');
+        assert.strictEqual(movie.awards[1].categoryResolved, true);
+        assert.strictEqual(movie.awards[2].categoryWinner, undefined, 'a win names no other winner');
+    } finally {
+        Object.assign(globalThis, previous);
+    }
+
+    console.log('  ✅ 20. Every ceremony, ranked groups, people links, plural counts, folding, lazy winners and theme tokens verified');
 }
 
+// ==========================================
 // 18. Zero inline handlers in generated markup
 {
     const cast = [{ id: 'tmdb:1', name: 'Actor 1', photoUrl: 'photo.jpg', character: 'Char 1' }];

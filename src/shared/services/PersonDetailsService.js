@@ -47,6 +47,21 @@ class PersonDetailsService {
     }
 
     /**
+     * The Kinopoisk ID of the person a name search found, when it is the TMDB person:
+     * both birthdays are known and the same day. A shared name alone decides nothing.
+     * @param {Object} dto - TMDB PersonDetailsDTO
+     * @param {Object|null} htmlPerson - KinopoiskPersonHtmlService.parsePersonPageHtml result
+     * @returns {number|null}
+     */
+    static matchKinopoiskPerson(dto, htmlPerson) {
+        const id = Number(htmlPerson?.personId);
+        if (!Number.isSafeInteger(id) || id <= 0) return null;
+        const day = value => (String(value || '').match(/^\d{4}-\d{2}-\d{2}/) || [])[0] || null;
+        const tmdbBirthday = day(dto?.birthday);
+        return tmdbBirthday && tmdbBirthday === day(htmlPerson.birthday) ? id : null;
+    }
+
+    /**
      * Pure parser and validator for person keys.
      * Accepted format: 'tmdb:{positive_integer}' or 'kp:{positive_integer}'
      * @param {string} personKey
@@ -260,6 +275,10 @@ class PersonDetailsService {
             ? await htmlService.getPersonFilmography([dto.name, dto.originalName], { signal: options.signal })
             : null;
         if (options.signal.aborted) throw options.signal.reason;
+        // The Kinopoisk person found by name is the same person only when the birthdays
+        // agree; the page reads that person's awards with this ID.
+        const kpPersonId = PersonDetailsService.matchKinopoiskPerson(dto, htmlPerson);
+        if (kpPersonId) dto._meta.kpPersonMatch = { id: kpPersonId, verifiedBy: 'birthday' };
         if (htmlPerson?.items?.length > 0) {
             this._applyKinopoiskHtmlMapping(filmography, htmlPerson.items);
             publish();

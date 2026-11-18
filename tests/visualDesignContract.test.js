@@ -7,6 +7,8 @@ const files = {
     common: 'src/shared/styles/common.css',
     components: 'src/shared/styles/components.css',
     filterControls: 'src/shared/styles/filter-controls.css',
+    // Awards and nominations on the film and person pages (AwardsList.js).
+    awards: 'src/shared/styles/awards.css',
     home: 'src/pages/home/home.css',
     catalog: 'src/pages/catalog/catalog.css',
     downloads: 'src/pages/downloads/downloads.css',
@@ -132,6 +134,9 @@ assertOnlyApprovedHexes(files.theme, false);
 assertOnlyApprovedHexes(files.common, true);
 assertOnlyApprovedHexes(files.components, true);
 assertOnlyApprovedHexes(files.filterControls, true);
+// Awards take every colour from the semantic tokens: a win differs by word, icon and weight.
+assertOnlyApprovedHexes(files.awards, false);
+assert.doesNotMatch(read(files.awards), /rgba?\(/i, 'awards.css uses tokens, not literal colours');
 assertOnlyApprovedHexes(files.home, true);
 assertOnlyApprovedHexes(files.catalog, false);
 // The Downloads page takes every colour from the semantic tokens.

@@ -65,6 +65,11 @@ class PersonDetailsPageController {
         this.isFactsExpanded = false;
         this.isAliasesExpanded = false;
 
+        // Awards come from the person's Kinopoisk awards page after the page is shown.
+        this.awardsService = null;
+        this.personAwards = null;
+        this.awardsRequestedFor = null;
+
         // Known-For carousel lifecycle state
         this.knownForCarousel = null;
         this.knownForResizeObserver = null;
@@ -114,6 +119,8 @@ class PersonDetailsPageController {
         this.personRequestController?.abort();
         const request = new AbortController();
         this.personRequestController = request;
+        this.personAwards = null;
+        this.awardsRequestedFor = null;
         this.showLoading();
 
         try {
@@ -131,12 +138,15 @@ class PersonDetailsPageController {
 
             this.renderPerson(person);
             this.showContent();
+            void this.loadPersonAwards(person, request);
             // Start only after the base page is mounted; updates preserve the page and carousel track.
             this.personDetailsService.enrichPersonDetails?.(person, {
                 signal: request.signal,
                 onUpdate: updated => {
                     if (!request.signal.aborted && this.personRequestController === request) {
                         this.updateEnrichedCards(updated);
+                        // A TMDB person gets a Kinopoisk ID only from the enrichment.
+                        void this.loadPersonAwards(updated, request);
                     }
                 }
             }).catch(error => console.warn('[PersonDetails] Enrichment failed:', error.message));
@@ -360,17 +370,22 @@ class PersonDetailsPageController {
         const bioHtml = this.renderBiography(person);
         const factsHtml = this.renderFacts(person);
         const knownForHtml = this.renderKnownFor(person);
+        const awardsHtml = this.renderAwardsSection(this.personAwards);
         const filmographyHtml = this.renderFilmography(person);
 
+        // Who the person is, what they are known for and won, everything they made,
+        // and the trivia last.
         this.personContainer.innerHTML = `
             ${heroHtml}
             ${bioHtml}
-            ${factsHtml}
             ${knownForHtml}
+            ${awardsHtml}
             ${filmographyHtml}
+            ${factsHtml}
         `;
 
         // Post-render: Mount MovieCard instances in KnownFor and Filmography
+        this.refreshPlaceholderPosters(person);
         this.mountMovieCards(person);
         if (typeof Utils !== 'undefined') Utils.bindImageReveal?.(this.personContainer, '.person-hero__portrait');
     }
@@ -399,6 +414,17 @@ class PersonDetailsPageController {
         const rawAliases = Array.isArray(person.aliases) ? person.aliases : [];
         const aliases = rawAliases.filter(a => a && typeof a === 'string' && a.trim() !== primaryName && a.trim() !== secondaryName);
 
+        const facts = [];
+        if (person.birthday) {
+            const ageText = age !== null && !isDeceased ? ` · ${this.formatAge(age)}` : '';
+            facts.push([this.i18n.get('person_details.birthday'), `${this.formatPersonDate(person.birthday)}${ageText}`]);
+        }
+        if (person.deathday) {
+            const ageText = age !== null ? ` · ${this.i18n.get('person_details.at_death').replace('{age}', this.formatAge(age))}` : '';
+            facts.push([this.i18n.get('person_details.deathday'), `${this.formatPersonDate(person.deathday)}${ageText}`]);
+        }
+        if (person.birthplace) facts.push([this.i18n.get('person_details.birthplace'), person.birthplace]);
+
         return `
             <header class="person-hero" aria-label="${this.escapeHtml(primaryName)}">
                 <div class="person-hero__portrait-wrapper">
@@ -416,51 +442,28 @@ class PersonDetailsPageController {
                 <div class="person-hero__info">
                     <div class="person-hero__names">
                         <h1 class="person-hero__name">${this.escapeHtml(primaryName)}</h1>
-                        ${secondaryName ? `<h2 class="person-hero__original-name">${this.escapeHtml(secondaryName)}</h2>` : ''}
+                        ${secondaryName ? `<p class="person-hero__original-name">${this.escapeHtml(secondaryName)}</p>` : ''}
                     </div>
 
                     ${professions.length > 0 ? `
-                    <div class="person-hero__professions" aria-label="Professions">
-                        ${professions.map(p => `<span class="person-badge">${this.escapeHtml(p)}</span>`).join('')}
-                    </div>
+                    <p class="person-hero__professions">${professions.map(p => this.escapeHtml(p)).join(' · ')}</p>
                     ` : ''}
 
-                    <div class="person-hero__meta">
-                        ${person.birthday ? `
-                        <div class="person-meta-item">
-                            <span class="person-meta-label">${this.escapeHtml(this.i18n.get('person_details.birthday'))}</span>
-                            <span class="person-meta-value">
-                                ${this.escapeHtml(person.birthday)}
-                                ${age !== null && !isDeceased ? `(${age} ${this.escapeHtml(this.i18n.get('person_details.years_old'))})` : ''}
-                            </span>
-                        </div>
-                        ` : ''}
+                    ${facts.length > 0 ? `
+                    <dl class="person-hero__facts">
+                        ${facts.map(([label, value]) => `<div class="person-hero__fact"><dt>${this.escapeHtml(label)}</dt><dd>${this.escapeHtml(value)}</dd></div>`).join('')}
+                    </dl>
+                    ` : ''}
 
-                        ${person.deathday ? `
-                        <div class="person-meta-item">
-                            <span class="person-meta-label">${this.escapeHtml(this.i18n.get('person_details.deathday'))}</span>
-                            <span class="person-meta-value">
-                                ${this.escapeHtml(person.deathday)}
-                                ${age !== null ? `(${age} ${this.escapeHtml(this.i18n.get('person_details.years_at_death'))})` : ''}
-                            </span>
-                        </div>
-                        ` : ''}
-
-                        ${person.birthplace ? `
-                        <div class="person-meta-item">
-                            <span class="person-meta-label">${this.escapeHtml(this.i18n.get('person_details.birthplace'))}</span>
-                            <span class="person-meta-value">${this.escapeHtml(person.birthplace)}</span>
-                        </div>
-                        ` : ''}
-                    </div>
+                    <a class="person-hero__awards" id="personHeroAwards" href="#personAwardsSection" hidden></a>
 
                     ${aliases.length > 0 ? `
                     <div class="person-hero__aliases">
-                        <span class="person-meta-label">${this.escapeHtml(this.i18n.get('person_details.aliases'))}</span>
+                        <span class="person-hero__aliases-label">${this.escapeHtml(this.i18n.get('person_details.aliases'))}</span>
                         <div class="person-aliases-list" id="personAliasesList">
                             ${aliases.slice(0, 3).map(a => `<span class="person-alias-tag">${this.escapeHtml(a)}</span>`).join('')}
                             ${aliases.length > 3 ? `
-                            <span class="person-aliases-remaining" id="personAliasesRemaining" style="display: none;">
+                            <span class="person-aliases-remaining" id="personAliasesRemaining" hidden>
                                 ${aliases.slice(3).map(a => `<span class="person-alias-tag">${this.escapeHtml(a)}</span>`).join('')}
                             </span>
                             <button type="button" class="btn-toggle-aliases" data-action="toggle-aliases" aria-expanded="false" aria-controls="personAliasesRemaining">
@@ -632,6 +635,115 @@ class PersonDetailsPageController {
     }
 
     /**
+     * «11 ноября 1974» from '1974-11-11'; a year alone stays a year.
+     * @param {string} value
+     * @returns {string}
+     */
+    formatPersonDate(value) {
+        const text = String(value || '').trim();
+        const match = text.match(/^(\d{4})(?:-(\d{2})-(\d{2}))?/);
+        if (!match) return text;
+        if (!match[2]) return match[1];
+        const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+        if (Number.isNaN(date.getTime())) return text;
+        try {
+            const locale = this.i18n.currentLocale === 'en' ? 'en-GB' : 'ru-RU';
+            return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+                .format(date)
+                .replace(/\s*г\.$/, '');
+        } catch {
+            return text;
+        }
+    }
+
+    /**
+     * «52 года» / «52 years».
+     * @param {number} age
+     * @returns {string}
+     */
+    formatAge(age) {
+        const forms = this.i18n.get('person_details.age_years');
+        if (!forms || typeof forms !== 'object') return `${age} ${this.i18n.get('person_details.years_old')}`;
+        const pluralCategory = () => {
+            try {
+                return new Intl.PluralRules(this.i18n.currentLocale || 'ru').select(age);
+            } catch {
+                return 'other';
+            }
+        };
+        return (forms[pluralCategory()] || forms.other).replace('{count}', String(age));
+    }
+
+    /**
+     * The person's Kinopoisk ID: the route's own for a Kinopoisk person, the one the
+     * enrichment matched by name and birthday for a TMDB person.
+     * @param {Object} person
+     * @returns {number|null}
+     */
+    getKinopoiskPersonId(person) {
+        const id = Number(person?.identity?.kpPersonId) || Number(person?._meta?.kpPersonMatch?.id);
+        return Number.isSafeInteger(id) && id > 0 ? id : null;
+    }
+
+    /**
+     * Awards section. It stays hidden until the person's awards have loaded, and for a
+     * person without awards it is never shown.
+     * @param {Array|null} awards
+     * @returns {string}
+     */
+    renderAwardsSection(awards) {
+        const content = this.renderAwardsContent(awards);
+        return `<section class="person-section person-awards" id="personAwardsSection" aria-labelledby="personAwardsHeading"${content ? '' : ' hidden'}>${content}</section>`;
+    }
+
+    renderAwardsContent(awards) {
+        if (!Array.isArray(awards) || awards.length === 0 || typeof window.AwardsList === 'undefined') return '';
+        return `
+            <div class="person-section__header">
+                <h2 class="person-section__title" id="personAwardsHeading">
+                    <span>${this.escapeHtml(this.i18n.get('person_details.awards'))}</span>
+                    <span class="person-section__count">${awards.length}</span>
+                </h2>
+            </div>
+            ${window.AwardsList.render(awards, { mode: 'person', i18n: this.i18n, idPrefix: 'personAwards' })}
+        `;
+    }
+
+    async loadPersonAwards(person, request) {
+        const kpId = this.getKinopoiskPersonId(person);
+        if (!kpId || this.awardsRequestedFor === kpId) return;
+        this.awardsRequestedFor = kpId;
+        if (!this.awardsService && typeof window.AwardsParsingService !== 'undefined') {
+            this.awardsService = new window.AwardsParsingService();
+        }
+        if (!this.awardsService?.getPersonAwards) return;
+
+        try {
+            const awards = await this.awardsService.getPersonAwards(kpId, { signal: request?.signal });
+            if (request?.signal?.aborted || (request && this.personRequestController !== request)) return;
+            if (!Array.isArray(awards) || awards.length === 0) return;
+            this.personAwards = awards;
+            this.mountPersonAwards(awards);
+        } catch (error) {
+            console.warn('[PersonDetails] Awards failed:', error?.message || error);
+        }
+    }
+
+    mountPersonAwards(awards) {
+        const section = document.getElementById('personAwardsSection');
+        const content = this.renderAwardsContent(awards);
+        if (!section || !content) return;
+        section.innerHTML = content;
+        section.hidden = false;
+
+        const heroLink = document.getElementById('personHeroAwards');
+        if (heroLink && typeof window.AwardsList?.summaryHtml === 'function') {
+            heroLink.innerHTML = `${this.getBiographyIcon('award').replace('class="person-bio__icon" ', '')}<span>${window.AwardsList.summaryHtml(awards, this.i18n)}</span>`;
+            heroLink.hidden = false;
+        }
+    }
+
+    /**
      * Render Filmography Section.
      * @param {Object} person
      * @returns {string}
@@ -732,8 +844,8 @@ class PersonDetailsPageController {
                         <!-- MovieCards mounted dynamically in mountMovieCards -->
                     </div>
                     ${hasMore ? `
-                    <button type="button" class="btn-show-more-filmography" data-action="show-more-category" data-category="${category}">
-                        ${this.escapeHtml(this.i18n.get('person_details.show_more'))} (+20)
+                    <button type="button" class="btn btn-secondary btn-show-more-filmography" data-action="show-more-category" data-category="${category}">
+                        ${this.escapeHtml(this.i18n.get('person_details.show_more'))} (+${Math.min(20, items.length - visibleLimit)})
                     </button>
                     ` : ''}
                 </div>
@@ -977,7 +1089,7 @@ class PersonDetailsPageController {
                 name: item.name || item.originalName,
                 alternativeName: item.originalName,
                 year: item.year,
-                posterUrl: item.posterUrl,
+                posterUrl: this.personPosterUrl(item),
                 // Isolate rating: do not mislabel TMDB vote average as Kinopoisk score
                 ratingKp: null,
                 genres: []
@@ -998,7 +1110,7 @@ class PersonDetailsPageController {
         card.dataset.personMediaKey = this.personMediaKey(item);
         card.dataset.personCardState = this.personCardState(item);
         card.dataset.lazyPoster = String(lazyPoster);
-        if (!item.posterUrl) {
+        if (!this.personPosterUrl(item)) {
             this.replacePersonMoviePosterFallback(card);
         }
 
@@ -1027,11 +1139,35 @@ class PersonDetailsPageController {
     }
 
     personCardState(item) {
-        return JSON.stringify([item.kinopoiskId || null, item.posterUrl || null, item.posterSource || null]);
+        return JSON.stringify([item.kinopoiskId || null, this.personPosterUrl(item), item.posterSource || null]);
+    }
+
+    /**
+     * Kinopoisk gives films without a poster one shared «no poster» picture (a grey
+     * letter K, bright in the dark theme). A picture that stands for three or more
+     * different films is that placeholder, not artwork: those cards get the page's
+     * neutral placeholder instead.
+     * @param {Object} person
+     */
+    refreshPlaceholderPosters(person) {
+        const films = new Map();
+        for (const item of [...Object.values(person?.filmography || {}).flat(), ...(person?.knownFor || [])]) {
+            if (!item?.posterUrl) continue;
+            const ids = films.get(item.posterUrl) || new Set();
+            ids.add(String(item.kinopoiskId || item.tmdbId || item.providerMediaId || item.name || ''));
+            films.set(item.posterUrl, ids);
+        }
+        this.placeholderPosterUrls = new Set([...films].filter(([, ids]) => ids.size >= 3).map(([url]) => url));
+    }
+
+    personPosterUrl(item) {
+        const url = item?.posterUrl || null;
+        return url && !this.placeholderPosterUrls?.has(url) ? url : null;
     }
 
     updateEnrichedCards(person) {
         this.currentPerson = person;
+        this.refreshPlaceholderPosters(person);
         const items = new Map([...Object.values(person.filmography || {}).flat(), ...(person.knownFor || [])]
             .map(item => [this.personMediaKey(item), item]));
         for (const card of this.personContainer?.querySelectorAll?.('[data-person-media-key]') || []) {
@@ -1257,7 +1393,7 @@ class PersonDetailsPageController {
         const btnEl = document.querySelector('[data-action="toggle-aliases"]');
 
         if (remainingEl) {
-            remainingEl.style.display = this.isAliasesExpanded ? 'inline' : 'none';
+            remainingEl.hidden = !this.isAliasesExpanded;
         }
 
         if (btnEl) {

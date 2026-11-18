@@ -834,4 +834,43 @@ console.log('\n--- 11. Invariant Checks (Data Layer Decoupling & Queue Safety) -
     console.log('  ✅ 11.1 Data layer decoupling confirmed: 0 DOM coupling, skipQueue: true strictly enforced');
 }
 
+// ==========================================
+// 12. KINOPOISK PERSON MATCH FOR AWARDS
+// ==========================================
+console.log('\n--- 12. Kinopoisk Person Match (awards of a TMDB person) ---');
+
+{
+    const match = PersonDetailsService.matchKinopoiskPerson;
+    assert.strictEqual(match({ birthday: '1974-11-11' }, { personId: 37859, birthday: '1974-11-11' }), 37859, 'Same birthday: the Kinopoisk person is the TMDB person');
+    assert.strictEqual(match({ birthday: '1974-11-11' }, { personId: 37859, birthday: '1975-01-02' }), null, 'A namesake born on another day is rejected');
+    assert.strictEqual(match({ birthday: null }, { personId: 37859, birthday: '1974-11-11' }), null, 'Without a TMDB birthday nothing is matched');
+    assert.strictEqual(match({ birthday: '1974-11-11' }, { personId: 37859, birthday: null }), null, 'Without a Kinopoisk birthday nothing is matched');
+    assert.strictEqual(match({ birthday: '1974-11-11' }, null), null, 'No search result, no match');
+    assert.strictEqual(match({ birthday: '1974-11-11' }, { personId: 'abc', birthday: '1974-11-11' }), null, 'An invalid ID is not a match');
+
+    const html = {
+        async getPersonFilmography() {
+            return { personId: 37859, birthday: '1974-11-11', items: [] };
+        }
+    };
+    const service = new PersonDetailsService({
+        kinopoiskPersonHtmlService: html,
+        idMappingService: { resolveBatch: async () => new Map(), buildKey: (type, id) => `${type}:${id}` }
+    });
+    const dto = {
+        identity: { personKey: 'tmdb:6193', provider: 'TMDB', providerId: 6193 },
+        name: 'Леонардо ДиКаприо',
+        originalName: 'Leonardo DiCaprio',
+        birthday: '1974-11-11',
+        filmography: { acting: [{ tmdbId: 27205, providerMediaType: 'movie', name: 'Начало', year: 2010 }] },
+        knownFor: [],
+        _meta: {}
+    };
+    service._ensureKinopoiskPersonHtmlService = () => html;
+    await service._enrichPerson(dto, { signal: new AbortController().signal, onUpdate() {} });
+    assert.deepStrictEqual(dto._meta.kpPersonMatch, { id: 37859, verifiedBy: 'birthday' }, 'The enrichment keeps the verified Kinopoisk ID for the awards');
+
+    console.log('  ✅ 12.1 A TMDB person gets a Kinopoisk ID only when name and birthday agree');
+}
+
 console.log('\n🎉 ALL Phase 2D PersonDetails Data Service & Pipeline Tests Passed Successfully!');
