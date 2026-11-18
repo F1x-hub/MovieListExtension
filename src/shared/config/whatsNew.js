@@ -1,5 +1,15 @@
 export const whatsNew = [
     {
+        id: '1.5.7', version: '1.5.7', date: '2026-11-18',
+        highlights: [
+            { id: 'chess-3d', title: { ru: 'Шахматы в 3D', en: '3D chess' }, text: { ru: 'Играйте с ботом шести уровней или с другими пользователями расширения: с часами, рейтингом и реваншем.', en: 'Play a bot with six levels or other extension users, with clocks, ratings and rematches.' } },
+            { id: 'battleship-computer', title: { ru: 'Морской бой с компьютером', en: 'Battleship against the computer' }, text: { ru: 'Три уровня, без аккаунта, а партию можно продолжить позже. Доски теперь объёмные, с волнами и кораблями.', en: 'Three levels, no account needed, and a game can be continued later. The boards are now 3D, with waves and ships.' } },
+            { id: 'series-resume', title: { ru: 'Сериал продолжается с вашей серии', en: 'Series resume on your episode' }, text: { ru: '«Смотреть» открывает серию, на которой вы остановились, а не первую, и следит за переходом на следующую серию в KinoGo.', en: '«Смотреть» opens the episode where you stopped instead of the first one, and follows KinoGo moving to the next episode.' } },
+            { id: 'kinogo-next-episode', title: { ru: 'Следующая серия без чёрного экрана', en: 'No black screen on the next episode' }, text: { ru: 'Переход к другой серии в KinoGo больше не останавливается на 0:00, а стрелки плеера показывают, куда можно перейти.', en: 'Moving to another episode on KinoGo no longer stops at 0:00, and the player arrows show where you can go.' } },
+            { id: 'franchise-rating-icons', title: { ru: 'Новые иконки оценок', en: 'New rating icons' }, text: { ru: 'Фильмы «Железного человека», «Мстителей», «Супермена» и «Дюны» оцениваются своими значками вместо звёзд.', en: 'Iron Man, Avengers, Superman and Dune films are rated with their own icons instead of stars.' } }
+        ]
+    },
+    {
         id: '1.5.6', version: '1.5.6', date: '2026-11-18',
         highlights: [
             { id: 'online-battleship', title: { ru: 'Морской бой онлайн', en: 'Online Battleship' }, text: { ru: 'Сыграйте с другими пользователями расширения: открытая игра, приглашение по коду или вызов по имени.', en: 'Play other extension users: an open game, an invite code or a challenge by name.' } },
