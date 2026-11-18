@@ -89,7 +89,13 @@ have been measured only in the rig so far.
 - **VidSrc** did not answer from this network in any run. `vidsrc-embed.ru` and
   `vidsrc-embed.su` are silent; `vsembed.ru` answers with a page that showed only black in a
   frame, and `vidsrc.me` redirects to an unrelated host. It now runs last, so it costs
-  nothing while another source works. Nobody has tried from another network.
+  nothing while another source works. Nobody has tried from another network. On 2026-11-18
+  `vidsrc-embed.ru` failed with a TLS error in the owner's Chrome and in Node while `vidsrc.to`
+  answered; the player now reports a frame whose site does not open as unavailable and moves on
+  instead of showing a blank frame.
+- **Rutube plays one video per series.** Its search takes the title only, so on Breaking Bad
+  S1E2 it played the 58-minute S1E1; the hint now says the video was found by title. A search
+  that names the season and episode was not built.
 - **A balancer move loses the positions kept in its frames.** They live in that site's storage,
   and the page's own position (`watching_progress_`) is never sent to a frame. Sending it at the
   start would keep a viewer's place across moves.

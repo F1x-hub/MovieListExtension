@@ -451,6 +451,21 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Fixes
+
+- Player: the episode arrows in the player's own control bar now match the ones in its header. The page tells the player whether the title and source can change the episode and whether there is a previous or a next one, and the player hides or disables its arrows to match. Before, the dock's `display: grid !important` kept both arrows on screen on every film and on Rutube, where they did nothing; «back» on the first episode looked active on every source; and on Seasonvar neither arrow changed the episode (they pressed a list entry that has only an address) while still reporting progress and a watched mark for the episode they named. Seasonvar's arrows now ask the page for the episode, as AnimeGo's do.
+- Player: a click on the picture pauses and resumes on every source. Only Ex-FS's own player did this; on KinoGo series, Seasonvar, Rutube, HDRezka and AnimeGo only the centre and bottom-left buttons paused. Where the provider's player already toggles on the click, the extension does not toggle it back, and in a broadcast the channel keeps play/pause.
+- Player: switching to Ex-FS keeps the chosen episode. Ex-FS reopens the episode this browser last watched on its site, while the page sent its frame no episode for S1E1, assuming every frame opens there, and then followed the frame's report: S1E1 chosen, S1E2 played. The page now moves the frame to S1E1 too (a frame already there is left alone), ignores the frame's own episode reports from the moment the source is chosen until it has been moved, and a frame that cannot be moved to the first episode keeps playing what it opened, as before.
+- Player: a source whose site does not open in the browser is shown as unavailable, and the player moves on to the next source, instead of a blank frame called ready. VidSrc's `vidsrc-embed.ru` fails with a TLS error from the owner's network, but its frame still fired «load» with Chrome's error page inside; the page now makes one request to the frame's site and treats a network failure as an unavailable source.
+- Player: on Rutube, which plays one video found by title, the series hint no longer asks to choose the episode «в плеере источника», where Rutube has no episode list; it says that the video was found by title and may not be the chosen episode.
+- Player: in a narrow player the header buttons no longer cover the title. The player narrows with the window's height too, while the header turned its buttons into icons only for windows under 600px; it now follows the player's own width: «Предыдущая», «Серии» and «Следующая» become icons below 880px, every header button below 640px, and buttons that still do not fit move to their own row.
+- The player fixes above were checked by `npm test`, with the new `tests/playerEpisodeArrows.test.cjs` and the host checks in `tests/playerEpisodeNavigationBridge.test.js` (both now part of `npm run test:pro-player`), and in the owner's Chrome: Seasonvar's bottom arrows move S1E1→S1E2→S1E1, «back» is disabled on S1E1 for KinoGo, Ex-FS and Seasonvar, both arrow pairs still change KinoGo and Ex-FS episodes, Rutube and films show no episode arrows, a picture click pauses and resumes on Rutube, HDRezka, Seasonvar, KinoGo and Ex-FS (once per click), Ex-FS stays on S1E1 when its frame reopens on S1E2, VidSrc is reported unavailable, and a 702px player shows its title with the episode buttons as icons in both themes. One KinoGo S1E2→S1E3 press loaded nothing within 25 s, as already noted in `docs/TASKS.md`, and the next press worked. AnimeGo, watch rooms and broadcasts were not played again after the change.
+
+</details>
+
 <details>
 <summary><strong>1.5.6</strong> — online Battleship, a quiz about your films, New Year music and one consistent look</summary>
 

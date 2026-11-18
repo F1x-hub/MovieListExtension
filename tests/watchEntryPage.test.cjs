@@ -196,9 +196,42 @@ function start(instance, manual = false) {
         assert.deepEqual(later.states, []);
     }
     for (const source of ['HERO_WATCH', 'PROVIDER_SWITCH']) {
+        // A provider that remembers where this browser stopped (Ex-FS) opens there, not
+        // on S1E1; the frame itself leaves an episode that is already open alone.
         const first = episodeSync({ episodeNumber: 1, source });
-        assert.equal(await sync(first), false);
-        assert.equal(first.applies.length, 0, `${source} on S1E1 is where the frame opens anyway; pressing it would restart the stream`);
+        assert.equal(await sync(first), true, `${source} on S1E1 moves a frame that opened on another episode`);
+        assert.equal(first.applies.length, 1);
+        assert.deepEqual(first.started, [[first.frame, 'PLAYER_START']]);
+        // One that cannot be moved there plays what it opened, as before, without an error.
+        const stuck = episodeSync({ episodeNumber: 1, source, applyResult: false });
+        let renavigated = 0;
+        stuck.instance.updatePlayerNavigationControls = () => { renavigated++; };
+        assert.equal(await sync(stuck), false);
+        assert.deepEqual(stuck.states, [], `${source}: no error for the first episode`);
+        assert.equal(stuck.unmounted(), 0);
+        assert.equal(renavigated, 1, 'its held report is asked for again, so the header follows what plays');
+        const noBridge = episodeSync({ episodeNumber: 1, source, bridgeSupportsFrame: false });
+        assert.equal(await sync(noBridge), false);
+        assert.deepEqual(noBridge.states, [], 'a balancer without episode selectors keeps playing its first episode');
+    }
+    {
+        // From the moment the source is chosen, the frame's own memory does not move the viewer.
+        const held = episodeSync({ episodeNumber: 1, source: 'PROVIDER_SWITCH' });
+        assert.equal(held.instance.holdNativeProviderReports('exfs', 7), true);
+        assert.equal(held.instance.isStaleNativeProviderReport(1, 2), true, 'Ex-FS reopening S1E2 is not the viewer\'s choice');
+        assert.equal(held.instance.isStaleNativeProviderReport(1, 1), false, 'the viewer\'s episode is never stale');
+        held.instance.nativeEpisodeSync.heldUntil = Date.now() - 1;
+        assert.equal(held.instance.isStaleNativeProviderReport(1, 2), false, 'a hold never followed by a sync expires');
+        assert.equal(episodeSync({ mode: 'DIRECT' }).instance.holdNativeProviderReports('exfs', 7), false,
+            'a provider addressed directly is not held');
+        const roomHold = episodeSync();
+        roomHold.instance.watchRoomController = { room: {} };
+        assert.equal(roomHold.instance.holdNativeProviderReports('exfs', 7), false, 'a watch room keeps its own flow');
+        const frameless = episodeSync();
+        frameless.container.replaceChildren();
+        frameless.instance.holdNativeProviderReports('exfs', 7);
+        assert.equal(await sync(frameless), false);
+        assert.equal(frameless.instance.nativeEpisodeSync, null, 'no frame to move, nothing left held');
     }
     const backToFirst = episodeSync({ episodeNumber: 1, source: 'PLAYER_NAVIGATION' });
     await sync(backToFirst);

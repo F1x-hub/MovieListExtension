@@ -87,7 +87,10 @@ console.log('🧪 Running AnimeGoAdapter tests...');
     assert.match(cleaner, /permanentVideo\?\.dataset\?\.canonicalEpisodeNav === 'true'\s*&& isExtensionPageContext\(\)/);
     assert.equal((cleaner.match(/if \(usesHostEpisodeNavigation\(\)\) \{\s*postToHost\(\{\s*type: 'PLAYER_EPISODE_NAVIGATE'/g) || []).length, 2,
         'both player arrows ask the host to navigate');
-    assert.match(cleaner, /if \(canonicalPickerRequested \|\| isHostEpisodeNavigation\(\)\) \{\s*prevEpisodeBtn\.style\.display = 'flex';/);
+    assert.match(cleaner, /if \(canonicalPickerRequested \|\| isHostEpisodeNavigation\(\)\) \{\s*if \(!broadcastState\) \{\s*setEpisodeArrowVisible\(prevEpisodeBtn, true\);/);
+    // The dock's `display: grid !important` beats a plain inline display, so arrows are
+    // hidden with an inline !important value and shown by removing it.
+    assert.match(cleaner, /button\.style\.setProperty\('display', 'none', 'important'\)/);
 
     console.log('✅ AnimeGoAdapter tests passed');
 })().catch(error => {

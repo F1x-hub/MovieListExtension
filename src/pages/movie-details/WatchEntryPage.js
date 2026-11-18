@@ -2,6 +2,9 @@
     'use strict';
     const WATCH_SOURCE_WAIT_MS = 10000;
     const WATCH_SOURCE_POLL_MS = 120;
+    // How long a newly chosen title-only frame's own episode reports wait for it to
+    // be moved to the viewer's episode (holdNativeProviderReports).
+    const NATIVE_REPORT_HOLD_MS = 20000;
     const methods = {
         async initializeWatchEntry() {
             this.proPlayerEnabled = await global.ProPlayerPreferences?.isEnabled() === true;
@@ -65,10 +68,33 @@
                 .map(button => button.dataset.value).filter(value => value && value !== 'mediaplayer:torrent');
         },
         /**
-         * A title-only provider's frame opens on its own first episode, so after a
-         * source change it has to be told which episode the viewer is on. Otherwise
-         * the header and the stream disagree, or the frame's report of that first
-         * episode moves the viewer back to it.
+         * From the moment a title-only provider is chosen until its frame has been
+         * moved to the viewer's episode, the frame's reports of another episode are its
+         * own memory (Ex-FS reopens where this browser last stopped on its site), not
+         * the viewer's choice. Without the hold such a report could arrive before the
+         * frame is told anything and move the viewer to that episode.
+         */
+        holdNativeProviderReports(parserId, requestId) {
+            if (this.broadcastEpisode || this.watchRoomController?.room) return false;
+            const selection = this.playbackController?.getSelection?.();
+            if (selection?.seasonNumber == null || selection?.episodeNumber == null) return false;
+            if (this.playbackController?.getAdapter?.(parserId)?.getSelectionMode?.() !== 'NATIVE_BRIDGE') return false;
+            this.nativeEpisodeSync = {
+                requestId,
+                seasonNumber: Number(selection.seasonNumber),
+                episodeNumber: Number(selection.episodeNumber),
+                // A frame that never mounts must not silence the next one for good.
+                heldUntil: Date.now() + NATIVE_REPORT_HOLD_MS
+            };
+            return true;
+        },
+        /**
+         * After a source change a title-only provider's frame has to be told which
+         * episode the viewer is on. It usually opens on its first episode, but one that
+         * remembers where this browser stopped opens there instead; either way the
+         * header and the stream would disagree, or the frame's report would move the
+         * viewer to its episode. The frame leaves an episode that is already open
+         * alone, so asking for S1E1 does not restart it.
          */
         async syncNativeProviderEpisode(parserId, requestId, movieId) {
             if (this.broadcastEpisode || this.watchRoomController?.room) return false;
@@ -76,13 +102,16 @@
             if (selection?.seasonNumber == null || selection?.episodeNumber == null) return false;
             const adapter = this.playbackController?.getAdapter?.(parserId);
             if (adapter?.getSelectionMode?.() !== 'NATIVE_BRIDGE') return false;
-            // Where every frame opens anyway; pressing it again would only restart the stream.
-            const opensThereByItself = Number(selection.seasonNumber) === 1 && Number(selection.episodeNumber) === 1
+            // Where a frame usually opens by itself: one that cannot be moved there
+            // plays what it opened and reports it, as before, instead of failing.
+            const opensThereUsually = Number(selection.seasonNumber) === 1 && Number(selection.episodeNumber) === 1
                 && ['HERO_WATCH', 'PROVIDER_SWITCH'].includes(selection.source);
-            if (opensThereByItself) return false;
             const container = this.elements?.videoContainer;
             const frame = container?.querySelector?.('iframe[data-player-source-active="true"]') || container?.querySelector?.('iframe');
-            if (!frame) return false;
+            if (!frame) {
+                if (this.nativeEpisodeSync?.requestId === requestId) this.nativeEpisodeSync = null;
+                return false;
+            }
 
             const sync = { requestId, seasonNumber: Number(selection.seasonNumber), episodeNumber: Number(selection.episodeNumber) };
             this.nativeEpisodeSync = sync;
@@ -96,6 +125,12 @@
             if (applied === true) {
                 this.startPlayerFrame?.(frame);
                 return true;
+            }
+            if (opensThereUsually) {
+                // Its report was held while it was being moved: ask for it again
+                // (canonical picker mode re-reports), so the header follows what plays.
+                if (this.isSourceSwitchRequestCurrent(requestId, movieId)) this.updatePlayerNavigationControls?.();
+                return false;
             }
 
             // Only this attempt's own failure: the viewer may have moved on, or the
@@ -133,6 +168,7 @@
         isStaleNativeProviderReport(seasonNumber, episodeNumber) {
             const sync = this.nativeEpisodeSync;
             if (!sync || sync.requestId !== this.sourceSwitchRequestId) return false;
+            if (sync.heldUntil && Date.now() > sync.heldUntil) return false;
             return Number(seasonNumber) !== sync.seasonNumber || Number(episodeNumber) !== sync.episodeNumber;
         },
         getWatchRankOptions() {

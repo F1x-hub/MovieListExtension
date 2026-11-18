@@ -109,7 +109,7 @@ assert.match(
 );
 assert.match(
     cleaner,
-    /if \(!seriesData\.hasSeries\) btn\.style\.display = 'none'/,
+    /if \(!seriesData\.hasSeries\) setEpisodeArrowVisible\(btn, false\)/,
     'bottom arrows must be provisioned before a late canonical picker message without showing on movies'
 );
 assert.match(

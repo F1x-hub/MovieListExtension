@@ -53,6 +53,12 @@
     let pendingActiveEpisodeLabel = null; // Track clicked episode label
     let structuredPlaybackState = null; // Structured provider playback state (Phase 5B)
     let canonicalPickerRequested = false;
+    // The host page's word on episode navigation for what is on screen:
+    // { enabled, hasPrevious, hasNext }, the same state as its header arrows. Null
+    // until it says anything (a provider page opened outside the extension never
+    // does); from then on it decides the player's own arrows.
+    let hostEpisodeNavigation = null;
+    let refreshEpisodeNavigation = () => {};
     let providerContentErrorReported = false;
     let selectionOperationGeneration = 0;
     let nativeSelectionReportTimer = null;
@@ -312,10 +318,20 @@
     const isHostEpisodeNavigation = () => permanentVideo?.dataset?.canonicalEpisodeNav === 'true'
         && isExtensionPageContext();
 
-    // Arrows request host navigation in canonical provider frames and for
-    // host-owned extension-page videos; otherwise they use the provider list.
-    const usesHostEpisodeNavigation = () => (canonicalPickerRequested && window.parent && window.parent !== window)
+    // Arrows request host navigation whenever the host owns the episodes: it
+    // said so, the frame is in canonical picker mode, or an extension-page video
+    // is host-owned. Otherwise they use the provider list.
+    const usesHostEpisodeNavigation = () => hostEpisodeNavigation?.enabled === true
+        || (canonicalPickerRequested && window.parent && window.parent !== window)
         || isHostEpisodeNavigation();
+
+    // The dock's stylesheet gives every control `display: grid !important`, so an
+    // inline `display: none` never hid an arrow: they showed on films and on sources
+    // without episodes. Only an inline !important value hides one; removing it shows it.
+    const setEpisodeArrowVisible = (button, visible) => {
+        if (visible) button.style.removeProperty('display');
+        else button.style.setProperty('display', 'none', 'important');
+    };
 
     const applyCanonicalPickerVisibility = () => {
         const legacyButtons = document.querySelectorAll('.episode-list-btn');
@@ -332,12 +348,19 @@
             if (!button.dataset.canonicalPickerDisplay) {
                 button.dataset.canonicalPickerDisplay = button.style.display || '';
             }
+            // A broadcast keeps them hidden itself; showing one here would undo it.
+            if (broadcastState) return;
+            // The host's own word wins: hidden for a film or a source it cannot
+            // move between episodes, shown where its header arrows are.
+            if (hostEpisodeNavigation) {
+                setEpisodeArrowVisible(button, hostEpisodeNavigation.enabled);
+                return;
+            }
             // The host picker owns episode selection, but these arrows are still
             // useful controls: they now request navigation from that same owner.
             const canonicalPickerOnly = button.dataset.canonicalPickerOnly === 'true';
-            button.style.display = canonicalPickerRequested || isHostEpisodeNavigation()
-                ? 'flex'
-                : (canonicalPickerOnly ? 'none' : (button.dataset.canonicalPickerDisplay || 'flex'));
+            setEpisodeArrowVisible(button, canonicalPickerRequested || isHostEpisodeNavigation()
+                || (!canonicalPickerOnly && button.dataset.canonicalPickerDisplay !== 'none'));
         });
         return {
             legacyButtonCount: legacyButtons.length,
@@ -947,6 +970,14 @@
             lastNativeSelectionKey = null;
         } else if (event.data?.type === 'SEASONVAR_PLAYBACK_STATE') {
             structuredPlaybackState = event.data;
+        } else if (event.data?.type === 'PLAYER_EPISODE_NAVIGATION_STATE') {
+            hostEpisodeNavigation = {
+                enabled: event.data.enabled === true,
+                hasPrevious: event.data.hasPrevious === true,
+                hasNext: event.data.hasNext === true
+            };
+            applyCanonicalPickerVisibility();
+            refreshEpisodeNavigation();
         } else if (event.data?.type === 'SET_CANONICAL_PICKER_MODE') {
             const activeStabilizationUntil = canonicalSelectionStabilizingUntil > Date.now()
                 ? canonicalSelectionStabilizingUntil
@@ -1317,6 +1348,42 @@
     }
 
     const PLAYER_SHORTCUT_KEYS = new Set([' ', 'k', 'j', 'l', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'f', 'm', 'c', '<', '>', '?']);
+
+    // Clicks that belong to a control rather than to the picture.
+    const PICTURE_CLICK_EXCLUDED = 'button, a, input, select, textarea, [role="button"], [role="slider"], [role="menu"], '
+        + '[role="menuitem"], [role="dialog"], .player-control-dock, .top-controls-bar, .player-settings-menu, '
+        + '.player-shortcut-help, #skipOpeningBtn';
+
+    /**
+     * A click on the picture pauses or resumes, as in any player. A provider player
+     * that does it itself (Ex-FS listens on its own video) has already toggled by the
+     * time the click reaches the wrapper, so the state at the press decides whether
+     * anything is left to do: one click is always one toggle, never two.
+     */
+    function bindPictureToggle({ container, getVideo, scope }) {
+        let pausedAtPress = null;
+        // Only controls inside the player count: in the extension page the whole
+        // player modal is a [role="dialog"] above the video.
+        const onPicture = event => {
+            if (event.button !== 0) return false;
+            const control = event.target?.closest?.(PICTURE_CLICK_EXCLUDED);
+            return !control || control === container || !container.contains(control);
+        };
+        scope.listen(container, 'pointerdown', event => {
+            pausedAtPress = onPicture(event) ? (getVideo()?.paused ?? null) : null;
+        }, true);
+        scope.listen(container, 'click', event => {
+            const pressed = pausedAtPress;
+            pausedAtPress = null;
+            if (!event.detail || pressed === null || !onPicture(event)) return;
+            // In a broadcast the channel owns play/pause; the admin uses the buttons.
+            if (broadcastState) return;
+            const media = getVideo();
+            if (!media || !container.isConnected || media.paused !== pressed) return;
+            if (media.paused) tryPlay(media).catch(() => {});
+            else media.pause();
+        });
+    }
 
     function bindPlayerAccessibility({ container, getVideo, scope, slider, toggleFullscreen, toggleSubtitles, onSeek, onVolume, setVolume, toggleMute }) {
         // Text fields, menus and dialogs keep their own keys. Player buttons do not
@@ -1904,6 +1971,8 @@
             tryPlayWithLimit,
             createListenerScope,
             bindPlayerAccessibility,
+            bindPictureToggle,
+            getHostEpisodeNavigation: () => hostEpisodeNavigation,
             activateWrapperListenerScope,
             teardownActiveWrapper,
             getPlayerObservationRoot,
@@ -3952,7 +4021,7 @@
                 nextEpisodeBtn.setAttribute('aria-label', pt('next_episode', 'Следующая серия'));
                 [prevEpisodeBtn, nextEpisodeBtn].forEach(btn => {
                     btn.dataset.canonicalPickerOnly = seriesData.hasSeries ? 'false' : 'true';
-                    if (!seriesData.hasSeries) btn.style.display = 'none';
+                    if (!seriesData.hasSeries) setEpisodeArrowVisible(btn, false);
                 });
     
                 // Icons
@@ -3976,9 +4045,25 @@
     
                 // Logic to update buttons
                 updateNavButtons = () => {
+                    // The host knows the episode list and its ends; the arrows mirror
+                    // its header arrows, so «back» on the first episode is disabled.
+                    if (hostEpisodeNavigation) {
+                        const { enabled, hasPrevious, hasNext } = hostEpisodeNavigation;
+                        if (!broadcastState) {
+                            setEpisodeArrowVisible(prevEpisodeBtn, enabled);
+                            setEpisodeArrowVisible(nextEpisodeBtn, enabled);
+                        }
+                        prevEpisodeBtn.disabled = !hasPrevious;
+                        nextEpisodeBtn.disabled = !hasNext;
+                        prevTooltip.textContent = hasPrevious ? pt('previous_episode', 'Предыдущая серия') : '';
+                        nextTooltip.textContent = hasNext ? pt('next_episode', 'Следующая серия') : '';
+                        return;
+                    }
                     if (canonicalPickerRequested || isHostEpisodeNavigation()) {
-                        prevEpisodeBtn.style.display = 'flex';
-                        nextEpisodeBtn.style.display = 'flex';
+                        if (!broadcastState) {
+                            setEpisodeArrowVisible(prevEpisodeBtn, true);
+                            setEpisodeArrowVisible(nextEpisodeBtn, true);
+                        }
                         // In canonical mode the host owns the episode list and
                         // boundary checks. Never disable these request controls
                         // from a stale provider-local dropdown snapshot.
@@ -4049,8 +4134,13 @@
     
                 leftControls.appendChild(prevEpisodeBtn);
                 leftControls.appendChild(nextEpisodeBtn);
+                refreshEpisodeNavigation = updateNavButtons;
                 applyCanonicalPickerVisibility();
-                
+                updateNavButtons();
+                // A frame that loads after the host last spoke asks for its word;
+                // postToHost drops it where no extension page embeds this player.
+                postToHost({ type: 'PLAYER_EPISODE_NAVIGATION_REQUEST' });
+
                 // Initial check
                 setTimeout(updateNavButtons, 500); // Wait for episodeDropdown to potentially init
             } // End if (seriesData.hasSeries)
@@ -5675,6 +5765,7 @@
             fullscreenBtn.setAttribute('aria-label', pt('fullscreen', 'Полный экран'));
             settingsBtn.setAttribute('aria-label', pt('player_settings', 'Настройки плеера'));
             subtitlesBtn.setAttribute('aria-label', pt('toggle_subtitles', 'Включить или выключить субтитры'));
+            bindPictureToggle({ container: newContainer, getVideo: () => permanentVideo || video, scope: listenerScope });
             bindPlayerAccessibility({ container: newContainer, getVideo: () => permanentVideo || video,
                 scope: listenerScope, slider: progressContainer, toggleFullscreen, toggleSubtitles,
                 onSeek: direction => showSeekIndicator(direction === 'left' ? leftSeekIndicator : rightSeekIndicator, direction),
@@ -5756,7 +5847,9 @@
                 button.classList.add('player-control-button');
                 button.style.width = '36px';
                 button.style.height = '36px';
-                button.style.display = 'grid';
+                // The episode arrows keep their own visibility: a plain assignment
+                // here would replace their inline !important hiding.
+                if (!button.classList.contains('provider-native-episode-nav')) button.style.display = 'grid';
                 button.style.placeItems = 'center';
                 button.style.padding = '6px';
                 button.style.color = 'rgba(255, 255, 255, 0.82)';

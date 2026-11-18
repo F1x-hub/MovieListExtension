@@ -6279,6 +6279,7 @@ class MovieDetailsManager {
         if (!movie || this.broadcastLock) {
             navControls.style.display = 'none';
             hideEpisodePickerButton();
+            this.publishPlayerEpisodeNavigation({ enabled: false });
             return;
         }
 
@@ -6402,6 +6403,7 @@ class MovieDetailsManager {
             || (!supportsPrevNext && !supportsPicker)) {
             navControls.style.display = 'none';
             hideEpisodePickerButton();
+            this.publishPlayerEpisodeNavigation({ enabled: false });
             return;
         }
 
@@ -6450,6 +6452,12 @@ class MovieDetailsManager {
             }
         }
 
+        this.publishPlayerEpisodeNavigation({
+            enabled: supportsPrevNext,
+            hasPrevious: Boolean(prevAdjacent) && !navigationPending,
+            hasNext: Boolean(nextAdjacent) && !navigationPending
+        });
+
         if (episodesListBtn) {
             if (isSeries && supportsPicker) {
                 episodesListBtn.style.display = 'inline-flex';
@@ -6462,6 +6470,32 @@ class MovieDetailsManager {
             } else {
                 episodesListBtn.style.display = 'none';
             }
+        }
+    }
+
+    /**
+     * Gives the player's own controls the header arrows' state, so the arrows in its
+     * bottom bar match them: hidden for a film or a source that cannot change the
+     * episode, and the one with nothing behind it disabled. Parser videos play in this
+     * page, where player-cleaner listens to the page itself; provider frames get it as
+     * a message, and a frame that loads later asks for it (PLAYER_EPISODE_NAVIGATION_REQUEST).
+     */
+    publishPlayerEpisodeNavigation(state = this.playerEpisodeNavigation, { force = false } = {}) {
+        if (!state) return;
+        const message = {
+            type: 'PLAYER_EPISODE_NAVIGATION_STATE',
+            enabled: state.enabled === true,
+            hasPrevious: state.enabled === true && state.hasPrevious === true,
+            hasNext: state.enabled === true && state.hasNext === true
+        };
+        const key = `${message.enabled}:${message.hasPrevious}:${message.hasNext}`;
+        if (!force && key === this.playerEpisodeNavigationKey) return;
+        this.playerEpisodeNavigation = message;
+        this.playerEpisodeNavigationKey = key;
+        const frames = this.elements?.videoContainer?.querySelectorAll?.('iframe') || [];
+        Array.from(frames).forEach(frame => this.postToPlayerFrame(frame, message));
+        if (typeof window !== 'undefined' && typeof window.postMessage === 'function' && window.location?.origin) {
+            try { window.postMessage(message, window.location.origin); } catch { /* the page is closing */ }
         }
     }
 
@@ -7129,7 +7163,18 @@ class MovieDetailsManager {
         });
         if (shouldShowGuidance) {
             const textEl = guidanceEl.querySelector?.('.player-source-guidance__text') || guidanceEl;
-            textEl.textContent = `Выберите S${selection.seasonNumber}E${selection.episodeNumber} в плеере источника`;
+            // A provider with its own episode list can be steered there by hand. A
+            // title-only one (Rutube) plays the one video its search found and has no
+            // list to choose from, so sending the viewer there would be a dead end.
+            const hasOwnEpisodeList = typeof activeAdapter?.supportsEpisodePicker === 'function'
+                && activeAdapter.supportsEpisodePicker();
+            const season = selection.seasonNumber;
+            const episode = selection.episodeNumber;
+            const titleOnly = `${activeAdapter?.label || 'Источник'} ищет видео по названию и не выбирает серию: это может быть не S${season}E${episode}.`;
+            textEl.textContent = hasOwnEpisodeList
+                ? `Выберите S${season}E${episode} в плеере источника`
+                : ((typeof window !== 'undefined' && window.PlayerLocale?.t?.('title_only_episode',
+                    { source: activeAdapter?.label || 'Источник', season, episode }, titleOnly)) || titleOnly);
             guidanceEl.style.display = 'flex';
         } else {
             guidanceEl.style.display = 'none';
@@ -7748,6 +7793,9 @@ class MovieDetailsManager {
                     });
                     this.updatePlayerNavigationControls();
                 }
+            } else if (event.data.type === 'PLAYER_EPISODE_NAVIGATION_REQUEST') {
+                if (this.playerEpisodeNavigation) this.publishPlayerEpisodeNavigation(this.playerEpisodeNavigation, { force: true });
+                else this.updatePlayerNavigationControls();
             } else if (event.data.type === 'PLAYER_EPISODE_NAVIGATE') {
                 await this.requestPlayerEpisodeNavigation(event.data.direction);
             } else if (event.data.type === 'UPDATE_WATCHING_PROGRESS') {
@@ -7971,6 +8019,7 @@ class MovieDetailsManager {
             'PLAYER_READY',
             'PLAYER_SOURCE_STATE',
             'PLAYER_EPISODE_NAVIGATE',
+            'PLAYER_EPISODE_NAVIGATION_REQUEST',
             'UPDATE_WATCHING_PROGRESS',
             'EPISODE_CHANGED',
             'PIP_ENTER',
@@ -9591,6 +9640,7 @@ class MovieDetailsManager {
                     : 'PROVIDER_SWITCH'
             });
         }
+        if (url.startsWith('parser:')) this.holdNativeProviderReports?.(providerKey, requestId);
 
         this.updateSourceGuidance(providerKey);
         this.updatePlayerHeaderTitle();
@@ -10048,6 +10098,46 @@ class MovieDetailsManager {
                 lifecycleOptions.onLifecycleState(state, detail);
             }
         });
+        // A site that cannot be reached at all still fires «load», with Chrome's own
+        // error page in the frame, so the watcher above calls it ready and the viewer
+        // gets a blank player (VidSrc where its domain does not open).
+        void this.verifyFrameSiteReachable(url, lifecycleOptions);
+    }
+
+    /**
+     * One request to the frame's site. A network failure there (refused, blocked, a
+     * broken TLS handshake) means the source cannot open in this browser, whatever the
+     * frame's load event said. A slow answer proves nothing and is left to the frame.
+     */
+    async verifyFrameSiteReachable(url, lifecycleOptions = {}) {
+        let origin;
+        try { origin = new URL(url).origin; } catch { return true; }
+        if (!/^https?:\/\//.test(origin) || typeof fetch !== 'function') return true;
+        try {
+            await fetch(`${origin}/`, {
+                mode: 'no-cors', cache: 'no-store', credentials: 'omit',
+                signal: AbortSignal.timeout(FRAME_SITE_CHECK_MS)
+            });
+            return true;
+        } catch (error) {
+            if (error?.name !== 'TypeError' || lifecycleOptions.isRequestCurrent?.() === false) return true;
+            const container = this.elements?.videoContainer;
+            const frame = container?.querySelector?.('iframe[data-player-source-active="true"]');
+            if (!frame || (lifecycleOptions.requestId != null
+                && frame.dataset?.playerRequestId !== String(lifecycleOptions.requestId))) return true;
+            console.warn('[MovieDetails] The source site does not open:', origin);
+            this.sourceLifecycleWatcher?.cancel?.();
+            this.sourceLifecycleWatcher = null;
+            const fallback = 'Сайт источника не открывается в этом браузере.';
+            window.PlayerSourceLifecycle?.setState(container, 'unavailable', {
+                message: window.PlayerLocale?.t?.('source_unreachable', {}, fallback) || fallback,
+                onRetry: lifecycleOptions.onRetry,
+                onResearch: lifecycleOptions.onResearch,
+                onTryOther: lifecycleOptions.onTryOther
+            });
+            lifecycleOptions.onLifecycleState?.('unavailable', { reason: 'provider-unreachable' });
+            return false;
+        }
     }
 
     /**
@@ -12530,6 +12620,8 @@ if (typeof window !== 'undefined') {
     window.MovieDetailsManager = MovieDetailsManager;
 }
 const MEDIA_PLAYER_TORRENT_SOURCE = 'mediaplayer:torrent';
+// How long verifyFrameSiteReachable waits before leaving a slow site to its frame.
+const FRAME_SITE_CHECK_MS = 10000;
 // Episode picker: long seasons are browsed in ranges and searchable by number.
 const PICKER_EPISODE_RANGE_SIZE = 100;
 const PICKER_EPISODE_SEARCH_MIN_COUNT = 24;

@@ -133,7 +133,15 @@ body.player-modal-open {
     background: rgba(255, 255, 255, 0.34);
 }
 
+/* A header with an action group: when the buttons and 10rem of title no longer
+   fit on one line, the buttons move to their own row instead of covering it. */
+.video-header:has(> .video-header__actions) {
+    flex-wrap: wrap;
+    gap: 8px 16px;
+}
+
 .video-heading {
+    flex: 1 1 10rem;
     min-width: 0;
     display: flex;
     align-items: center;
@@ -205,6 +213,7 @@ body.player-modal-open {
     align-items: center;
     gap: 10px;
     flex: 0 0 auto;
+    margin-inline-start: auto;
 }
 
 .player-nav-controls {
@@ -474,11 +483,29 @@ body.player-modal-open {
     border-color: rgba(9, 9, 11, 0.15);
 }
 
-@media (max-width: 600px) {
-    .player-nav-btn {
+/* The header follows the player's width, not the window's: the modal narrows with
+   the window's height too, and a viewport query let the buttons cover the title.
+   The modal already has a transform and clips its content, so being a query
+   container adds no new stacking or positioning context for its popovers. */
+#videoPlayerModal .video-modal {
+    container: player-modal / inline-size;
+}
+
+/* Episode navigation is the widest group, so it turns to icons first. */
+@container player-modal (width < 880px) {
+    .player-nav-controls .player-nav-btn {
         padding: 0 8px;
     }
-    .player-nav-btn__label {
+    .player-nav-controls .player-nav-btn__label {
+        display: none;
+    }
+}
+
+@container player-modal (width < 640px) {
+    .video-header .player-nav-btn {
+        padding: 0 8px;
+    }
+    .video-header .player-nav-btn__label {
         display: none;
     }
     .watch-room-controls__status {
