@@ -415,3 +415,73 @@ test('two players play a full game, a rematch and a direct challenge', async ({ 
         await harness.close();
     }
 });
+
+test.describe('against the computer', () => {
+    test.use({ startSignedIn: false });
+
+    test('a guest plays a whole game against the computer, with no account and no server', async ({ page, extension }) => {
+        test.setTimeout(120_000);
+        const local = expression => page.evaluate(expression);
+        await page.goto(extension.url(PAGE));
+        await expect(page.locator('#bsBotPanel')).toBeVisible();
+        await expect(page.locator('#bsGuestNote')).toBeVisible();
+        await expect(page.locator('[data-action="create-public"]')).toBeHidden();
+        await expect(page.locator('#bsBotLevels [role="radio"]')).toHaveCount(3);
+        await expect(page.locator('#bsBotRecord')).toHaveText('На этом уровне вы ещё не играли');
+        await page.locator('#bsBotLevels [data-level="hard"]').click();
+        await expect(page.locator('#bsBotLevels [data-level="hard"]')).toHaveAttribute('aria-checked', 'true');
+        await shot(page, 'bot-lobby-dark');
+
+        await page.locator('[data-action="start-bot"]').click();
+        await expect(page).toHaveURL(/\?bot=1$/);
+        await expect(page.locator('#bsTools')).toBeVisible();
+        await expect(page.locator('.bs-code-chip')).toContainText('Адмирал');
+        await expect(page.locator('#bsBanner')).toContainText('Соперник уже готов к бою');
+        await page.locator('[data-action="random"]').click();
+        await page.locator('#bsReadyBtn').click();
+        await expect(page.locator('#bsEnemyBoard')).toBeVisible();
+
+        // Shoot only at the computer's ships (its fleet is in the page): every
+        // shot hits and keeps the turn, so the player wins.
+        for (let guard = 0; guard < 80; guard += 1) {
+            await expect.poll(() => local(() => {
+                const game = globalThis.battleshipPage.local.game;
+                return game.status !== 'playing' || game.turnUid === 'you';
+            }), { timeout: 15_000 }).toBe(true);
+            const state = await local(() => {
+                const { game, fleets } = globalThis.battleshipPage.local;
+                return {
+                    status: game.status,
+                    marks: game.boards.bot,
+                    cells: fleets.bot.flatMap(ship => globalThis.BattleshipRules.shipCells(ship))
+                };
+            });
+            if (state.status !== 'playing') break;
+            const index = state.cells.find(cell => state.marks[cell] === '.');
+            await expect(page.locator('#bsBanner')).toHaveAttribute('data-tone', 'turn');
+            await clickCell(page, 'bsEnemyBoard', index);
+            await expect.poll(() => page.evaluate(cell => globalThis.battleshipPage.local.game.boards.bot[cell], index)).not.toBe('.');
+        }
+        await expect(page.locator('#bsBanner')).toHaveAttribute('data-tone', 'win');
+        await expect(page.locator('#bsEnemyBoard .bs-cell[data-ship]')).toHaveCount(20);
+        await shot(page, 'bot-win-dark');
+
+        // A reload keeps the result; «Ещё партия» starts over at the same level.
+        await page.reload();
+        await expect(page.locator('#bsBanner')).toHaveAttribute('data-tone', 'win');
+        await page.locator('#bsBannerActions [data-action="rematch"]').click();
+        await expect(page.locator('#bsTools')).toBeVisible();
+        await expect(page.locator('.bs-code-chip')).toContainText('Адмирал');
+        await page.locator('.bs-back').click();
+        await expect(page.locator('#bsLobby')).toBeVisible();
+        await expect(page.locator('#bsBotRecord')).toHaveText('Побед: 1 · поражений: 0');
+        await expect(page.locator('#bsBotResume')).toContainText('корабли ещё не расставлены');
+        await page.locator('#bsBotResume [data-action="resume-bot"]').click();
+        await expect(page.locator('#bsTools')).toBeVisible();
+
+        // A link to an online game asks a guest to sign in.
+        await page.goto(extension.url(`${PAGE}?game=K7Q2MX`));
+        await expect(page.locator('#bsLobby')).toBeVisible();
+        await expect(page.locator('#bsToast')).toContainText('Войдите');
+    });
+});

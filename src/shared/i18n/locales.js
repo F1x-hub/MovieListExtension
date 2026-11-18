@@ -90,7 +90,7 @@ export const locales = {
                 },
                 battleship: {
                     title: "Battleship",
-                    subtitle: "Online with another player"
+                    subtitle: "Against the computer or online, in 3D"
                 },
                 chess: {
                     title: "Chess",
@@ -302,15 +302,36 @@ export const locales = {
             battleship: {
                 page_title: "Battleship",
                 title: "Battleship",
-                subtitle: "Play another extension user online",
+                subtitle: "Play the computer, or another extension user online",
                 loading: "Loading…",
                 sound_on: "Sound on",
                 sound_off: "Sound off",
                 ship_forms: "ship|ships",
                 guest: {
-                    title: "Sign in to play",
-                    text: "Battleship is played between extension users, so you need an account.",
-                    sign_in: "Sign in"
+                    title: "Online games need an account",
+                    text: "Online games are played between extension users, so they need an account. You can play the computer without one.",
+                    sign_in: "Sign in",
+                    online_link: "Sign in to open this online game"
+                },
+                bot: {
+                    title: "Against the computer",
+                    lead: "The computer plays in your browser: no internet and no account needed.",
+                    level_label: "Level",
+                    levels: {
+                        easy: { name: "Cabin boy", text: "Fires at random and does not always finish a damaged ship" },
+                        normal: { name: "Captain", text: "Finishes damaged ships and sweeps the sea every other cell" },
+                        hard: { name: "Admiral", text: "Works out where your remaining ships can still be" }
+                    },
+                    start: "Start a game",
+                    record: "Wins: {wins} · losses: {losses}",
+                    record_empty: "No games at this level yet",
+                    resume_title: "Unfinished game",
+                    resume_placing: "{level} · ships not placed yet",
+                    resume_playing: "{level} · your shots: {shots}",
+                    resume: "Continue",
+                    name: "Computer",
+                    level_chip: "Level",
+                    again: "Play again"
                 },
                 lobby: {
                     new_title: "New game",
@@ -2562,7 +2583,7 @@ export const locales = {
                 },
                 battleship: {
                     title: "Морской бой",
-                    subtitle: "По сети с другим игроком"
+                    subtitle: "С компьютером или онлайн, в 3D"
                 },
                 chess: {
                     title: "Шахматы",
@@ -2774,15 +2795,36 @@ export const locales = {
             battleship: {
                 page_title: "Морской бой",
                 title: "Морской бой",
-                subtitle: "Партия по сети с другим пользователем расширения",
+                subtitle: "С компьютером или по сети с другим пользователем расширения",
                 loading: "Загружаем…",
                 sound_on: "Звук включён",
                 sound_off: "Звук выключен",
                 ship_forms: "корабль|корабля|кораблей",
                 guest: {
-                    title: "Войдите, чтобы играть",
-                    text: "Морской бой идёт между пользователями расширения, поэтому нужен аккаунт.",
-                    sign_in: "Войти"
+                    title: "Онлайн — с аккаунтом",
+                    text: "Партии по сети идут между пользователями расширения, поэтому для них нужен аккаунт. С компьютером можно играть и без него.",
+                    sign_in: "Войти",
+                    online_link: "Войдите, чтобы открыть эту игру по сети"
+                },
+                bot: {
+                    title: "С компьютером",
+                    lead: "Компьютер играет у вас в браузере: без интернета и без аккаунта.",
+                    level_label: "Уровень",
+                    levels: {
+                        easy: { name: "Юнга", text: "Стреляет наугад и не всегда добивает раненый корабль" },
+                        normal: { name: "Капитан", text: "Добивает раненые корабли и прочёсывает море через клетку" },
+                        hard: { name: "Адмирал", text: "Высчитывает, где ещё могут стоять ваши корабли" }
+                    },
+                    start: "Начать партию",
+                    record: "Побед: {wins} · поражений: {losses}",
+                    record_empty: "На этом уровне вы ещё не играли",
+                    resume_title: "Незаконченная партия",
+                    resume_placing: "{level} · корабли ещё не расставлены",
+                    resume_playing: "{level} · ваших выстрелов: {shots}",
+                    resume: "Продолжить",
+                    name: "Компьютер",
+                    level_chip: "Уровень",
+                    again: "Ещё партия"
                 },
                 lobby: {
                     new_title: "Новая игра",

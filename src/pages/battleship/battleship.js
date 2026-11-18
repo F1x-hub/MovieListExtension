@@ -7,6 +7,8 @@ import {
     BattleshipService,
     normalizeGameCode
 } from '../../shared/services/BattleshipService.js';
+import { BOT_LEVELS } from '../../shared/games/battleship/BattleshipBot.js';
+import { BattleshipLocalGame, PLAYER_UID } from '../../shared/games/battleship/BattleshipLocalGame.js';
 import { BattleshipGameView } from './BattleshipGameView.js';
 
 const tb = (key, params) => t(`battleship.${key}`, params);
@@ -53,10 +55,16 @@ class BattleshipPage {
         this.channel = null;
         this.Board3D = null;
         this.boardView = '3d';
+        this.local = new BattleshipLocalGame({ rules: this.rules });
         this.elements = {
             loading: document.getElementById('bsLoading'),
-            guest: document.getElementById('bsGuest'),
             lobby: document.getElementById('bsLobby'),
+            lobbyGrid: document.getElementById('bsLobbyGrid'),
+            onlinePanels: [...document.querySelectorAll('#bsLobby [data-online]')],
+            guestNote: document.getElementById('bsGuestNote'),
+            botLevels: document.getElementById('bsBotLevels'),
+            botRecord: document.getElementById('bsBotRecord'),
+            botResume: document.getElementById('bsBotResume'),
             game: document.getElementById('bsGame'),
             toast: document.getElementById('bsToast'),
             mute: document.getElementById('bsMuteBtn'),
@@ -77,6 +85,7 @@ class BattleshipPage {
 
     async init() {
         const boards = this.loadBoards();
+        const localGame = this.local.load();
         await i18n.init();
         i18n.translatePage();
         this.baseTitle = tb('page_title');
@@ -86,7 +95,7 @@ class BattleshipPage {
         this.openChannel();
         const manager = globalThis.firebaseManager;
         await manager?.waitForAuthReady?.(10000);
-        await boards;
+        await Promise.all([boards, localGame]);
         window.addEventListener('authStateChanged', () => this.onAuthChanged());
         window.addEventListener('popstate', () => this.route());
         chrome.runtime?.onMessage?.addListener?.(message => {
@@ -151,6 +160,7 @@ class BattleshipPage {
             if (navigation?.showAuthModal) navigation.showAuthModal('login');
         });
         this.elements.lobby.addEventListener('click', event => this.handleLobbyClick(event));
+        this.elements.botLevels.addEventListener('keydown', event => this.handleLevelKey(event));
         this.elements.joinForm.addEventListener('submit', event => {
             event.preventDefault();
             this.joinByCode();
@@ -197,7 +207,8 @@ class BattleshipPage {
         this.teardownSession();
         this.uid = uid;
         if (!uid) {
-            this.showView('guest');
+            // Guests get the lobby too: the computer needs no account.
+            this.route();
             return;
         }
         this.unsubscribePlayer = this.service.subscribePlayer(uid, player => {
@@ -221,8 +232,11 @@ class BattleshipPage {
         this.unsubscribeLobby = null;
         clearInterval(this.touchTimer);
         this.touchTimer = null;
-        this.gameView?.destroy();
-        this.gameView = null;
+        // A game against the computer does not depend on the account.
+        if (!this.gameView?.local) {
+            this.gameView?.destroy();
+            this.gameView = null;
+        }
         this.player = null;
         this.lobby = null;
     }
@@ -232,11 +246,18 @@ class BattleshipPage {
     }
 
     route(force = false) {
-        if (!this.uid) {
-            this.showView('guest');
+        if (new URLSearchParams(location.search).has('bot')) {
+            this.openBotView(force);
             return;
         }
         const gameId = this.currentGameParam();
+        if (gameId && !this.uid) {
+            this.gameView?.destroy();
+            this.gameView = null;
+            this.showView('lobby');
+            this.toast(tb('guest.online_link'));
+            return;
+        }
         if (gameId) {
             if (!force && this.gameView?.gameId === gameId) return;
             this.openGameView(gameId);
@@ -247,15 +268,63 @@ class BattleshipPage {
         this.showView('lobby');
     }
 
-    navigate(gameId, { replace = false, focusNewGame = false } = {}) {
+    /** @param {string|null} target - an online game code, 'bot', or null for the lobby */
+    navigate(target, { replace = false, focusNewGame = false } = {}) {
         const url = new URL(location.href);
-        if (gameId) url.searchParams.set('game', gameId);
-        else url.searchParams.delete('game');
+        url.searchParams.delete('game');
+        url.searchParams.delete('bot');
+        if (target === 'bot') url.searchParams.set('bot', '1');
+        else if (target) url.searchParams.set('game', target);
         if (replace) history.replaceState(null, '', url);
         else history.pushState(null, '', url);
         this.route();
-        if (!gameId && focusNewGame) this.elements.lobby.querySelector('[data-action="create-public"]')?.focus();
+        if (!target && focusNewGame) this.elements.lobby.querySelector(this.uid ? '[data-action="create-public"]' : '[data-action="start-bot"]')?.focus();
         window.scrollTo({ top: 0 });
+    }
+
+    /** The game against the computer: the saved one, or a new one at the chosen level. */
+    openBotView(force = false) {
+        if (!this.local.game) this.startBotGame();
+        if (!force && this.gameView?.local && this.gameView.gameId === this.local.gameId) return;
+        this.gameView?.destroy();
+        this.showView('game');
+        this.gameView = new BattleshipGameView({
+            root: this.elements.game,
+            service: this.local,
+            uid: PLAYER_UID,
+            gameId: this.local.gameId,
+            rules: this.rules,
+            sounds: this.sounds,
+            locale: () => i18n.currentLocale,
+            // «Ещё партия» starts a new local game; the screen then shows it.
+            onNavigate: (nextGameId, options) => (nextGameId ? this.openBotView(true) : this.navigate(null, options)),
+            onToast: (text, tone) => this.toast(text, tone),
+            onAttention: state => {
+                this.attention = state;
+                this.updateTitle();
+            },
+            describeError: error => this.describeError(error),
+            Board3D: this.Board3D,
+            boardView: this.boardView,
+            onBoardView: view => this.saveBoardView(view),
+            local: { levelName: this.levelName(this.local.game?.level || this.local.level) }
+        });
+        this.gameView.start();
+    }
+
+    startBotGame() {
+        const user = globalThis.firebaseManager?.auth?.currentUser || null;
+        const photo = typeof user?.photoURL === 'string' && /^https:\/\//i.test(user.photoURL) ? user.photoURL : null;
+        this.local.start({
+            level: this.local.level,
+            playerName: user?.displayName || '',
+            playerPhoto: photo,
+            botName: tb('bot.name')
+        });
+    }
+
+    levelName(level) {
+        return tb(`bot.levels.${level}.name`);
     }
 
     openGameView(gameId) {
@@ -285,13 +354,14 @@ class BattleshipPage {
 
     showView(view) {
         this.view = view;
-        for (const name of ['loading', 'guest', 'lobby', 'game']) {
+        for (const name of ['loading', 'lobby', 'game']) {
             this.elements[name].hidden = name !== view;
         }
         if (view === 'lobby') {
             this.attention = null;
             this.updateTitle();
-            if (!this.unsubscribeLobby) {
+            // Open games are listed for signed-in, approved users only.
+            if (!this.unsubscribeLobby && this.uid) {
                 this.unsubscribeLobby = this.service.subscribeLobby(lobby => {
                     this.lobby = lobby;
                     this.renderLobby();
@@ -362,11 +432,76 @@ class BattleshipPage {
 
     renderLobby() {
         if (this.view !== 'lobby') return;
+        this.renderBot();
+        const signedIn = Boolean(this.uid);
+        this.elements.guestNote.hidden = signedIn;
+        this.elements.lobbyGrid.classList.toggle('is-guest', !signedIn);
+        this.elements.onlinePanels.forEach(panel => { panel.hidden = !signedIn; });
+        if (!signedIn) {
+            this.elements.invitesPanel.hidden = true;
+            return;
+        }
         this.renderInvites();
         this.renderMyGames();
         this.renderOpenGames();
         this.renderRecent();
         this.renderSearch();
+    }
+
+    // --- Against the computer -----------------------------------------------------------
+
+    renderBot() {
+        const current = this.local.level;
+        const html = BOT_LEVELS.map(level => {
+            const checked = level === current;
+            return `<button class="bs-level" type="button" role="radio" data-action="bot-level" data-level="${level}" aria-checked="${checked}" tabindex="${checked ? 0 : -1}">
+                <span class="bs-level__name">${escapeHtml(this.levelName(level))}</span>
+                <span class="bs-level__text">${escapeHtml(tb(`bot.levels.${level}.text`))}</span>
+            </button>`;
+        }).join('');
+        const levels = this.elements.botLevels;
+        if (levels.dataset.html !== html) {
+            const focused = levels.contains(document.activeElement);
+            levels.innerHTML = html;
+            levels.dataset.html = html;
+            if (focused) levels.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true });
+        }
+        const record = this.local.stats[current] || { wins: 0, losses: 0 };
+        this.elements.botRecord.textContent = record.wins + record.losses
+            ? tb('bot.record', { wins: record.wins, losses: record.losses })
+            : tb('bot.record_empty');
+        const saved = this.local.unfinished;
+        const resume = this.elements.botResume;
+        resume.hidden = !saved;
+        if (!saved) {
+            resume.innerHTML = '';
+            return;
+        }
+        const detail = saved.status === 'placing'
+            ? tb('bot.resume_placing', { level: this.levelName(saved.level) })
+            : tb('bot.resume_playing', { level: this.levelName(saved.level), shots: Number(saved.shots?.[PLAYER_UID]) || 0 });
+        resume.innerHTML = `
+            <span class="bs-resume__copy">
+                <strong>${escapeHtml(tb('bot.resume_title'))}</strong>
+                <small>${escapeHtml(detail)}</small>
+            </span>
+            <button class="btn btn-secondary btn-sm" type="button" data-action="resume-bot">${escapeHtml(tb('bot.resume'))}</button>`;
+    }
+
+    selectLevel(level, focus = false) {
+        if (!BOT_LEVELS.includes(level)) return;
+        this.local.setLevel(level);
+        this.renderBot();
+        if (focus) this.elements.botLevels.querySelector(`[data-level="${level}"]`)?.focus();
+    }
+
+    /** Arrow keys move the choice within the level radio group. */
+    handleLevelKey(event) {
+        const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+        if (!step) return;
+        event.preventDefault();
+        const index = BOT_LEVELS.indexOf(this.local.level);
+        this.selectLevel(BOT_LEVELS[(index + step + BOT_LEVELS.length) % BOT_LEVELS.length], true);
     }
 
     pendingButton(action, label, kind, attributes = '') {
@@ -653,6 +788,16 @@ class BattleshipPage {
                 });
                 break;
             }
+            case 'bot-level':
+                this.selectLevel(target.dataset.level);
+                break;
+            case 'start-bot':
+                this.startBotGame();
+                this.navigate('bot');
+                break;
+            case 'resume-bot':
+                this.navigate('bot');
+                break;
             default:
                 break;
         }
@@ -664,6 +809,6 @@ document.addEventListener('DOMContentLoaded', () => {
     globalThis.battleshipPage = page;
     page.init().catch(error => {
         console.error('[Battleship] page failed to start', error);
-        page.showView('guest');
+        page.showView('lobby');
     });
 });

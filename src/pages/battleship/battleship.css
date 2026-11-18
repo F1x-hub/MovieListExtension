@@ -235,6 +235,128 @@
     min-width: 0;
 }
 
+/* A guest sees only the computer and the sign-in note, in one column. */
+.bs-lobby.is-guest {
+    grid-template-columns: minmax(0, 720px);
+    justify-content: center;
+}
+
+.bs-panel__title--icon {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.bs-panel__title--icon svg {
+    flex: 0 0 auto;
+    color: var(--ui-color-content-muted);
+}
+
+.bs-panel__lead {
+    margin: -6px 0 14px;
+    color: var(--ui-color-content-muted);
+    font-size: var(--font-size-md);
+    line-height: 1.45;
+}
+
+/* ---------- Against the computer ---------- */
+
+.bs-levels {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.bs-level {
+    display: grid;
+    align-content: start;
+    gap: 4px;
+    padding: 12px 14px;
+    color: var(--ui-color-content);
+    font: inherit;
+    text-align: left;
+    background: var(--bs-overlay);
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), box-shadow var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .bs-level:hover {
+        background: var(--bs-overlay-strong);
+        border-color: var(--ui-color-border-hover);
+    }
+}
+
+.bs-level[aria-checked="true"] {
+    background: var(--bs-overlay-strong);
+    border-color: var(--ui-color-content);
+    box-shadow: inset 0 0 0 1px var(--ui-color-content);
+}
+
+.bs-level:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 2px;
+}
+
+.bs-level__name {
+    font-size: var(--font-size-base);
+    font-weight: 600;
+}
+
+.bs-level__text {
+    color: var(--ui-color-content-muted);
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+}
+
+.bs-bot-start {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+    margin-top: 14px;
+}
+
+.bs-bot-start .bs-hint {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.bs-resume {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: var(--bs-overlay);
+    border: 1px dashed var(--ui-color-border-hover);
+    border-radius: var(--radius-lg);
+}
+
+.bs-resume__copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.bs-resume__copy strong {
+    font-size: var(--font-size-md);
+    font-weight: 600;
+}
+
+.bs-resume__copy small {
+    color: var(--ui-color-content-muted);
+    font-size: var(--font-size-sm);
+}
+
+.bs-guest-note .bs-panel__lead {
+    margin-bottom: 12px;
+}
+
 .bs-start-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1390,7 +1512,8 @@
         max-width: none;
     }
 
-    .bs-start-grid {
+    .bs-start-grid,
+    .bs-levels {
         grid-template-columns: minmax(0, 1fr);
     }
 

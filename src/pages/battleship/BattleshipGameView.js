@@ -53,9 +53,12 @@ export class BattleshipGameView {
      * @param {Function|null} [options.Board3D] - BattleshipBoardRenderer where WebGL works
      * @param {'3d'|'top'} [options.boardView] - the camera of the 3D boards
      * @param {(view: '3d'|'top') => void} [options.onBoardView]
+     * @param {{ levelName: string }|null} [options.local] - a game against the computer
+     *   (BattleshipLocalGame as the service): no idle claims, no code, «Ещё партия»
      */
     constructor(options) {
         this.options = options;
+        this.local = options.local || null;
         this.root = options.root;
         this.service = options.service;
         this.uid = options.uid;
@@ -97,6 +100,7 @@ export class BattleshipGameView {
     }
 
     get opponentName() {
+        if (this.local) return tb('bot.name');
         const uid = this.opponentUid;
         return (uid && this.game?.names?.[uid]) || tb('game.opponent');
     }
@@ -372,7 +376,9 @@ export class BattleshipGameView {
                     ${this.backButtonHtml()}
                     <div class="bs-versus" id="bsVersus"></div>
                     <div class="bs-game__tools">
-                        <span class="bs-code-chip"><span>${escapeHtml(tb('game.code'))}</span> <strong>${escapeHtml(this.gameId)}</strong></span>
+                        ${this.local
+        ? `<span class="bs-code-chip"><span>${escapeHtml(tb('bot.level_chip'))}</span> <strong>${escapeHtml(this.local.levelName)}</strong></span>`
+        : `<span class="bs-code-chip"><span>${escapeHtml(tb('game.code'))}</span> <strong>${escapeHtml(this.gameId)}</strong></span>`}
                         ${viewButton}
                     </div>
                 </div>
@@ -567,16 +573,17 @@ export class BattleshipGameView {
                     icon: 'target',
                     title: tb('game.your_turn'),
                     text: [last, tb('game.your_turn_hint')].filter(Boolean).join(' · '),
-                    timer: left <= IDLE_WARNING_MS ? tb('game.idle_warning', { time: formatDuration(left) }) : ''
+                    // The computer waits as long as it takes.
+                    timer: !this.local && left <= IDLE_WARNING_MS ? tb('game.idle_warning', { time: formatDuration(left) }) : ''
                 };
             }
-            const canClaim = idle >= TURN_IDLE_MS;
+            const canClaim = !this.local && idle >= TURN_IDLE_MS;
             return {
                 tone: 'wait',
                 icon: 'clock',
                 title: tb('game.their_turn', { name }),
                 text: canClaim ? tb('game.claim_hint', { name, minutes: Math.round(TURN_IDLE_MS / 60000) }) : last,
-                timer: !canClaim && idle >= IDLE_VISIBLE_MS ? tb('game.opponent_thinking', { time: formatDuration(idle) }) : '',
+                timer: !this.local && !canClaim && idle >= IDLE_VISIBLE_MS ? tb('game.opponent_thinking', { time: formatDuration(idle) }) : '',
                 actions: canClaim ? [{ action: 'claim', label: tb('game.claim'), kind: 'primary' }] : []
             };
         }
@@ -602,6 +609,7 @@ export class BattleshipGameView {
     }
 
     rematchActions() {
+        if (this.local) return [{ action: 'rematch', label: tb('bot.again'), kind: 'primary' }];
         const game = this.game;
         if (!game.rematchGameId) return [{ action: 'rematch', label: tb('game.rematch'), kind: 'primary' }];
         if (game.rematchBy === this.uid) return [{ action: 'open-rematch', label: tb('game.rematch_waiting'), kind: 'secondary' }];
@@ -752,7 +760,10 @@ export class BattleshipGameView {
         const [action, kind, label] = game.status === 'placing' ? ['leave', 'ghost', tb('game.leave')]
             : game.status === 'playing' ? ['resign', 'ghost', tb('game.resign')]
                 : ['lobby', 'secondary', tb('game.back')];
-        const html = `<button class="btn btn-${kind}" type="button" data-action="${action}">${escapeHtml(label)}</button>`;
+        // A game against the computer waits in the lobby while its fleet is placed.
+        const html = this.local && game.status === 'placing'
+            ? ''
+            : `<button class="btn btn-${kind}" type="button" data-action="${action}">${escapeHtml(label)}</button>`;
         if (footer.dataset.html !== html) {
             footer.innerHTML = html;
             footer.dataset.html = html;

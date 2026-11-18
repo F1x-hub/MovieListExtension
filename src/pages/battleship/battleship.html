@@ -21,7 +21,7 @@
             <header class="bs-header">
                 <div class="bs-header__copy">
                     <h1 class="bs-title" id="bsTitle" data-i18n="games.battleship.title">Морской бой</h1>
-                    <p class="bs-subtitle" data-i18n="games.battleship.subtitle">Сыграйте с другим пользователем расширения</p>
+                    <p class="bs-subtitle" data-i18n="games.battleship.subtitle">С компьютером или по сети с другим пользователем расширения</p>
                 </div>
                 <button class="bs-icon-btn" id="bsMuteBtn" type="button" aria-pressed="false">
                     <svg class="bs-icon-sound-on" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
@@ -39,18 +39,30 @@
                 </div>
             </section>
 
-            <section class="bs-view bs-view--center" id="bsGuest" hidden>
-                <div class="bs-panel bs-panel--message">
-                    <h2 data-i18n="games.battleship.guest.title">Войдите, чтобы играть</h2>
-                    <p data-i18n="games.battleship.guest.text">Морской бой идёт между пользователями расширения, поэтому нужен аккаунт.</p>
-                    <button class="btn btn-primary" id="bsSignInBtn" type="button" data-i18n="games.battleship.guest.sign_in">Войти</button>
-                </div>
-            </section>
-
             <section class="bs-view" id="bsLobby" hidden>
-                <div class="bs-lobby">
+                <div class="bs-lobby" id="bsLobbyGrid">
                     <div class="bs-lobby__main">
-                        <section class="bs-panel" aria-labelledby="bsNewGameTitle">
+                        <section class="bs-panel" id="bsBotPanel" aria-labelledby="bsBotTitle">
+                            <h2 class="bs-panel__title bs-panel__title--icon" id="bsBotTitle">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M12 8V4"></path><circle cx="12" cy="3" r="1"></circle><path d="M9 13h.01M15 13h.01M9 17h6"></path></svg>
+                                <span data-i18n="games.battleship.bot.title">С компьютером</span>
+                            </h2>
+                            <p class="bs-panel__lead" data-i18n="games.battleship.bot.lead">Компьютер играет у вас в браузере: без интернета и без аккаунта.</p>
+                            <div class="bs-levels" role="radiogroup" id="bsBotLevels" data-i18n="[aria-label]games.battleship.bot.level_label"></div>
+                            <div class="bs-bot-start">
+                                <button class="btn btn-primary" type="button" data-action="start-bot" data-i18n="games.battleship.bot.start">Начать партию</button>
+                                <p class="bs-hint bs-bot-record" id="bsBotRecord"></p>
+                            </div>
+                            <div class="bs-resume" id="bsBotResume" hidden></div>
+                        </section>
+
+                        <section class="bs-panel bs-guest-note" id="bsGuestNote" aria-labelledby="bsGuestTitle" hidden>
+                            <h2 class="bs-panel__title" id="bsGuestTitle" data-i18n="games.battleship.guest.title">Онлайн — с аккаунтом</h2>
+                            <p class="bs-panel__lead" data-i18n="games.battleship.guest.text">Партии по сети идут между пользователями расширения, поэтому для них нужен аккаунт. С компьютером можно играть и без него.</p>
+                            <button class="btn btn-secondary" id="bsSignInBtn" type="button" data-i18n="games.battleship.guest.sign_in">Войти</button>
+                        </section>
+
+                        <section class="bs-panel" data-online aria-labelledby="bsNewGameTitle">
                             <h2 class="bs-panel__title" id="bsNewGameTitle" data-i18n="games.battleship.lobby.new_title">Новая игра</h2>
                             <div class="bs-start-grid">
                                 <button class="bs-start-card" type="button" data-action="create-public">
@@ -93,13 +105,13 @@
                             <ul class="bs-list" id="bsInvites"></ul>
                         </section>
 
-                        <section class="bs-panel" aria-labelledby="bsMyGamesTitle">
+                        <section class="bs-panel" data-online aria-labelledby="bsMyGamesTitle">
                             <h2 class="bs-panel__title" id="bsMyGamesTitle" data-i18n="games.battleship.lobby.my_games_title">Ваши игры</h2>
                             <ul class="bs-list" id="bsMyGames"></ul>
                         </section>
                     </div>
 
-                    <aside class="bs-lobby__side">
+                    <aside class="bs-lobby__side" data-online>
                         <section class="bs-panel" aria-labelledby="bsOpenGamesTitle">
                             <h2 class="bs-panel__title" id="bsOpenGamesTitle" data-i18n="games.battleship.lobby.open_title">Открытые игры</h2>
                             <ul class="bs-list" id="bsOpenGames" aria-live="polite"></ul>
