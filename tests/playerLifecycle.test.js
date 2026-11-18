@@ -94,6 +94,52 @@ lifecycle.watchIframe(iframe, {
 await delay(30);
 assert.deepStrictEqual(Array.from(iframeStates, item => item.state), ['loading', 'unavailable']);
 assert.strictEqual(iframeStates[1].reason, 'timeout');
+// A slow frame that loads after its timeout is ready after all.
+iframe.dispatch('load');
+assert.deepStrictEqual(Array.from(iframeStates, item => [item.state, item.reason]).slice(2), [['ready', 'late-load']],
+    'a frame that loads after the timeout takes back «unavailable»');
+iframe.dispatch('load');
+assert.strictEqual(iframeStates.length, 3, 'a late frame reports ready once');
+
+// A slow video stream: «unavailable» at the timeout, ready when its first data comes.
+// (HDRezka under load: without this the overlay stayed over a playing video and the
+// grace fallback switched to another source 12 s later.)
+const lateVideoStates = [];
+const lateVideo = createEventTarget({ readyState: 0, error: null, ownerDocument: { hidden: false } });
+lifecycle.watchVideo(lateVideo, {
+    timeoutMs: 15,
+    onState: (state, detail) => lateVideoStates.push([state, detail.reason])
+});
+await delay(30);
+assert.deepStrictEqual(lateVideoStates, [['loading', 'start'], ['unavailable', 'timeout']]);
+lateVideo.dispatch('loadeddata');
+lateVideo.dispatch('canplay');
+assert.deepStrictEqual(lateVideoStates.slice(2), [['ready', 'late-ready']], 'late first data makes the source ready, once');
+
+const failedLateStates = [];
+const failedLate = createEventTarget({ readyState: 0, error: null, ownerDocument: { hidden: false } });
+lifecycle.watchVideo(failedLate, { timeoutMs: 15, onState: (state, detail) => failedLateStates.push([state, detail.reason]) });
+await delay(30);
+failedLate.dispatch('error');
+failedLate.dispatch('canplay');
+assert.deepStrictEqual(failedLateStates, [['loading', 'start'], ['unavailable', 'timeout']], 'a failure after the timeout ends the watch without a new state');
+
+const cancelledLateStates = [];
+const cancelledLate = createEventTarget({ readyState: 0, error: null, ownerDocument: { hidden: false } });
+const cancelledWatcher = lifecycle.watchVideo(cancelledLate, { timeoutMs: 15, onState: (state, detail) => cancelledLateStates.push([state, detail.reason]) });
+await delay(30);
+cancelledWatcher.cancel();
+cancelledLate.dispatch('canplay');
+assert.strictEqual(cancelledLateStates.length, 2, 'a cancelled watch stops listening for a late start');
+
+const staleLateStates = [];
+let staleCurrent = true;
+const staleLate = createEventTarget({ readyState: 0, error: null, ownerDocument: { hidden: false } });
+lifecycle.watchVideo(staleLate, { timeoutMs: 15, isRequestCurrent: () => staleCurrent, onState: (state, detail) => staleLateStates.push([state, detail.reason]) });
+await delay(30);
+staleCurrent = false;
+staleLate.dispatch('canplay');
+assert.strictEqual(staleLateStates.length, 2, 'a late start of a request the page moved past is not reported');
 
 const cleanerSource = ['PlayerSettingsMenu', 'PlayerMediaControls', 'PlayerGhostPreview'].map(name => fs.readFileSync(new URL('../src/shared/services/player/' + name + '.js', import.meta.url), 'utf8')).join(String.fromCharCode(10)) + String.fromCharCode(10) + fs.readFileSync(
     new URL('../content-scripts/player-cleaner.js', import.meta.url),

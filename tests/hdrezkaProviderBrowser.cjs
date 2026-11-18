@@ -394,7 +394,9 @@ async function main() {
             owner.syncWatchEntry = () => {};
             owner.invalidateSourceCache = () => {};
             window.automaticFallbacks = 0;
-            owner.handleWatchSourceFailure = () => { automaticFallbacks += 1; };
+            // A timeout is not a fallback: the real handler only waits 12 s for the
+            // source to come up (a loaded machine can take over 5 s to the first data).
+            owner.handleWatchSourceFailure = (value, requestId, reason) => { if (reason !== 'timeout') automaticFallbacks += 1; };
             const loaded = await owner.loadParserSource('hdrezka');
             return { loaded, access: hdParser.accessRequired, fallbackCount: automaticFallbacks };
         });

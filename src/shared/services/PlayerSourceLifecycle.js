@@ -119,6 +119,9 @@
 
     function watchIframe(iframe, options = {}) {
         let active = true;
+        // After a timeout the frame is still watched: a slow site that loads after all
+        // is ready, so the page drops «unavailable» and no grace fallback replaces it.
+        let late = false;
         let timer = null;
         const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
         const isCurrent = options.isRequestCurrent || (() => true);
@@ -132,11 +135,27 @@
             if (!active) return;
             if (timer) clearTimeout(timer);
             active = false;
+            late = state === STATES.UNAVAILABLE && detail?.reason === 'timeout';
             if (isCurrent()) options.onState?.(state, detail);
-            cleanup();
+            if (!late) cleanup();
         };
-        const onLoad = () => finish(STATES.READY, { reason: 'load' });
-        const onError = () => finish(STATES.ERROR, { reason: 'error' });
+        const onLoad = () => {
+            if (late) {
+                late = false;
+                cleanup();
+                if (isCurrent()) options.onState?.(STATES.READY, { reason: 'late-load' });
+                return;
+            }
+            finish(STATES.READY, { reason: 'load' });
+        };
+        const onError = () => {
+            if (late) {
+                late = false;
+                cleanup();
+                return;
+            }
+            finish(STATES.ERROR, { reason: 'error' });
+        };
         const cleanup = () => {
             iframe?.removeEventListener?.('load', onLoad);
             iframe?.removeEventListener?.('error', onError);
@@ -155,6 +174,11 @@
 
         return {
             cancel() {
+                if (late) {
+                    late = false;
+                    cleanup();
+                    return;
+                }
                 if (!active) return;
                 active = false;
                 if (timer) clearTimeout(timer);
@@ -165,6 +189,10 @@
 
     function watchVideo(video, options = {}) {
         let active = true;
+        // After a timeout the video is still watched: a slow stream that brings its
+        // first data later is ready, so the page drops «unavailable» and the grace
+        // fallback does not replace a video that plays (HDRezka under load).
+        let late = false;
         let timer = null;
         const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
         const isCurrent = options.isRequestCurrent || (() => true);
@@ -188,13 +216,33 @@
             if (!active) return;
             active = false;
             if (timer) clearTimeout(timer);
-            cleanup();
+            late = state === STATES.UNAVAILABLE && detail?.reason === 'timeout';
+            if (!late) cleanup();
             if (isCurrent()) options.onState?.(state, detail);
         };
-        const onReady = () => finish(STATES.READY, { reason: 'ready' });
-        const onError = () => finish(STATES.ERROR, { reason: 'media-error', error: video?.error || null });
+        // A failure after the timeout changes nothing: the source is already unavailable.
+        const stopLate = () => {
+            if (!late) return false;
+            late = false;
+            cleanup();
+            return true;
+        };
+        const onReady = () => {
+            if (stopLate()) {
+                if (isCurrent()) options.onState?.(STATES.READY, { reason: 'late-ready' });
+                return;
+            }
+            finish(STATES.READY, { reason: 'ready' });
+        };
+        const onError = () => {
+            if (stopLate()) return;
+            finish(STATES.ERROR, { reason: 'media-error', error: video?.error || null });
+        };
         // hls.js failures never set video.error; the factory reports them.
-        const onHlsFatal = (event) => finish(STATES.ERROR, { reason: 'hls-fatal', detail: event?.detail || null });
+        const onHlsFatal = (event) => {
+            if (stopLate()) return;
+            finish(STATES.ERROR, { reason: 'hls-fatal', detail: event?.detail || null });
+        };
         // A scheduled stream retry is progress, not a stalled source.
         const onHlsRetry = (event) => {
             if (!active) return;
@@ -217,6 +265,7 @@
 
         return {
             cancel() {
+                if (stopLate()) return;
                 if (!active) return;
                 active = false;
                 if (timer) clearTimeout(timer);
