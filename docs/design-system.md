@@ -249,7 +249,9 @@ always covers the navigation bar. Numbers 1–10 stay local to one component.
 Media queries use 360, 480, 640, 768, 900, 1024 and 1280px (`max-width`), with
 the matching `min-width` one pixel above or `max-width` one pixel below (639,
 1023…) for a split at the same step. The popup, the player and seasonal decor
-keep their own widths.
+keep their own widths. A new split where content stops fitting is written as a
+range, `(width < 640px)`: with display scaling a window can be 639.2px wide, which
+`max-width: 639px` does not match (Home's guest invitation kept its row there).
 
 ### Files loaded without `common.css`
 
@@ -459,6 +461,7 @@ Each generic visual primitive has one owner:
 | Buttons, modals, dropdowns, menus, tooltips, popovers | `src/shared/styles/components.css` |
 | Filter choices, ranges and discovery panels | `src/shared/components/FilterControls.js` and `src/shared/styles/filter-controls.css` |
 | Movie cards | `src/shared/styles/movie-card.css` and `MovieCard.js` |
+| Awards and nominations (film tab, person page) | `src/shared/styles/awards.css` and `AwardsList.js` |
 | Navigation | `src/shared/styles/navigation.css` and `Navigation.js` |
 | Player geometry and overlays | `src/shared/styles/player.css` |
 | Page layout and content variants | The owning page CSS, scoped below its page root |
@@ -483,6 +486,10 @@ a link requires a verified runtime pass on that page.
   spinner with `.btn--pending`, alongside `disabled` and `aria-busy`. The spinner
   waits 150ms, so a quick action does not flash it.
 - Keep provider badges and game visuals small and bounded by their content area.
+- Awards are neutral too: every ceremony has an outline emblem in the text colour
+  (a statuette for the Oscar, a globe, a mask for BAFTA, a laurel for festivals, a
+  trophy for the rest), and a win differs from a nomination by its word, a filled
+  rather than outlined trophy and a heavier weight, not by gold.
 - Use explicit modifier classes for intentional variants instead of overriding a
   generic class from a page stylesheet.
 - Page states have one look everywhere, owned by `components.css`. Empty results

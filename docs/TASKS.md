@@ -1,40 +1,32 @@
 # Remaining work
 
 What is still open after the first-load fixes and the removal of the old list pages.
-Last reviewed on 2026-11-06. Delete an entry once it is done; the README changelog
+Last reviewed on 2026-11-18. Delete an entry once it is done; the README changelog
 records what was finished.
 
 ## Do first
 
-- **Rework the Awards tab on the film page.** It should give more detail per award and a
-  clearer layout: ceremony, year, category, win or nomination, and who received it. Today
-  `AwardsParsingService` reads only the Oscar and Golden Globe from Kinopoisk's awards page.
-  Consider adding other awards (BAFTA, Cannes, Venice, Berlin, Emmy, Screen Actors Guild and
-  others) once a source that lists them reliably is chosen.
-- **Redesign the person page** (`src/pages/person-details`) for actors, directors and other
-  crew. It looks rough now: clean up the layout, remove visual noise and clutter, and follow
-  [`design-system.md`](design-system.md). Add the person's awards and nominations (Oscar,
-  Golden Globe and the other awards above), with the film and category for each. The
-  biography only shows a trophy icon for award lines today; there is no awards list.
-- **Make `home-guest-card.spec.cjs` pass in a visible window.** On 2026-11-07
-  `npm run test:e2e:headed` passed 59 of 61 at 125% display scale. Both failures are this
-  spec at 639px, where the card stays a row; nothing overflows or is clipped, and the spec
-  passes 2 of 2 without a window. A window's width turns fractional at that scale, so
-  `max-width: 639px` probably misses it; the width itself was not read.
-- **Find out why `tests/hdrezkaProviderBrowser.cjs` fails now and then.** `pretest`
-  starts with it, so one failure stops the whole of `npm test`. So far it has failed
-  only under load:
+- **Find out why `tests/hdrezkaProviderBrowser.cjs` still fails now and then.** `pretest`
+  starts with it, so one failure stops the whole of `npm test`. Of the three failures seen
+  before 2026-11-18, all in the manual «Повторить поиск HDRezka» step, one is explained and
+  fixed: under load the first video data came after the 5 s readiness timeout, and the test
+  counted the 12 s grace wait that starts then as an automatic fallback (in the product the
+  late video stayed «unavailable» and was replaced; that is fixed too). The other two, the
+  click timing out and the wait for the video to play, are not explained. One thing to
+  check for the click: `populateSourceSelector()` builds the «Повторить поиск HDRezka»
+  button anew on every call, and `refreshHdrezkaAccessActions()` calls it on every error
+  state of the HDRezka lifecycle, so a late state can detach the button the test is about
+  to press.
 
-  | Load | Failures |
-  | --- | --- |
-  | none | 0 of 10 |
-  | 3 parallel copies | 1 of 12 |
-  | 5 parallel copies | 1 of 10 |
+  | Load | Failures before the fix | After it |
+  | --- | --- | --- |
+  | none | 0 of 10 | 0 of 2 |
+  | 3 parallel copies | 1 of 12 | 1 of 12 |
+  | 5 parallel copies | 1 of 10 | not measured |
 
-  All three failures seen so far are in the manual «Повторить поиск HDRezka» step: the
-  click timing out (line 448), the wait for the video to play (line 449), and an
-  automatic fallback firing where none should (line 455). The last one may be a real
-  race in the product rather than in the test. The cause has not been found.
+  The failure after the fix was new: the browser closed while the test took a screenshot of an
+  error scenario (`page.screenshot: Target page, context or browser has been closed`,
+  line 551). Parallel copies also write the same screenshot files under `artifacts/`.
 
 ## Bugs users can see
 
@@ -54,6 +46,15 @@ records what was finished.
 - **Settings sections grow after the first paint, and a name only Firestore knows moves
   the navigation bar once.** Both are described under "Known open defects" in
   [`tests/e2e/README.md`](../tests/e2e/README.md).
+- **The film page is wider than a 390px window.** Its tab row («О фильме», «Актёры»,
+  «Награды»…) is 477px wide and does not wrap or scroll, so the whole column, and the
+  content of every tab with it, is pushed 46px to the left and cut at both sides. Seen in
+  the owner's Chrome with an emulated 390px viewport; the narrowest width where it starts
+  was not measured.
+- **A Kinopoisk person's filmography has no years.** `/v1.4/person/{id}` lists the films
+  without them, so on a `kp:` person page the cards show none and the list cannot be
+  sorted or split into announced and released work. The person page's own HTML has years
+  but only for its first 50 films.
 - **The language list in very short windows.** Below about 400px high, the upper option
   can sit under the header when the page is scrolled to the end; scrolling up reveals
   it. This comes from the geometry, and no test covers it.

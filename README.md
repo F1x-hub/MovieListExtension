@@ -27,7 +27,8 @@ lists, provider-aware playback, and Firebase synchronization in one interface.
   community feed.
 - Manage Rated, Watching, Watchlist, Favorites, bookmarks, and custom collections.
 - Open rich movie and person pages with credits, seasons, episodes, trailers,
-  collections, ratings, and related titles.
+  collections, ratings, related titles, and awards and nominations from every
+  ceremony Kinopoisk lists.
 - Resume series playback, track watched episodes, switch providers, and select a
   season or episode without losing the active playback context.
 - Use the optional local MediaPlayer torrent source picker for films and series without exposing
@@ -454,6 +455,28 @@ MIT
 Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
+
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Features
+
+- The film page's Awards tab shows every ceremony Kinopoisk lists, not only the Oscar and the Golden Globe: BAFTA, Cannes, Venice, Berlin, the Emmy, SAG, César, Goya, Saturn, the Nika, the Golden Eagle, MTV, the Golden Raspberry and the rest. Each ceremony and year is one card with a neutral emblem (a statuette, a globe, a mask, a laurel for festivals, a trophy for the others) and its count of wins and nominations; wins come first, and a category names the people it went to, as links to their pages, straight from the film's awards page. For a lost nomination the category's winner («Победитель категории: …») is read from the ceremony page only when its card scrolls into view, because each such page is about 2 MB. Above the cards a line sums up the wins, nominations and ceremonies; past eight rows the rest folds behind «Показать остальные». A win and a nomination differ by their word, a filled or an outlined trophy and the weight of the text, not by gold. Awards kept from the old parser are read again once on the next visit. The source is the same Kinopoisk page as before: the parser used to drop everything but the two ceremonies.
+- The person page is redesigned and shows the person's awards. The header is a flat card with the portrait, the name, the professions as one line of text instead of chips, the dates written out with the age in proper Russian forms («11 ноября 1974 · 52 года», «в возрасте 90 лет» for a date of death), the birthplace, and a link with the totals («15 побед · 62 номинации») that leads to the new Awards section. The sections now run biography, «Известен по», awards, filmography and facts last, and the biography and facts keep a readable line length. The Awards section has a card per ceremony (the Oscar, the Golden Globe and BAFTA first) with the year, the category, the film as a link and the result on every row, all on one line on a wide screen. A Kinopoisk person's awards come from their Kinopoisk awards page and are kept for a week; a TMDB person gets them only when the Kinopoisk person found by name has the same birthday, so a namesake's awards are never shown.
+
+### Fixes
+
+- Person page: the active «Все» filter of the filmography was invisible in the dark theme, dark text on a dark button, because the page's own white skin lost to the shared filter style. The filters now use the shared look alone.
+- Person page: Kinopoisk's grey «no poster» picture with a letter K no longer fills the filmography with bright tiles in the dark theme. Kinopoisk gives one such picture to every film without a poster (46 of DiCaprio's), so a picture shared by three or more different films now gets the page's neutral placeholder.
+- Home: a guest's invitation stacks its button under the text in a 639px window at 125% display scaling. Such a window is a fraction of a pixel wider than 639px (799 device pixels make 639.2px; the test read 633.6px without the scrollbar), which the old `max-width: 639px` query did not match, so the card kept its row; it now uses `width < 640px`. The spec now prints the width media queries see. This spec was the only one that failed in `npm run test:e2e:headed` on 2026-11-07.
+- Player: a source that starts after its 5-second readiness timeout is ready after all. The lifecycle stopped watching a video or frame once it called it unavailable, so a slow stream that began to play a few seconds later kept «Источник недоступен или не ответил вовремя» over the picture, and 12 seconds later the grace fallback replaced it with another source. The watcher now keeps listening after the timeout and reports a late start as ready, which removes the overlay and stops that fallback. This was the cause of one of the occasional `tests/hdrezkaProviderBrowser.cjs` failures under load, whose stub also counted the 12-second wait as a fallback.
+- The changes above were checked by `npm test`, `npm run lint`, `npm run build` and `npm run test:visual-design`; by the updated `tests/awardsCategoryWinner.test.js` (every ceremony, people, films, the person cache), `tests/movieDetailsCreditsUI.test.js`, `tests/personDetailsUI.test.js`, `tests/personDetailsData.test.js` and `tests/playerLifecycle.test.js`; by `npm run test:e2e:headed -- home-guest-card` at 125% scaling (2 of 2, 0 of 2 before the fix) and headless (2 of 2); by a copy of the HDRezka test with the first segments delayed by 6.5 s, which kept the overlay over a playing video before the fix and passes after it, and by 12 runs of the real test in 3 parallel copies (1 failure, of a new kind: see `docs/TASKS.md`). In the owner's Chrome, Interstellar and Oppenheimer showed every ceremony with the people as links, «Показать остальные» folded and unfolded, and DiCaprio's page showed the new header, 77 awards and the placeholders, in both themes and at 390px. Not seen there: a category winner filling in, because the test window was behind other windows and drew no frames; the lookup itself answered in the page (2.2 s), and the in-view loading is covered by the unit test.
+
+### Docs
+
+- `docs/TASKS.md` drops the finished awards, person page and Home guest card tasks, narrows the HDRezka test task to what is still unexplained, and adds two findings: the film page is wider than a 390px window, and a Kinopoisk person's filmography has no years. `docs/design-system.md` names the owner of the awards look, how awards show a win without colour, and writes new breakpoint splits as ranges.
+
+</details>
 
 <details>
 <summary><strong>1.5.7</strong> — 3D chess, Battleship against the computer, and series that resume where you stopped</summary>
