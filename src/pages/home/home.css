@@ -462,8 +462,10 @@
     transform: translateY(0);
 }
 
-/* Text and button no longer fit on one row, so the button goes underneath. */
-@media (max-width: 639px) {
+/* Text and button no longer fit on one row, so the button goes underneath.
+   A range, not `max-width: 639px`: with display scaling a window can be 639.2px
+   wide, which `max-width: 639px` misses while the row still does not fit. */
+@media (width < 640px) {
     .home-cta-card {
         flex-direction: column;
         align-items: stretch;

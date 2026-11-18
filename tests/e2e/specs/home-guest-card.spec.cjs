@@ -25,7 +25,20 @@ const measure = page => page.evaluate(() => {
         content: box('.home-cta-content'),
         button: box('.home-cta-btn'),
         labelClipped: button.scrollWidth > button.clientWidth,
-        pageOverflow: Math.max(root.scrollWidth, document.body.scrollWidth) - root.clientWidth
+        pageOverflow: Math.max(root.scrollWidth, document.body.scrollWidth) - root.clientWidth,
+        // The width media queries see. With display scaling it can be a fraction
+        // (639.2px at 125%), which `max-width: 639px` does not match.
+        mediaWidth: (() => {
+            let low = 0;
+            let high = 8192;
+            for (let step = 0; step < 32; step += 1) {
+                const middle = (low + high) / 2;
+                if (matchMedia(`(min-width: ${middle}px)`).matches) low = middle;
+                else high = middle;
+            }
+            return Math.round(low * 100) / 100;
+        })(),
+        devicePixelRatio: window.devicePixelRatio
     };
 });
 
@@ -60,8 +73,9 @@ for (const theme of ['dark', 'light']) {
         for (const width of STACKED_WIDTHS) {
             await page.setViewportSize({ width, height: 900 });
             const layout = await measure(page);
+            testInfo.annotations.push({ type: 'viewport', description: `${width}px asked, ${layout.mediaWidth} CSS px at ${layout.devicePixelRatio}x` });
             expectEverythingInside(layout, width);
-            expect.soft(layout.button.top, `${width}px: button under the text`).toBeGreaterThanOrEqual(layout.content.bottom);
+            expect.soft(layout.button.top, `${width}px (${layout.mediaWidth} CSS px): button under the text`).toBeGreaterThanOrEqual(layout.content.bottom);
             expect.soft(layout.button.right - layout.button.left, `${width}px: button takes the card's width`)
                 .toBeGreaterThan((layout.card.right - layout.card.left) * 0.8);
             await look(width);
