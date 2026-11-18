@@ -6,6 +6,16 @@ records what was finished.
 
 ## Do first
 
+- **Rework the Awards tab on the film page.** It should give more detail per award and a
+  clearer layout: ceremony, year, category, win or nomination, and who received it. Today
+  `AwardsParsingService` reads only the Oscar and Golden Globe from Kinopoisk's awards page.
+  Consider adding other awards (BAFTA, Cannes, Venice, Berlin, Emmy, Screen Actors Guild and
+  others) once a source that lists them reliably is chosen.
+- **Redesign the person page** (`src/pages/person-details`) for actors, directors and other
+  crew. It looks rough now: clean up the layout, remove visual noise and clutter, and follow
+  [`design-system.md`](design-system.md). Add the person's awards and nominations (Oscar,
+  Golden Globe and the other awards above), with the film and category for each. The
+  biography only shows a trophy icon for award lines today; there is no awards list.
 - **Make `home-guest-card.spec.cjs` pass in a visible window.** On 2026-11-07
   `npm run test:e2e:headed` passed 59 of 61 at 125% display scale. Both failures are this
   spec at 639px, where the card stays a row; nothing overflows or is clipped, and the spec
