@@ -1,7 +1,7 @@
 /**
  * Builds libs/three.games.min.js: a tree-shaken ES module with only the parts of
- * three.js the 3D games import (the Rubik's Cube and chess renderers under
- * src/shared/games/). The extension has no bundler, so the vendored file is
+ * three.js the 3D games import (the Rubik's Cube, chess and Battleship renderers
+ * under src/shared/games/). The extension has no bundler, so the vendored file is
  * committed; rerun `npm run vendor:three` after upgrading the `three` dependency
  * or importing new names from the bundle in a game module.
  */

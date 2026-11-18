@@ -5,6 +5,11 @@
  * Cloud Function is the real module (functions/battleship.js) answering in this
  * process through firebase-admin on the emulators, so every shot is refereed by
  * the server code that ships.
+ *
+ * Cells are pointed at on whichever board the browser gets: the WebGL board
+ * where WebGL works, the flat grid where it does not; both answer
+ * `screenPoint()`. The cell attributes checked below belong to the grid, which
+ * the WebGL board keeps (invisible) for the keyboard and screen readers.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -121,6 +126,47 @@ async function shot(page, name) {
 const cell = (page, board, index) => page.locator(`#${board} .bs-cell[data-index="${index}"]`);
 
 /**
+ * Where a cell is on screen, asked from the board once its camera matches the
+ * canvas (a board shown a moment ago may not have taken its size yet).
+ */
+async function cellPoint(page, board, index) {
+    let point = null;
+    await expect.poll(async () => {
+        point = await page.evaluate(({ board, index }) => {
+            const view = globalThis.battleshipPage?.gameView;
+            const target = board === 'bsOwnBoard' ? view?.ownBoard : view?.enemyBoard;
+            if (!target) return null;
+            const settled = !target.canvas || target.flat
+                || (target.viewport?.width === target.container.clientWidth && target.viewport?.height === target.container.clientHeight);
+            const box = document.getElementById(board).getBoundingClientRect();
+            const spot = settled ? target.screenPoint(index) : null;
+            return spot && box.width > 0 && spot.x > box.left && spot.x < box.right && spot.y > box.top && spot.y < box.bottom ? spot : null;
+        }, { board, index });
+        return point !== null;
+    }, { message: `${board} shows cell ${index}` }).toBe(true);
+    return point;
+}
+
+async function hoverCell(page, board, index) {
+    const { x, y } = await cellPoint(page, board, index);
+    await page.mouse.move(x, y);
+}
+
+async function clickCell(page, board, index) {
+    const { x, y } = await cellPoint(page, board, index);
+    await page.mouse.click(x, y);
+}
+
+async function dragCell(page, board, from, to) {
+    const start = await cellPoint(page, board, from);
+    const end = await cellPoint(page, board, to);
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(end.x, end.y, { steps: 10 });
+    await page.mouse.up();
+}
+
+/**
  * Pages hide horizontal scrolling (body overflow-x), so an element pushed past
  * the edge would only be cut off: compare the boxes with the window instead.
  */
@@ -179,22 +225,25 @@ test('two players play a full game, a rematch and a direct challenge', async ({ 
 
         await test.step('Alice places her fleet by hand; Bob takes a random one', async () => {
             await expect(alice.locator('#bsReadyBtn')).toBeDisabled();
+            // The WebGL board wherever the browser has WebGL, the flat grid otherwise.
+            const threeD = await alice.evaluate(() => Boolean(globalThis.battleshipPage.Board3D));
+            await expect(alice.locator('#bsOwnBoard .bs-board3d.is-3d canvas')).toHaveCount(threeD ? 1 : 0);
+            await expect(alice.locator('[data-action="board-view"]')).toHaveCount(threeD ? 1 : 0);
+            test.info().annotations.push({ type: 'board', description: threeD ? 'WebGL' : 'flat' });
             let vertical = false;
             for (const ship of ALICE_FLEET) {
                 if (ship.length > 1 && ship.vertical !== vertical) {
                     await alice.locator('[data-action="rotate"]').click();
                     vertical = ship.vertical;
                 }
-                const target = cell(alice, 'bsOwnBoard', Rules.toIndex(ship.x, ship.y));
-                await target.hover();
-                await expect(target).toHaveAttribute('data-preview', 'valid');
-                await target.click();
+                const index = Rules.toIndex(ship.x, ship.y);
+                await hoverCell(alice, 'bsOwnBoard', index);
+                await expect(cell(alice, 'bsOwnBoard', index)).toHaveAttribute('data-preview', 'valid');
+                await clickCell(alice, 'bsOwnBoard', index);
             }
             await expect(alice.locator('#bsOwnBoard .bs-cell[data-ship]')).toHaveCount(20);
             // A ship dragged onto another is refused and returns to its place.
-            const from = cell(alice, 'bsOwnBoard', Rules.toIndex(5, 5));
-            const onto = cell(alice, 'bsOwnBoard', Rules.toIndex(6, 2));
-            await from.dragTo(onto);
+            await dragCell(alice, 'bsOwnBoard', Rules.toIndex(5, 5), Rules.toIndex(6, 2));
             await expect(alice.locator('#bsPlacementStatus')).toHaveClass(/is-warning/);
             await expect(cell(alice, 'bsOwnBoard', Rules.toIndex(5, 5))).toHaveAttribute('data-ship', 'h-single');
             await expect(alice.locator('.bs-code-chip')).toBeInViewport();
@@ -267,7 +316,7 @@ test('two players play a full game, a rematch and a direct challenge', async ({ 
                     index = [...Array(100).keys()].find(candidate => !aliceShips.has(candidate) && game.boards[aliceUid][candidate] === '.');
                     bobShots += 1;
                 }
-                await cell(shooter, 'bsEnemyBoard', index).click();
+                await clickCell(shooter, 'bsEnemyBoard', index);
                 await expect.poll(async () => (await gameRef.get()).data().moveCount).toBe(game.moveCount + 1);
                 if (!screenshotTaken && shooter === alice && game.moveCount >= 6) {
                     await expect(cell(alice, 'bsEnemyBoard', index)).not.toHaveAttribute('data-mark', 'unknown');

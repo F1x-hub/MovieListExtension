@@ -88,7 +88,7 @@
     "test-parser-progressive": "node tests/parserProgressiveDiscovery.test.js",
     "test-player-progressive-watch": "node tests/playerProgressiveWatchPath.test.js",
     "test-player-legacy-retirement": "node tests/playerLegacyEpisodeRetirement.test.js",
-    "test:battleship": "node tests/battleshipRules.test.cjs && node tests/battleshipFunction.test.cjs && node tests/battleshipPlacement.test.mjs && node tests/battleshipNotifier.test.mjs",
+    "test:battleship": "node tests/battleshipRules.test.cjs && node tests/battleshipFunction.test.cjs && node tests/battleshipPlacement.test.mjs && node tests/battleshipNotifier.test.mjs && node tests/battleshipBoardRenderer.test.mjs",
     "test:chess": "node tests/chessRules.test.cjs && node tests/chessBot.test.cjs && node tests/chessFunction.test.cjs && node tests/chessClient.test.mjs",
     "test-games-modal": "node tests/gamesModalMenu.test.js && node tests/rubiksCubeGame.test.js && node tests/gamesAuditFixes.test.js && node tests/movieQuizGame.test.js && node tests/movieQuizModes.test.js",
     "backfill": "node scripts/backfill.js"

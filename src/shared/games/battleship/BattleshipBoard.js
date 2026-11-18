@@ -190,6 +190,12 @@ export class BattleshipBoard {
         return cell && this.grid.contains(cell) ? Number(cell.dataset.index) : null;
     }
 
+    /** Client coordinates of a cell's centre (tests point the mouse there). */
+    screenPoint(index) {
+        const box = this.cells[index]?.getBoundingClientRect();
+        return box ? { x: box.left + box.width / 2, y: box.top + box.height / 2 } : null;
+    }
+
     /**
      * @param {Object} state
      * @param {string|null} [state.marks] - what the opponent knows about this board
@@ -199,6 +205,8 @@ export class BattleshipBoard {
      * @param {number|null} [state.pendingIndex] - a shot waiting for the server
      * @param {boolean} [state.interactive]
      * @param {(index: number) => boolean} [state.canTarget] - a cell accepts a shot
+     * @param {boolean} [state.dragging] - a ship is being dragged over the board
+     * @param {boolean} [state.revealed] - the game is over and the fleet is shown
      */
     update(state = {}) {
         const marks = typeof state.marks === 'string' ? state.marks : null;
@@ -207,6 +215,8 @@ export class BattleshipBoard {
         const previewState = state.preview ? (state.preview.valid ? 'valid' : 'invalid') : null;
         this.interactive = Boolean(state.interactive);
         this.grid.classList.toggle('is-interactive', this.interactive);
+        this.grid.classList.toggle('is-dragging', Boolean(state.dragging));
+        this.grid.classList.toggle('is-revealed', Boolean(state.revealed));
         this.grid.setAttribute('aria-disabled', String(!this.interactive));
 
         this.cells.forEach((cell, index) => {

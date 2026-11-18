@@ -12,6 +12,7 @@ import { BattleshipGameView } from './BattleshipGameView.js';
 const tb = (key, params) => t(`battleship.${key}`, params);
 const SEARCH_DEBOUNCE_MS = 300;
 const TOAST_MS = 3200;
+const BOARD_VIEW_KEY = 'battleshipViewV1';
 
 function initialOf(name) {
     return String(name || '?').trim().charAt(0).toLocaleUpperCase() || '?';
@@ -50,6 +51,8 @@ class BattleshipPage {
         this.attention = null;
         this.baseTitle = document.title;
         this.channel = null;
+        this.Board3D = null;
+        this.boardView = '3d';
         this.elements = {
             loading: document.getElementById('bsLoading'),
             guest: document.getElementById('bsGuest'),
@@ -73,6 +76,7 @@ class BattleshipPage {
     }
 
     async init() {
+        const boards = this.loadBoards();
         await i18n.init();
         i18n.translatePage();
         this.baseTitle = tb('page_title');
@@ -82,12 +86,48 @@ class BattleshipPage {
         this.openChannel();
         const manager = globalThis.firebaseManager;
         await manager?.waitForAuthReady?.(10000);
+        await boards;
         window.addEventListener('authStateChanged', () => this.onAuthChanged());
         window.addEventListener('popstate', () => this.route());
         chrome.runtime?.onMessage?.addListener?.(message => {
             if (message?.type === 'SETTINGS_UPDATED' && message.settings?.language) this.reloadLocale();
         });
         this.onAuthChanged();
+    }
+
+    /**
+     * The WebGL boards and the saved camera. Without WebGL (or if the module
+     * fails to load) games use the flat boards. Never rejects.
+     */
+    async loadBoards() {
+        const [module, view] = await Promise.all([
+            import('../../shared/games/battleship/BattleshipBoardRenderer.js').catch(error => {
+                console.warn('[Battleship] 3D boards unavailable, using flat boards:', error);
+                return null;
+            }),
+            this.readBoardView()
+        ]);
+        const Renderer = module?.BattleshipBoardRenderer || null;
+        this.Board3D = Renderer?.isSupported(document) ? Renderer : null;
+        this.boardView = view;
+    }
+
+    async readBoardView() {
+        try {
+            const stored = await chrome.storage?.local?.get?.(BOARD_VIEW_KEY);
+            return stored?.[BOARD_VIEW_KEY] === 'top' ? 'top' : '3d';
+        } catch {
+            return '3d';
+        }
+    }
+
+    saveBoardView(view) {
+        this.boardView = view;
+        try {
+            chrome.storage?.local?.set?.({ [BOARD_VIEW_KEY]: view })?.catch?.(() => {});
+        } catch {
+            // The camera choice is a convenience; losing it is harmless.
+        }
     }
 
     async reloadLocale() {
@@ -235,7 +275,10 @@ class BattleshipPage {
                 this.attention = state;
                 this.updateTitle();
             },
-            describeError: error => this.describeError(error)
+            describeError: error => this.describeError(error),
+            Board3D: this.Board3D,
+            boardView: this.boardView,
+            onBoardView: view => this.saveBoardView(view)
         });
         this.gameView.start();
     }

@@ -50,6 +50,9 @@ export class BattleshipGameView {
      * @param {(text: string, tone?: string) => void} options.onToast
      * @param {(state: {myTurn: boolean, title: string}|null) => void} options.onAttention
      * @param {(error: Error) => string} options.describeError
+     * @param {Function|null} [options.Board3D] - BattleshipBoardRenderer where WebGL works
+     * @param {'3d'|'top'} [options.boardView] - the camera of the 3D boards
+     * @param {(view: '3d'|'top') => void} [options.onBoardView]
      */
     constructor(options) {
         this.options = options;
@@ -59,6 +62,7 @@ export class BattleshipGameView {
         this.gameId = options.gameId;
         this.rules = options.rules;
         this.sounds = options.sounds;
+        this.boardView = options.boardView === 'top' ? 'top' : '3d';
         this.game = null;
         this.fleet = null;
         this.fleetLoaded = false;
@@ -357,12 +361,20 @@ export class BattleshipGameView {
     }
 
     buildArena() {
+        const threeD = Boolean(this.options.Board3D);
+        const viewLabel = escapeHtml(tb('game.view_top'));
+        const viewButton = threeD
+            ? `<button class="bs-icon-btn bs-view-btn" type="button" data-action="board-view" aria-pressed="${this.boardView === 'top'}" title="${viewLabel}" aria-label="${viewLabel}">${TOP_VIEW_ICON}</button>`
+            : '';
         this.root.innerHTML = `
             <div class="bs-game">
                 <div class="bs-game__top">
                     ${this.backButtonHtml()}
                     <div class="bs-versus" id="bsVersus"></div>
-                    <span class="bs-code-chip"><span>${escapeHtml(tb('game.code'))}</span> <strong>${escapeHtml(this.gameId)}</strong></span>
+                    <div class="bs-game__tools">
+                        <span class="bs-code-chip"><span>${escapeHtml(tb('game.code'))}</span> <strong>${escapeHtml(this.gameId)}</strong></span>
+                        ${viewButton}
+                    </div>
                 </div>
                 <div class="bs-banner" id="bsBanner">
                     <span class="bs-banner__icon" id="bsBannerIcon" aria-hidden="true"></span>
@@ -375,7 +387,7 @@ export class BattleshipGameView {
                     </div>
                     <div class="bs-banner__actions" id="bsBannerActions"></div>
                 </div>
-                <div class="bs-arena" id="bsArena">
+                <div class="bs-arena${threeD ? ' is-3d' : ''}" id="bsArena">
                     <section class="bs-side bs-side--own" aria-labelledby="bsOwnTitle">
                         <header class="bs-side__head">
                             <h2 id="bsOwnTitle">${escapeHtml(tb('game.own_board'))}</h2>
@@ -417,9 +429,10 @@ export class BattleshipGameView {
             </div>`;
 
         const columns = this.rules.columnLabels(this.locale);
-        this.ownBoard = new BattleshipBoard(this.root.querySelector('#bsOwnBoard'), {
+        this.ownBoard = this.createBoard(this.root.querySelector('#bsOwnBoard'), {
             rules: this.rules,
             columns,
+            side: 'own',
             label: tb('game.own_board'),
             describeCell: (index, info) => this.describeCell(index, info, 'own'),
             onActivate: (index) => this.onOwnActivate(index),
@@ -428,14 +441,36 @@ export class BattleshipGameView {
             onContextMenu: (index) => this.onOwnContextMenu(index),
             onKey: (event, index) => this.onOwnKey(event, index)
         });
-        this.enemyBoard = new BattleshipBoard(this.root.querySelector('#bsEnemyBoard'), {
+        this.enemyBoard = this.createBoard(this.root.querySelector('#bsEnemyBoard'), {
             rules: this.rules,
             columns,
+            side: 'enemy',
             label: tb('game.enemy_board'),
             describeCell: (index, info) => this.describeCell(index, info, 'enemy'),
             onActivate: (index) => this.fireAt(index)
         });
         this.bindDock();
+    }
+
+    /** The WebGL board where it works (it plays on flat by itself if WebGL fails later). */
+    createBoard(host, options) {
+        const Board3D = this.options.Board3D;
+        if (Board3D) {
+            try {
+                return new Board3D(host, { ...options, view: this.boardView, loadingLabel: tb('game.board_loading') });
+            } catch (error) {
+                console.warn('[Battleship] 3D board failed, using the flat board:', error);
+            }
+        }
+        return new BattleshipBoard(host, options);
+    }
+
+    toggleBoardView(button) {
+        this.boardView = this.boardView === 'top' ? '3d' : 'top';
+        this.ownBoard?.setView?.(this.boardView);
+        this.enemyBoard?.setView?.(this.boardView);
+        button?.setAttribute('aria-pressed', String(this.boardView === 'top'));
+        this.options.onBoardView?.(this.boardView);
     }
 
     describeCell(index, info, side) {
@@ -608,9 +643,9 @@ export class BattleshipGameView {
             this.ownBoard.update({
                 ships: this.placement.placedShips,
                 preview,
-                interactive: true
+                interactive: true,
+                dragging: Boolean(this.drag?.active)
             });
-            this.ownBoard.grid.classList.toggle('is-dragging', Boolean(this.drag?.active));
         } else {
             this.ownBoard.update({
                 marks: game.boards?.[this.uid] || null,
@@ -630,9 +665,9 @@ export class BattleshipGameView {
             lastIndex: shot && shot.by === this.uid ? shot.index : null,
             pendingIndex: this.pendingShot?.index ?? null,
             interactive: canFire,
-            canTarget: index => marks[index] === '.'
+            canTarget: index => marks[index] === '.',
+            revealed: finished
         });
-        this.enemyBoard.grid.classList.toggle('is-revealed', finished);
     }
 
     fleetHtml(sunkShips, total) {
@@ -1168,6 +1203,9 @@ export class BattleshipGameView {
             case 'open-rematch':
                 if (this.game?.rematchGameId) this.options.onNavigate(this.game.rematchGameId);
                 break;
+            case 'board-view':
+                this.toggleBoardView(target);
+                break;
             default:
                 break;
         }
@@ -1194,6 +1232,8 @@ export class BattleshipGameView {
         });
     }
 }
+
+const TOP_VIEW_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="M4 12h16M12 4v16"></path></svg>';
 
 const BANNER_ICONS = {
     anchor: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"></circle><line x1="12" y1="22" x2="12" y2="8"></line><path d="M5 12H2a10 10 0 0 0 20 0h-3"></path></svg>',

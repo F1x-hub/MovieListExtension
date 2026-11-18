@@ -20,6 +20,7 @@
     --bs-hit-wash: color-mix(in srgb, var(--ui-color-status-danger) 16%, transparent);
     --bs-miss: rgba(var(--theme-ink-rgb), 0.5);
     --bs-clear: rgba(var(--theme-ink-rgb), 0.18);
+    --bs-board3d: clamp(300px, calc((100vw - 140px) / 2), 540px);
     min-height: calc(100vh - 60px);
     color: var(--ui-color-content);
 }
@@ -1108,6 +1109,78 @@
     cursor: grab;
 }
 
+/* ---------- 3D board (WebGL) ----------
+   The canvas draws the board and takes the pointer; the grid above stays in
+   the page, invisible, for the keyboard and screen readers. Without WebGL, or
+   once its context is lost, the grid is the board again. */
+
+.bs-arena.is-3d .bs-side--own,
+.bs-arena.is-3d .bs-side--enemy {
+    width: var(--bs-board3d);
+}
+
+.bs-board3d {
+    position: relative;
+    width: 100%;
+}
+
+.bs-board3d.is-3d {
+    aspect-ratio: 1 / 0.8;
+}
+
+.bs-board3d__canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.bs-arena[data-phase="placing"] .bs-board3d__canvas {
+    touch-action: none;
+}
+
+.bs-board3d.is-3d .bs-board3d__a11y {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.bs-board3d__loading {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+}
+
+.bs-board3d.is-flat {
+    display: flex;
+    justify-content: center;
+}
+
+.bs-game__tools {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 10px;
+}
+
+.bs-game__tools .bs-icon-btn {
+    width: 36px;
+    height: 36px;
+}
+
+.bs-view-btn[aria-pressed="true"] {
+    color: var(--ui-color-content);
+    background: var(--bs-overlay-strong);
+    border-color: var(--ui-color-border-hover);
+}
+
 /* ---------- Fleet status ---------- */
 
 .bs-fleet {
@@ -1287,6 +1360,7 @@
 @media (max-width: 900px) {
     .battleship-page {
         --bs-cell: clamp(24px, calc((100vw - 64px - var(--bs-label)) / 10), 40px);
+        --bs-board3d: min(540px, calc(100vw - 64px));
     }
 
     .bs-arena {
