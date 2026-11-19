@@ -44,7 +44,10 @@ Color is allowed only when it carries content or an unavoidable semantic:
    and obsidian pieces on grey stone, with a steel tint for the last move and the
    danger red only for check and a clock under twenty seconds, each next to a
    text or an icon; the flat board and the piece glyphs reuse those greys, and
-   the chess page chrome stays neutral);
+   the chess page chrome stays neutral; Salvo («Залп») draws its sky, islands,
+   water or lava, fighters and up to eight team colours as game content, with each
+   team colour next to the team's or the player's name, while its menus, room, HUD panels and buttons
+   take only the neutral `--ui-*` tokens and `zalp.css` holds no colour literal);
 4. essential success, warning, or danger feedback;
 5. seasonal decoration owned by `SeasonalThemeService` (see below);
 6. collection icons: the franchise tiles from
