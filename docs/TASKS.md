@@ -51,10 +51,12 @@ records what was finished.
   content of every tab with it, is pushed 46px to the left and cut at both sides. Seen in
   the owner's Chrome with an emulated 390px viewport; the narrowest width where it starts
   was not measured.
-- **A Kinopoisk person's filmography has no years.** `/v1.4/person/{id}` lists the films
-  without them, so on a `kp:` person page the cards show none and the list cannot be
-  sorted or split into announced and released work. The person page's own HTML has years
-  but only for its first 50 films.
+- **A prolific Kinopoisk person's later films get their year over several visits.**
+  `/v1.4/person/{id}` lists the films without year or type. The person's own Kinopoisk
+  page fills them in for its first 50 films at once; the rest come from the film pages
+  read for posters, two at a time within the 10-second enrichment window, so a person
+  with 250 credits (Matthew McConaughey, `kp:797`) shows some of them without a year,
+  sorted last, until later visits have read their pages.
 - **The language list in very short windows.** Below about 400px high, the upper option
   can sit under the header when the page is scrolled to the end; scrolling up reveals
   it. This comes from the geometry, and no test covers it.
