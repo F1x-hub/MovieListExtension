@@ -25,6 +25,7 @@ const { createExpiredWatchRoomCleanup } = require("./watchRoomCleanup");
 const { createRandomMarathonHandler } = require("./randomMarathon");
 const { createBattleshipHandler } = require("./battleship");
 const { createChessHandler } = require("./chess");
+const { createZalpHandler } = require("./zalp");
 const {
   buildMovieRatingProjection,
   isAggregateRelevantRatingChange,
@@ -289,6 +290,23 @@ exports.battleship = onRequest(
     memory: "256MiB",
   },
   createBattleshipHandler({
+    db,
+    auth: getAuth(app),
+  })
+);
+
+/**
+ * Turn keeper for networked Salvo (Залп) between extension users. Firestore is the
+ * read/subscription surface; this endpoint owns every change: rooms, teams, the order
+ * of turns, each turn's control stream, its resulting state, skipped turns and the end.
+ */
+exports.zalp = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+  },
+  createZalpHandler({
     db,
     auth: getAuth(app),
   })

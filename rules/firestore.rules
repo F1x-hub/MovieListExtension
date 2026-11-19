@@ -789,6 +789,25 @@ service cloud.firestore {
       allow list, create, update, delete: if false;
     }
 
+    // Networked Salvo (Залп): every write goes through the server-owned `zalp`
+    // function (Admin SDK), which keeps rooms, teams, the order of turns and each
+    // turn's control stream. A game and each of its turns are readable by the
+    // game's players, the lobby of open rooms by approved users.
+    match /zalpGames/{gameId} {
+      allow get: if isAuthenticated() && (request.auth.uid in resource.data.players || isAdmin());
+      allow list, create, update, delete: if false;
+    }
+
+    match /zalpTurns/{turnId} {
+      allow get: if isAuthenticated() && (request.auth.uid in resource.data.players || isAdmin());
+      allow list, create, update, delete: if false;
+    }
+
+    match /zalpLobby/{lobbyId} {
+      allow get: if isApprovedUser() || isAdmin();
+      allow list, create, update, delete: if false;
+    }
+
     // Users collection
     match /users/{userId} {
       // Everyone reads their own profile (the approval check on login runs while

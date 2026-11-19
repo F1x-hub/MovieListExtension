@@ -203,6 +203,11 @@
     transition: transform var(--motion-duration-base) var(--motion-ease-out), color var(--motion-duration-base) var(--motion-ease-out);
 }
 
+/* Salvo opens its own full-tab page; it takes a whole row so the six modal games keep their grid. */
+.game-menu-card--zalp {
+    grid-column: 1 / -1;
+}
+
 /* Network games open their own page: a link card under its own heading. */
 .games-menu-online {
     display: grid;

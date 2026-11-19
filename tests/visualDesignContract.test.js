@@ -12,6 +12,8 @@ const files = {
     home: 'src/pages/home/home.css',
     catalog: 'src/pages/catalog/catalog.css',
     downloads: 'src/pages/downloads/downloads.css',
+    // Salvo's page chrome (zalp.js draws the game scene itself).
+    zalp: 'src/pages/zalp/zalp.css',
 };
 
 const migrationGuardFiles = {
@@ -137,6 +139,9 @@ assertOnlyApprovedHexes(files.filterControls, true);
 // Awards take every colour from the semantic tokens: a win differs by word, icon and weight.
 assertOnlyApprovedHexes(files.awards, false);
 assert.doesNotMatch(read(files.awards), /rgba?\(/i, 'awards.css uses tokens, not literal colours');
+// Salvo's page chrome is token-only; the game's colours stay inside its WebGL scene.
+assertOnlyApprovedHexes(files.zalp, false);
+assert.doesNotMatch(read(files.zalp), /rgba?\(/i, 'zalp.css uses tokens, not literal colours');
 assertOnlyApprovedHexes(files.home, true);
 assertOnlyApprovedHexes(files.catalog, false);
 // The Downloads page takes every colour from the semantic tokens.
