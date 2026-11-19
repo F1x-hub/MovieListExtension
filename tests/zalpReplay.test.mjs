@@ -114,4 +114,40 @@ for (let i = 0; i < 120 * 400 && kinds.size < 4 && solo.state !== 'over'; i++) {
 for (const [u, kind] of kinds) assert.equal(kind, u === solo.mine ? 'local' : 'ai', `${u.name}: ${kind}`);
 assert.ok(kinds.size >= 3, 'several fighters had turns');
 
+// ---------------------------------------------------------------- what the server accepts is what the page sends
+const ctxOf = (g, prev = null) => ({ n: g.turnNo, seats: g.units.length, teams: g.teams.length, prev, craters: g.craters.length / 3 });
+assert.equal(Rules.checkSnapshot(snap, { ...ctxOf(A), n: snap.n }), null, 'a real turn result passes the server check');
+assert.deepEqual([...Z.CRATE_POOL], [...Rules.CRATE_POOL], 'the page and the server know the same crates');
+
+// ---------------------------------------------------------------- a blocked teleport is refused, not a crash
+{
+    const g = new Z.Game({ mode: 'solo', diff: 1, count: 1, teams: 2, theme: 'meadow', headless: true });
+    for (let i = 0; i < 200 && g.state !== 'aim'; i++) g.tick();
+    const u = g.active;
+    g.weapon = Z.WEAPON_BY_ID.tele;
+    let ground = null;
+    for (let y = 0; y < g.world.H && !ground; y += 2) if (g.world.solid(u.x, y)) ground = { x: u.x, y: y + 30 };
+    assert.doesNotThrow(() => g.fireAt(ground), 'teleporting into rock shows a message instead of throwing');
+    assert.equal(g.state, 'aim', 'and the turn goes on');
+}
+
+// ---------------------------------------------------------------- a drowned fighter stops sinking; its snapshot stays valid
+{
+    const g = new Z.Game(opts(0));
+    g.startOnlineTurn(1, 0);
+    const u = g.units[1];
+    u.x = 10; u.y = g.world.waterY + 6; u.onGround = false;
+    for (let i = 0; i < 120 * 200 && g.state !== 'done'; i++) g.tick();
+    assert.ok(u.dead && u.drowned, 'the fighter drowned');
+    assert.ok(u.y < g.world.waterY + 60, `and rests at ${Math.round(u.y)} instead of sinking for ever`);
+    assert.equal(Rules.checkSnapshot(g.snapshot(), ctxOf(g)), null, 'its snapshot still passes the server check');
+}
+
+// ---------------------------------------------------------------- a key a menu used stays released until it is let go
+Z.input.press('Space'); Z.input.suppress('Space');
+assert.equal(Z.input.isDown('Space'), false, 'a suppressed key reads as up');
+Z.input.release('Space'); Z.input.press('Space');
+assert.equal(Z.input.isDown('Space'), true, 'pressed again, it counts');
+Z.input.release('Space');
+
 console.log('zalpReplay tests passed');

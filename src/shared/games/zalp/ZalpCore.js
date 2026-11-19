@@ -90,14 +90,17 @@ Z.input = {
     gameKeys: new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'Enter', 'Backspace', 'Tab']),
     // `pending` keeps a press until a simulation tick takes it, so a tap shorter than a tick still counts
     pending: new Set(),
+    // `suppressed` hides a key that a menu already used until it is released, so it cannot also fire or jump
+    suppressed: new Set(),
     press(code) { if (!this.down.has(code)) { this.down.add(code); this.hit.add(code); this.pending.add(code); } },
-    release(code) { if (this.down.has(code)) { this.down.delete(code); this.up.add(code); } },
-    isDown(code) { return this.down.has(code); },
+    release(code) { if (this.down.has(code)) { this.down.delete(code); this.up.add(code); } this.suppressed.delete(code); },
+    isDown(code) { return this.down.has(code) && !this.suppressed.has(code); },
     wasHit(code) { return this.hit.has(code); },
     wasUp(code) { return this.up.has(code); },
     take(code) { return this.pending.delete(code); },
+    suppress(code) { this.pending.delete(code); if (this.down.has(code)) this.suppressed.add(code); },
     endFrame() { this.hit.clear(); this.up.clear(); },
-    clear() { this.down.clear(); this.hit.clear(); this.up.clear(); this.pending.clear(); },
+    clear() { this.down.clear(); this.hit.clear(); this.up.clear(); this.pending.clear(); this.suppressed.clear(); },
     init() {
         const norm = (e) => this.alias[e.code] || e.code;
         window.addEventListener('keydown', (e) => {

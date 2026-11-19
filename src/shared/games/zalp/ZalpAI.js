@@ -158,7 +158,9 @@ Z.AI = class {
         if (u.dead) return;
         switch (this.phase) {
             case 'think':
-                if (this.work(4) && this.t >= this.minThink) this.decide();
+                // the search shares one budget per frame (Game.update sets it): fast-forward or a catch-up
+                // frame runs many ticks and must not search for 4 ms on each of them
+                if (this.work(Z.aiDeadline === undefined ? 4 : Math.min(4, Z.aiDeadline - performance.now())) && this.t >= this.minThink) this.decide();
                 break;
             case 'move': {
                 const key = this.moveDir < 0 ? 'ArrowLeft' : 'ArrowRight';

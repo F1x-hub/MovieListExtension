@@ -24,6 +24,9 @@ Z.THEMES = {
     },
 };
 
+// the 14 rim points circleHit tests, computed once (the same values every call, on every computer)
+const RING = Array.from({ length: 14 }, (_, i) => [Math.cos((i / 14) * Math.PI * 2), Math.sin((i / 14) * Math.PI * 2)]);
+
 Z.World = class {
     constructor(seed, themeKey) {
         this.W = Z.K.W; this.H = Z.K.H;
@@ -90,10 +93,7 @@ Z.World = class {
 
     circleHit(x, y, r) {
         if (this.solid(x, y)) return true;
-        for (let i = 0; i < 14; i++) {
-            const a = (i / 14) * Math.PI * 2;
-            if (this.solid(x + Math.cos(a) * r, y + Math.sin(a) * r)) return true;
-        }
+        for (const [cx, cy] of RING) if (this.solid(x + cx * r, y + cy * r)) return true;
         return false;
     }
 

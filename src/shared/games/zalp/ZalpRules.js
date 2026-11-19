@@ -23,6 +23,8 @@
     const TURN_TICKS_MAX = TICK_RATE * 150;
     const MASK = Object.freeze({ LEFT: 1, RIGHT: 2, UP: 4, DOWN: 8, FIRE: 16, JUMP: 32, BACKFLIP: 64 });
     const WEAPON_IDS = Object.freeze(['rocket', 'grenade', 'cluster', 'shotgun', 'homing', 'air', 'dyn', 'mine', 'hammer', 'tele', 'skip']);
+    const CRATE_POOL = Object.freeze(['cluster', 'homing', 'air', 'dyn', 'mine', 'tele']);
+    const MAX_STREAM_CHARS = 120000;
     const EVENT_PATTERN = /^(?:w:[a-z]{2,10}|f:[1-5]|c:-?\d{1,6}:-?\d{1,6})$/;
     const RUN_PATTERN = /^[0-9a-z]{1,2}x[0-9a-z]{1,4}$/;
 
@@ -170,8 +172,41 @@
         }
     }
 
+    /**
+     * Why a turn's resulting state cannot be accepted, or null. ctx: { n, seats, teams, prev, craters }
+     * (the turn number, seat and team counts, the previous accepted snapshot, the crater count after the turn).
+     * The page that played the turn computed it; this keeps a buggy or modified page from breaking the others.
+     */
+    function checkSnapshot(s, ctx) {
+        const num = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+        const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+        const pos = (o) => num(o.x, -1500, 4000) && num(o.y, -2500, 3000);
+        if (!s || typeof s !== 'object' || Array.isArray(s)) return 'shape';
+        if (s.n !== ctx.n) return 'turn';
+        if (!num(s.water, 300, 1300)) return 'water';
+        if (!Array.isArray(s.units) || s.units.length !== ctx.seats) return 'units';
+        for (let i = 0; i < s.units.length; i++) {
+            const u = s.units[i], before = ctx.prev && Array.isArray(ctx.prev.units) ? ctx.prev.units[i] : null;
+            if (!u || typeof u !== 'object' || typeof u.dead !== 'boolean' || typeof u.drowned !== 'boolean') return 'unit';
+            if (!int(u.hp, 0, 150) || (u.facing !== 1 && u.facing !== -1) || !num(u.aim, -1.6, 1.6) || !pos(u)) return 'unit';
+            if (before && before.dead && !u.dead) return 'revived';
+            if (before && !before.dead && u.hp > before.hp + 60) return 'healed';
+        }
+        for (const key of ['mines', 'crates', 'graves']) if (!Array.isArray(s[key]) || s[key].length > 120) return key;
+        for (const m of s.mines) if (!m || !pos(m) || typeof m.armed !== 'boolean' || !num(m.armT, -1, 5)) return 'mine';
+        for (const c of s.crates) if (!c || (c.kind !== 'hp' && c.kind !== 'w') || !CRATE_POOL.includes(c.weapon) || !pos(c)) return 'crate';
+        for (const g of s.graves) if (!g || !int(g.team, 0, ctx.teams - 1) || !pos(g)) return 'grave';
+        if (!Array.isArray(s.teams) || s.teams.length !== ctx.teams) return 'teams';
+        for (const tm of s.teams) {
+            if (!tm || !tm.ammo || typeof tm.ammo !== 'object' || !int(tm.next, 0, MAX_PLAYERS) || !WEAPON_IDS.includes(tm.last) || !num(tm.dealt, 0, 1e6)) return 'team';
+            if (Object.keys(tm.ammo).length !== WEAPON_IDS.length || WEAPON_IDS.some((id) => !int(tm.ammo[id], -1, 99))) return 'ammo';
+        }
+        if (s.craters !== ctx.craters) return 'craters';
+        return null;
+    }
+
     return {
-        MIN_PLAYERS, MAX_PLAYERS, TICK_RATE, TURN_TICKS_MAX, MASK, WEAPON_IDS,
+        MIN_PLAYERS, MAX_PLAYERS, TICK_RATE, TURN_TICKS_MAX, MASK, WEAPON_IDS, CRATE_POOL, MAX_STREAM_CHARS, checkSnapshot,
         splitTeams, teamOrder, livingTeams, nextSeat,
         encodeEvent, decodeEvent, chunkTicks, StreamEncoder, StreamDecoder,
     };

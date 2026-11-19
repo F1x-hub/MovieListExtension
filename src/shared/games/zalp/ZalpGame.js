@@ -29,7 +29,11 @@ Z.LocalControl = class {
     next() {
         const I = Z.input, M = Rules().MASK;
         let mask = 0;
-        if (!Z.UI?.weaponsOpen) {
+        // a key pressed in the arsenal, the pause menu or the target cursor belongs to it, and Shift + arrows
+        // pans the camera: the fighter holds still meanwhile and those presses never reach a later tick
+        if (Z.UI?.weaponsOpen || Z.UI?.menuOpen || Z.UI?.cursorMode || I.isDown('ShiftLeft') || I.isDown('ShiftRight')) {
+            for (const k of ['Space', 'Enter', 'Backspace', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5']) I.take(k);
+        } else {
             mask = (I.isDown('ArrowLeft') ? M.LEFT : 0) | (I.isDown('ArrowRight') ? M.RIGHT : 0)
                 | (I.isDown('ArrowUp') ? M.UP : 0) | (I.isDown('ArrowDown') ? M.DOWN : 0);
             if (I.take('Space') || I.isDown('Space')) mask |= M.FIRE;
@@ -280,7 +284,11 @@ Z.Game = class {
     startOnlineTurn(n, seat, leftSeats = []) {
         for (const i of leftSeats) {
             const u = this.units[i];
-            if (u && !u.dead) { u.dead = true; u.hp = 0; Z.FX.sparkle(this, u.x, u.y, [0.8, 0.8, 0.85], 14); }
+            if (u && !u.dead) {
+                u.dead = true; u.hp = 0;
+                Z.FX.sparkle(this, u.x, u.y, [0.8, 0.8, 0.85], 14);
+                this.toast(t('zalp.toast.left', { name: u.name }));
+            }
         }
         this.turnNo = n - 1;
         this.round = Math.floor((n - 1) / this.teams.length) + 1;
@@ -300,7 +308,7 @@ Z.Game = class {
     gameOver(team) {
         this.state = 'over'; this.active = null; this.control = null;
         Z.audio.play('win');
-        this.toast(team ? t('zalp.toast.win', { team: team.name }) : t('zalp.toast.draw'));
+        this.toast(team ? t(this.ffa ? 'zalp.toast.win_one' : 'zalp.toast.win', { team: team.name, name: team.name }) : t('zalp.toast.draw'));
         this.uiLater(1.6, () => Z.UI?.showResult(this, team));
     }
 
@@ -372,7 +380,8 @@ Z.Game = class {
     tick() {
         const dt = Z.K.STEP, st = this.state;
         if (this.demo) { this.physics(dt); return true; }
-        if (st === 'over' || st === 'done' || (this.online && st === 'start')) return false;
+        // `hold`: the page is still asking the server how far this turn already got (a reload mid-turn)
+        if (this.hold || st === 'over' || st === 'done' || (this.online && st === 'start')) return false;
         let ctl = NONE;
         const c = this.control;
         if (c && (st === 'aim' || st === 'retreat' || (this.online && st === 'settle'))) {
@@ -389,9 +398,12 @@ Z.Game = class {
     }
 
     step(dt) {
-        if (this.mine && this.mine.dead && !this.heroOutShown && !this.online && this.state !== 'over') {
+        if (this.mine && this.mine.dead && !this.heroOutShown && this.state !== 'over') {
             this.heroOutShown = true;
-            this.uiLater(1.2, () => this.toast(t('zalp.toast.hero_out'), t('zalp.toast.hero_out_sub')));
+            const allies = this.mine.team.units.some((v) => v !== this.mine && !v.dead);
+            this.uiLater(1.2, () => {
+                if (this.state !== 'over') this.toast(t('zalp.toast.hero_out'), t(allies ? 'zalp.toast.hero_out_sub' : 'zalp.toast.team_out_sub'));
+            });
         }
         if (this.hurtEnd) { this.hurtEnd = false; if (this.state === 'aim' || this.state === 'retreat') this.toSettle(); }
         if (this.state === 'aim') {
@@ -427,6 +439,7 @@ Z.Game = class {
     /** Per frame: run the simulation at its fixed rate, then everything that only shows. */
     update(dt) {
         this.clock += dt;
+        Z.aiDeadline = performance.now() + 5;
         let speed = 1;
         if (this.fast && this.control && this.control.kind === 'ai') speed = 3;
         if (this.control && this.control.kind === 'replay' && this.control.backlog() > 90) speed = 2;
@@ -472,8 +485,11 @@ Z.Game = class {
             if (u.drowned) u.sinkT = 9;
         });
         this.projs = s.mines.map((m) => new Z.Proj(Object.assign({}, Z.WEAPON_BY_ID.mine.proj, { x: m.x, y: m.y, armed: m.armed, armT: m.armT, rest: true })));
-        this.crates = s.crates.map((c) => Object.assign(new Z.Crate(c.kind, c.x, c.weapon), { y: c.y, vy: 0, chute: false, landed: true }));
-        this.graves = s.graves.map((gr) => Object.assign(new Z.Grave(this.teams[gr.team], gr.x, gr.y - Z.K.UNIT_R), { y: gr.y, vy: 0, ground: true }));
+        // the server checks snapshots, but a page still skips entries it could not draw or use
+        this.crates = s.crates.filter((c) => c && (c.kind === 'hp' || Z.WEAPON_BY_ID[c.weapon]))
+            .map((c) => Object.assign(new Z.Crate(c.kind, c.x, c.weapon), { y: c.y, vy: 0, chute: false, landed: true }));
+        this.graves = s.graves.filter((gr) => gr && this.teams[gr.team])
+            .map((gr) => Object.assign(new Z.Grave(this.teams[gr.team], gr.x, gr.y - Z.K.UNIT_R), { y: gr.y, vy: 0, ground: true }));
         s.teams.forEach((d, i) => { if (this.teams[i]) Object.assign(this.teams[i], { ammo: { ...d.ammo }, next: d.next, lastWeapon: d.last, dealt: d.dealt }); });
         this.planes = []; this.timers = [];
         this.refreshHud();
@@ -481,7 +497,8 @@ Z.Game = class {
 
     /** FNV-1a over the snapshot: equal hashes mean two computers ended a turn in the same state. */
     stateHash() {
-        const text = JSON.stringify(this.snapshot());
+        // the crater list is part of the state: two pages with equal fighters but different terrain differ
+        const text = JSON.stringify(this.snapshot()) + '|' + this.craters.join(',');
         let h = 0x811c9dc5;
         for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193); }
         return (h >>> 0).toString(36);
@@ -549,7 +566,7 @@ Z.Game = class {
 
     render() {
         const R = Z.R, c = this.cam, v = R.view, th = this.world.theme;
-        const s = c.shakeT > 0 ? c.shakeA * (c.shakeT / 0.45) : 0;
+        const s = c.shakeT > 0 && !Z.reducedMotion ? c.shakeA * (c.shakeT / 0.45) : 0;
         R.setView(c.x + Z.rand(-s, s), c.y + Z.rand(-s, s), c.zoom * v.dpr);
         R.clear();
         R.drawSky(th, this.clock, this.cloudX, this.seed);

@@ -160,7 +160,8 @@ Z.Unit = class {
 
     physics(dt, g) {
         const w = g.world, R = Z.K.UNIT_R;
-        if (this.dead) { if (this.drowned) { this.sinkT += dt; this.y += 20 * dt; } return; }
+        // a drowned fighter sinks only while it is still visible: an unbounded y would break the turn snapshot
+        if (this.dead) { if (this.drowned && this.sinkT < 1.5) { this.sinkT += dt; this.y += 20 * dt; } return; }
         if (this.onGround) {
             if (!this.supported(w)) { this.onGround = false; this.vx = 0; this.vy = 0; }
             else { for (let i = 0; i < 3 && !w.circleHit(this.x, this.y + 1, R); i++) this.y += 1; }

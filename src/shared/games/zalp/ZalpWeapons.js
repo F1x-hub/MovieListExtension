@@ -214,10 +214,10 @@ Z.WEAPONS = [
     {
         id: 'tele', icon: 'w_tele', held: 'w_tele', ammo: 2, mode: 'target', ends: true,
         fire(g, u, o) {
-            const t = o.target, w = g.world;
-            if (!t || t.x < 12 || t.x > w.W - 12 || t.y < 10 || t.y > w.waterY - 24 || w.circleHit(t.x, t.y, Z.K.UNIT_R + 1)) { g.toast(t('zalp.toast.bad_teleport')); return false; }
+            const spot = o.target, w = g.world;
+            if (!spot || spot.x < 12 || spot.x > w.W - 12 || spot.y < 10 || spot.y > w.waterY - 24 || w.circleHit(spot.x, spot.y, Z.K.UNIT_R + 1)) { g.toast(t('zalp.toast.bad_teleport')); return false; }
             Z.FX.sparkle(g, u.x, u.y);
-            u.x = t.x; u.y = t.y; u.vx = 0; u.vy = 0; u.onGround = false;
+            u.x = spot.x; u.y = spot.y; u.vx = 0; u.vy = 0; u.onGround = false;
             Z.FX.sparkle(g, u.x, u.y);
             Z.audio.play('teleport');
         },

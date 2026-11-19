@@ -30,10 +30,10 @@
                 <button class="zl-icon-btn" id="zlFast" type="button" aria-pressed="false" data-i18n="[aria-label]games.zalp.fast" aria-label="Ускорить ходы ботов" hidden>
                     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6l8 6-8 6zM12 6l8 6-8 6z"/></svg>
                 </button>
-                <button class="zl-icon-btn" id="zlSound" type="button" aria-pressed="false" data-i18n="[aria-label]games.zalp.sound" aria-label="Звук">
+                <button class="zl-icon-btn" id="zlSound" type="button" aria-pressed="false" data-i18n="[aria-label]games.zalp.sound" aria-label="Выключить звук">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="zl-snd-on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/><path class="zl-snd-off" d="M17 9l5 6M22 9l-5 6"/></svg>
                 </button>
-                <button class="zl-icon-btn" id="zlFullscreen" type="button" aria-pressed="false" data-i18n="[aria-label]games.zalp.fullscreen" aria-label="На весь экран">
+                <button class="zl-icon-btn" id="zlFullscreen" type="button" data-i18n="[aria-label]games.zalp.fullscreen" aria-label="На весь экран">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="zl-fs-enter" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><path class="zl-fs-exit" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
                 </button>
                 <button class="zl-icon-btn" id="zlPauseBtn" type="button" data-i18n="[aria-label]games.zalp.pause" aria-label="Пауза">
@@ -50,7 +50,7 @@
     </div>
 
     <div class="zl-weapons" id="zlWeapons" role="dialog" aria-labelledby="zlWeaponsTitle" hidden>
-        <header><b id="zlWeaponsTitle" data-i18n="games.zalp.arsenal">Арсенал</b><small data-i18n="games.zalp.arsenal_close">Tab — закрыть</small></header>
+        <header><b id="zlWeaponsTitle" data-i18n="games.zalp.arsenal">Арсенал</b><small data-i18n="games.zalp.arsenal_close">Стрелки — выбор · Enter — взять · Tab — закрыть</small></header>
         <div class="zl-weapons__grid" id="zlWeaponGrid"></div>
         <p class="zl-weapons__desc" id="zlWeaponDesc"></p>
     </div>
@@ -71,11 +71,11 @@
         </div>
     </div>
 
-    <div class="zl-overlay" id="zlMenu">
+    <div class="zl-overlay" id="zlMenu" role="dialog" aria-modal="true" aria-labelledby="zlMenuTitle">
         <div class="zl-card">
             <a class="zl-back" id="zlBack" href="../home/home.html"><span aria-hidden="true">←</span> <span data-i18n="games.zalp.back">Все игры</span></a>
             <div class="zl-logo">
-                <h1 data-i18n="games.zalp.title">ЗАЛП</h1>
+                <h1 id="zlMenuTitle" data-i18n="games.zalp.title">ЗАЛП</h1>
                 <p data-i18n="games.zalp.tagline">Пошаговая артиллерия на разрушаемых островах</p>
             </div>
             <div class="zl-field"><span data-i18n="games.zalp.mode">Режим</span>
@@ -126,7 +126,10 @@
             <button class="zl-btn" id="zlStart" type="button" data-i18n="games.zalp.start">В бой!</button>
 
             <div class="zl-panel" id="zlOnlinePanel" hidden>
-                <p class="zl-note" id="zlOnlineGuest" data-i18n="games.zalp.online_guest" hidden>Онлайн-бои открываются после входа в аккаунт расширения.</p>
+                <div class="zl-guest" id="zlOnlineGuest" hidden>
+                    <p class="zl-note" id="zlGuestText">Онлайн-бои открываются после входа в аккаунт расширения.</p>
+                    <button class="zl-btn zl-btn--ghost" id="zlSignIn" type="button" data-i18n="games.zalp.sign_in">Войти</button>
+                </div>
                 <div class="zl-online" id="zlOnlineReady" hidden>
                     <p class="zl-note" data-i18n="games.zalp.online_note">Каждый игрок управляет одним бойцом. Четыре, шесть или восемь игроков делятся на две равные команды, нечётное число играет каждый за себя.</p>
                     <div class="zl-field"><span data-i18n="games.zalp.visibility">Кто может войти</span>
@@ -151,22 +154,12 @@
             <p class="zl-error" id="zlError" role="alert" hidden></p>
             <details class="zl-help">
                 <summary data-i18n="games.zalp.controls">Управление</summary>
-                <dl class="zl-keys">
-                    <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd data-i18n="games.zalp.ctl.walk">идти</dd>
-                    <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd data-i18n="games.zalp.ctl.aim">поднять или опустить прицел</dd>
-                    <dt><kbd data-i18n="games.zalp.keys.space">Пробел</kbd></dt><dd data-i18n="games.zalp.ctl.fire">огонь; удерживайте, чтобы набрать силу броска</dd>
-                    <dt><kbd>Enter</kbd> / <kbd>Backspace</kbd></dt><dd data-i18n="games.zalp.ctl.jump">прыжок вперёд / высокий прыжок назад</dd>
-                    <dt><kbd>1</kbd>…<kbd>5</kbd></dt><dd data-i18n="games.zalp.ctl.fuse">таймер гранаты в секундах</dd>
-                    <dt><kbd>Tab</kbd></dt><dd data-i18n="games.zalp.ctl.arsenal">арсенал (или правый клик)</dd>
-                    <dt><kbd>F</kbd></dt><dd data-i18n="games.zalp.ctl.fullscreen">весь экран</dd>
-                    <dt><kbd>Esc</kbd></dt><dd data-i18n="games.zalp.ctl.pause">пауза</dd>
-                    <dt data-i18n="games.zalp.keys.mouse">мышь</dt><dd data-i18n="games.zalp.ctl.mouse">перетаскивание двигает камеру, колесо приближает, клик выбирает цель</dd>
-                </dl>
+                <dl class="zl-keys" data-controls></dl>
             </details>
         </div>
     </div>
 
-    <div class="zl-overlay" id="zlRoom" hidden>
+    <div class="zl-overlay" id="zlRoom" role="dialog" aria-modal="true" aria-labelledby="zlRoomTitle" hidden>
         <div class="zl-card">
             <h2 id="zlRoomTitle"></h2>
             <div class="zl-room__code">
@@ -185,9 +178,13 @@
         </div>
     </div>
 
-    <div class="zl-overlay" id="zlPause" hidden>
+    <div class="zl-overlay" id="zlPause" role="dialog" aria-modal="true" aria-labelledby="zlPauseTitle" hidden>
         <div class="zl-card">
-            <h2 data-i18n="games.zalp.paused">Пауза</h2>
+            <h2 id="zlPauseTitle" data-i18n="games.zalp.paused">Пауза</h2>
+            <details class="zl-help">
+                <summary data-i18n="games.zalp.controls">Управление</summary>
+                <dl class="zl-keys" data-controls></dl>
+            </details>
             <p class="zl-note" id="zlPauseNote" data-i18n="games.zalp.online_pause_note" hidden>В онлайне бой не останавливается.</p>
             <div class="zl-row">
                 <button class="zl-btn" id="zlResume" type="button" data-i18n="games.zalp.resume">Продолжить</button>
@@ -196,7 +193,7 @@
         </div>
     </div>
 
-    <div class="zl-overlay" id="zlResult" hidden>
+    <div class="zl-overlay" id="zlResult" role="dialog" aria-modal="true" aria-labelledby="zlResultTitle" hidden>
         <div class="zl-card">
             <h2 id="zlResultTitle"></h2>
             <p class="zl-result__stats" id="zlResultStats"></p>

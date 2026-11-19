@@ -99,17 +99,16 @@ function finite(value, lo, hi) {
   return typeof value === "number" && Number.isFinite(value) && value >= lo && value <= hi;
 }
 
-function validSnapshot(snapshot, seatCount) {
-  if (!isPlainObject(snapshot) || !Array.isArray(snapshot.units) || snapshot.units.length !== seatCount) return false;
-  if (JSON.stringify(snapshot).length > SNAPSHOT_LIMIT) return false;
-  for (const unit of snapshot.units) {
-    if (!isPlainObject(unit) || typeof unit.dead !== "boolean") return false;
-    if (!finite(unit.x, -2000, 5000) || !finite(unit.y, -3000, 4000) || !finite(unit.hp, 0, 1000)) return false;
-  }
-  for (const key of ["mines", "crates", "graves", "teams"]) {
-    if (!Array.isArray(snapshot[key]) || snapshot[key].length > 200) return false;
-  }
-  return true;
+/** Why the snapshot of turn `n` cannot be accepted, or null; the shape rules are shared with the page. */
+function snapshotProblem(game, n, snapshot, added) {
+  if (!isPlainObject(snapshot) || JSON.stringify(snapshot).length > SNAPSHOT_LIMIT) return "shape";
+  return Rules.checkSnapshot(snapshot, {
+    n,
+    seats: game.seats.length,
+    teams: new Set(game.seats.map((seat) => seat.team)).size,
+    prev: game.snapshot,
+    craters: (game.craters.length + added.length) / 3,
+  });
 }
 
 function validCraters(craters) {
@@ -168,7 +167,9 @@ function createZalpService({ db, now = () => Date.now(), random = Math.random } 
     }
     const next = Rules.nextSeat(game.seats, alive, game.turn ? game.turn.seat : -1, game.lastByTeam || []);
     const n = game.turn ? game.turn.n + 1 : 1;
-    game.turn = { n, seat: next.seat, startedAtMs: time, deadlineMs: time + TURN_MS };
+    // the seats that have left are frozen into the turn, so every page removes the same fighters when it starts it
+    const left = game.seats.map((seat, i) => (seat.left ? i : -1)).filter((i) => i >= 0);
+    game.turn = { n, seat: next.seat, startedAtMs: time, deadlineMs: time + TURN_MS, left };
     game.lastByTeam = next.lastByTeam;
     transaction.set(turnRef(game.code, n), newTurnDoc(game, n, next.seat, time));
   }
@@ -185,13 +186,21 @@ function createZalpService({ db, now = () => Date.now(), random = Math.random } 
     return { code, game, turn: turnSnapshot.data() };
   }
 
+  /**
+   * Appends a chunk that starts exactly where the stream ends. The resend of the chunk stored last (its
+   * answer was lost) is recognised and ignored; any other position is a conflict that names the stored ticks.
+   */
   function appendChunk(turn, from, data) {
     const ticks = Rules.chunkTicks(data);
     if (ticks < 0) throw zalpError("INVALID_STREAM", "The turn data is malformed");
     if (!Number.isInteger(from) || from < 0) throw zalpError("INVALID_STREAM", "The chunk position is invalid");
-    if (from < turn.ticks) return false; // a resend of a chunk already stored
-    if (from > turn.ticks) throw zalpError("STREAM_GAP", "A chunk is missing", 409, { ticks: turn.ticks });
-    if (turn.ticks + ticks > Rules.TURN_TICKS_MAX) throw zalpError("TURN_TOO_LONG", "The turn is too long");
+    if (from !== turn.ticks) {
+      if (from + ticks === turn.ticks && (data === "" || turn.stream === data || turn.stream.endsWith(`.${data}`))) return false;
+      throw zalpError("STREAM_POSITION", "The chunk does not continue the stored turn", 409, { ticks: turn.ticks });
+    }
+    if (turn.ticks + ticks > Rules.TURN_TICKS_MAX || turn.stream.length + data.length > Rules.MAX_STREAM_CHARS) {
+      throw zalpError("TURN_TOO_LONG", "The turn is too long");
+    }
     if (data) turn.stream = turn.stream ? `${turn.stream}.${data}` : data;
     turn.ticks += ticks;
     return true;
@@ -247,12 +256,11 @@ function createZalpService({ db, now = () => Date.now(), random = Math.random } 
       return db.runTransaction(async (transaction) => {
         const game = await readGame(transaction, code);
         if (game.status !== "waiting" || game.host !== actor.uid) return { status: game.status };
+        // every read before the first write, as Firestore transactions require
+        const lobby = game.visibility === "public" ? await readLobby(transaction) : null;
         game.touchedAtMs = time;
         transaction.set(gameRef(code), game);
-        if (game.visibility === "public") {
-          const lobby = await readLobby(transaction);
-          writeLobby(transaction, [lobbyEntry(game), ...lobby.filter((entry) => entry.code !== code)], time);
-        }
+        if (lobby) writeLobby(transaction, [lobbyEntry(game), ...lobby.filter((entry) => entry.code !== code)], time);
         return { status: game.status };
       });
     },
@@ -338,10 +346,11 @@ function createZalpService({ db, now = () => Date.now(), random = Math.random } 
         const ctx = await readActiveTurn(transaction, actor, gameId, turn);
         const { game } = ctx;
         if (ctx.turn.final) throw zalpError("STALE_TURN", "This turn is over", 409);
-        appendChunk(ctx.turn, from, String(data ?? ""));
-        if (!validSnapshot(snapshot, game.seats.length)) throw zalpError("INVALID_SNAPSHOT", "The turn result is malformed");
         const added = Array.isArray(craters) ? craters : [];
         if (!validCraters(added) || game.craters.length + added.length > MAX_CRATERS * 3) throw zalpError("INVALID_CRATERS", "The craters are malformed");
+        const problem = snapshotProblem(game, turn, snapshot, added);
+        if (problem) throw zalpError("INVALID_SNAPSHOT", "The turn result is malformed", 400, { reason: problem });
+        appendChunk(ctx.turn, from, String(data ?? ""));
         ctx.turn.final = true;
         ctx.turn.hash = typeof hash === "string" ? hash.slice(0, 16) : null;
         ctx.turn.updatedAtMs = time;
