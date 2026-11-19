@@ -964,6 +964,8 @@ class MovieDetailsManager {
                 if (targetEl) {
                     const nextExpanded = !isExpanded;
                     this.applyActorsGridVisibility(targetEl, nextExpanded);
+                    // The cards shown now get their ages too.
+                    if (nextExpanded && this.selectedMovie) void this.hydrateActorAges(this.selectedMovie);
                 }
             }
         });
@@ -1832,7 +1834,8 @@ class MovieDetailsManager {
                 this.selectedMovie = movie;
                 this.patchFranchiseSection(movie);
                 this.patchRelatedRelations(movie);
-                
+                this.patchActorsTab?.(movie);
+
             } else {
                 await this.displayMovieDetails(movie);
             }
@@ -2741,6 +2744,7 @@ class MovieDetailsManager {
         this.elements.movieDetailsContainer.innerHTML = movieHTML;
         this.bindMovieFrameInteractions();
         this.setupActorsGridVisibility();
+        this.setupCharacterTranslation();
         this.setProtectedControlsEnabled(this.authVerified);
         void this.syncRandomPoolAction(movie);
         // «Показать остальные» on the Awards tab is handled by AwardsList itself.
@@ -3402,7 +3406,8 @@ class MovieDetailsManager {
         const designersStr = this.formatCrewCategory(allCrew, 'DESIGNER', 3);
         const editorsStr = this.formatCrewCategory(allCrew, 'EDITOR', 3);
         const cast = this.getMovieCast(movie);
-        
+        this.renderedCastSignature = MovieDetailsManager.castSignature(cast);
+
         let distributorStr = '';
         if (movie.distributors) {
             const distObj = Array.isArray(movie.distributors) ? movie.distributors[0] : movie.distributors;
@@ -4537,12 +4542,15 @@ class MovieDetailsManager {
      */
     getMovieCast(movie) {
         if (!movie || typeof movie !== 'object') return [];
+        // The whole credited cast, as MediaAggregatorService.MAX_CAST keeps it: a cut
+        // at 30 hid people whose own page lists this title.
+        const castLimit = 150;
 
         // 1. Canonical credits.cast
         if (Array.isArray(movie.credits?.cast) && movie.credits.cast.length > 0) {
             return [...movie.credits.cast]
                 .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
-                .slice(0, 30);
+                .slice(0, castLimit);
         }
 
         // 2. Legacy movie.persons fallback
@@ -4550,7 +4558,7 @@ class MovieDetailsManager {
             const legacyActors = movie.persons
                 .filter(p => p && (p.enProfession || '').toUpperCase() === 'ACTOR')
                 .filter(p => p.name || p.enName)
-                .slice(0, 30);
+                .slice(0, castLimit);
 
             if (legacyActors.length > 0) {
                 return legacyActors.map((p, idx) => ({
@@ -4574,7 +4582,7 @@ class MovieDetailsManager {
         if (Array.isArray(movie.tmdbCredits?.cast) && movie.tmdbCredits.cast.length > 0) {
             const validTmdb = movie.tmdbCredits.cast
                 .filter(p => p && (p.name || p.original_name || p.originalName))
-                .slice(0, 30);
+                .slice(0, castLimit);
 
             if (validTmdb.length > 0) {
                 return validTmdb.map((p, idx) => ({
@@ -4736,6 +4744,21 @@ class MovieDetailsManager {
      * @param {Object} actor 
      * @returns {string}
      */
+    /**
+     * TMDB's notes after a character, «(voice)», «(uncredited)» and «(archive footage)»,
+     * in the interface language, with the person page's words.
+     * @param {string} text
+     * @returns {string}
+     */
+    localizeCreditNotes(text) {
+        if (!text) return '';
+        return text.replace(/\((voice|uncredited|archive footage)\)/gi, (match, note) => {
+            const key = `person_details.credit_notes.${note.toLowerCase().replace(' ', '_')}`;
+            const label = i18n.get(key);
+            return label && label !== key ? `(${label})` : match;
+        });
+    }
+
     renderActorCard(actor, options = null) {
         if (!actor) return '';
         const photoUrl = actor.photoUrl || actor.photo || '';
@@ -4743,7 +4766,21 @@ class MovieDetailsManager {
         const name = (isEnglish && actor.originalName)
             ? actor.originalName
             : (actor.name || actor.originalName || actor.enName || i18n.get('movie_details.actors_tab.unknown'));
-        const character = (actor.character || actor.description || '').trim();
+        // Kinopoisk's Cyrillic character where it has one, outside the English interface;
+        // TMDB's notes such as «(voice)» in the interface language.
+        const character = this.localizeCreditNotes(((!isEnglish && actor.characterLocal) || actor.character || actor.description || '').trim());
+        // A series lists how many episodes each actor played in: the main cast and a
+        // one-episode guest read differently.
+        const episodes = Number(actor.episodeCount);
+        let episodesLabel = '';
+        if (Number.isInteger(episodes) && episodes > 0) {
+            let plural = 'many';
+            try {
+                plural = new Intl.PluralRules(isEnglish ? 'en' : 'ru').select(episodes);
+            } catch { /* The plural form only picks a word. */ }
+            const unit = { one: 'episodes_one', few: 'episodes_few' }[plural] || 'episodes_many';
+            episodesLabel = `${episodes} ${i18n.get(`movie_details.actors_tab.${unit}`)}`;
+        }
 
         const personKey = (typeof actor.id === 'string' && /^(tmdb|kp):\d+$/i.test(actor.id.trim()))
             ? actor.id.trim()
@@ -4779,6 +4816,7 @@ class MovieDetailsManager {
                 <div class="actor-info">
                     <div class="actor-name">${this.escapeHtml(name)}</div>
                     ${character ? `<div class="actor-character" title="${this.escapeHtml(character)}">${this.escapeHtml(character)}</div>` : ''}
+                    ${episodesLabel ? `<div class="actor-episodes">${this.escapeHtml(episodesLabel)}</div>` : ''}
                 </div>
             </${cardTag}>
         `;
@@ -4786,8 +4824,10 @@ class MovieDetailsManager {
 
     /**
      * Show each actor's age at the film's release. Runs when the Actors tab is
-     * opened, not on page load, and costs at most one batched Kinopoisk request
-     * for people whose birth date is not cached yet (see ActorAgeService).
+     * opened, not on page load, and only for the cards on screen: the collapsed
+     * grid shows three rows, and the rest are read when it expands. Each run costs
+     * at most one batched Kinopoisk request for people whose birth date is not
+     * cached yet (see ActorAgeService), even for a cast of 150.
      * @param {Object} movie
      */
     async hydrateActorAges(movie) {
@@ -4795,11 +4835,14 @@ class MovieDetailsManager {
         const grid = document.getElementById('actorsGrid');
         if (!grid) return;
         const key = String(movie?.kinopoiskId || movie?.id || '');
-        if (grid.dataset.agesFor === key) return;
-        grid.dataset.agesFor = key;
-
-        const cards = Array.from(grid.querySelectorAll('.actor-card[data-kp-person-id]'));
+        // The grid counted its columns while its tab was hidden; count them again now
+        // that it shows, so the cards on screen are the ones asked for.
+        const toggle = grid.closest('.actors-tab-wrapper')?.querySelector('[data-action="toggle-actors"]');
+        this.applyActorsGridVisibility(grid, toggle?.getAttribute('aria-expanded') === 'true');
+        const cards = Array.from(grid.querySelectorAll('.actor-card[data-kp-person-id]'))
+            .filter(card => !card.hidden && card.dataset.ageFor !== key);
         if (cards.length === 0) return;
+        cards.forEach(card => { card.dataset.ageFor = key; });
 
         const releaseDate = typeof movie?.premiere?.world === 'string' ? movie.premiere.world : null;
         const release = { date: releaseDate, year: movie?.year || null };
@@ -4810,7 +4853,7 @@ class MovieDetailsManager {
                 kinopoiskService: window.kinopoiskService || (typeof KinopoiskService !== 'undefined' ? new KinopoiskService() : null)
             });
             const birthDates = await this.actorAgeService.getBirthDates(cards.map(card => card.dataset.kpPersonId));
-            if (!grid.isConnected || grid.dataset.agesFor !== key) return;
+            if (!grid.isConnected) return;
             const units = [i18n.get('movie_details.actors_tab.age_one'), i18n.get('movie_details.actors_tab.age_few'), i18n.get('movie_details.actors_tab.age_many')];
             const title = i18n.get('movie_details.actors_tab.age_title');
             for (const card of cards) {
@@ -4825,7 +4868,7 @@ class MovieDetailsManager {
             }
         } catch (error) {
             // Ages are decoration: let the next tab open retry.
-            delete grid.dataset.agesFor;
+            cards.forEach(card => { delete card.dataset.ageFor; });
             console.warn('Actor ages unavailable:', error?.message);
         }
     }
@@ -4840,7 +4883,7 @@ class MovieDetailsManager {
             return `<div class="no-data-placeholder"><p>${i18n.get('movie_details.actors_tab.no_data')}</p></div>`;
         }
 
-        const boundedCast = cast.slice(0, 30);
+        const boundedCast = cast.slice(0, 150);
 
         return `
             <div class="actors-tab-wrapper">
@@ -5494,6 +5537,62 @@ class MovieDetailsManager {
             const carousel = document.getElementById('movieFranchiseCarousel');
             if (carousel) carousel.innerHTML = `<div role="status"><p>${this.escapeHtml(i18n.get('movie_details.franchise_retry_hint'))}</p>${state.attempts < 3 ? `<button type="button" class="btn btn-secondary" data-action="retry-franchise">${this.escapeHtml(i18n.get('movie_details.franchise_retry'))}</button>` : ''}</div>`;
         }
+    }
+
+    /**
+     * Who the Actors tab lists, as a comparable key.
+     * @param {Array<Object>} cast
+     * @returns {string}
+     */
+    static castSignature(cast) {
+        return (Array.isArray(cast) ? cast : [])
+            .map(actor => `${actor?.id || actor?.kpPersonId || actor?.name || ''}:${actor?.episodeCount || ''}`)
+            .join('|');
+    }
+
+    /**
+     * Brings the Actors tab in line with the complete movie when the cached first
+     * paint listed other actors. A record kept before every season's cast and
+     * Kinopoisk's extra actors were read showed only the latest season until the
+     * next visit, though the fresh cast was already saved.
+     * @param {Object} movie
+     */
+    patchActorsTab(movie) {
+        const pane = typeof document?.getElementById === 'function' ? document.getElementById('tab-actors') : null;
+        if (!pane) return;
+        const cast = this.getMovieCast(movie);
+        const signature = MovieDetailsManager.castSignature(cast);
+        if (cast.length === 0 || signature === this.renderedCastSignature) return;
+        this.renderedCastSignature = signature;
+        const expanded = pane.querySelector('[data-action="toggle-actors"]')?.getAttribute('aria-expanded') === 'true';
+        pane.innerHTML = this.renderActorsTab(cast);
+        const tabButton = document.getElementById('tab-btn-actors');
+        if (tabButton) {
+            tabButton.disabled = false;
+            tabButton.classList.remove('disabled');
+        }
+        this.setupActorsGridVisibility();
+        this.setupCharacterTranslation();
+        const grid = document.getElementById('actorsGrid');
+        if (expanded && grid) this.applyActorsGridVisibility(grid, true);
+        if (pane.classList.contains('active')) void this.hydrateActorAges(movie);
+    }
+
+    /**
+     * The Actors tab's character names in Russian by themselves in the Russian
+     * interface: foreign characters keep their original spelling on TMDB and Kinopoisk,
+     * and Chrome's on-device translator shows them in Russian (CharacterNameTranslator).
+     */
+    setupCharacterTranslation() {
+        this.characterTranslation?.destroy();
+        this.characterTranslation = null;
+        const Translator = typeof window !== 'undefined' ? window.CharacterNameTranslator : null;
+        if (typeof Translator?.shared !== 'function' || i18n.currentLocale !== 'ru') return;
+        if (typeof document?.getElementById !== 'function' || !document.getElementById('actorsGrid')) return;
+        this.characterTranslation = Translator.shared().autoTranslate({
+            elements: () => document.querySelectorAll('#actorsGrid .actor-character'),
+            originalLabel: name => i18n.get('character_names.original_title').replace('{name}', name)
+        });
     }
 
     patchFranchiseSection(movie) {

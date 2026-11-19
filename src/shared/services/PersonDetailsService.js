@@ -14,6 +14,16 @@
  * - Graceful degradation on mapping failure
  */
 class PersonDetailsService {
+    static CATEGORIES = ['acting', 'directing', 'writing', 'production', 'music', 'self', 'other'];
+
+    // A credit in which the person plays themselves: «Self», «Himself - Host»,
+    // «Играет самого себя». Talk shows, ceremonies and documentaries.
+    static SELF_ROLE = /^\s*(?:self|him\s*self|her\s*self|them\s*sel(?:f|ves))\b|^\s*(?:играет\s+)?(?:сам(?:ого|у|а)?|самих)\s+себя/i;
+
+    // TMDB genres of documentaries, news, reality and talk shows: a credit there
+    // without a character is the person appearing as themselves.
+    static SELF_GENRE_IDS = new Set([99, 10763, 10764, 10767]);
+
     /**
      * @param {Object} [dependencies={}]
      */
@@ -27,10 +37,11 @@ class PersonDetailsService {
                 ? new KinopoiskPersonHtmlService({ kinopoiskService: this.kinopoiskService })
                 : null);
 
-        // v2 changes the DTO meaning: artwork and renderability are independent from KP mapping.
-        // Keep the v1 namespace untouched so stale DTOs cannot suppress newly available artwork.
-        this.CACHE_PREFIX = 'person_details_v2_';
-        this.INDEX_KEY = 'person_details_v2_index';
+        // v3 adds characters, jobs and episode counts per title, the «self» category and
+        // the type and year of Kinopoisk films; a v2 DTO lacks them, so it is not read.
+        this.CACHE_PREFIX = 'person_details_v3_';
+        this.INDEX_KEY = 'person_details_v3_index';
+        this.LEGACY_INDEX_KEYS = ['person_details_v2_index'];
         this.CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
         this.MAX_CACHED_PERSONS = 100;
         this.MAX_MAPPING_CANDIDATES = 40;
@@ -59,6 +70,22 @@ class PersonDetailsService {
         const day = value => (String(value || '').match(/^\d{4}-\d{2}-\d{2}/) || [])[0] || null;
         const tmdbBirthday = day(dto?.birthday);
         return tmdbBirthday && tmdbBirthday === day(htmlPerson.birthday) ? id : null;
+    }
+
+    /**
+     * Names to find a TMDB person on Kinopoisk by, the search text first. Kinopoisk
+     * shows a Russian person under the Russian name, which TMDB's Latin spelling
+     * («Konstantin Khabensky») does not match, so a Cyrillic alias leads when TMDB
+     * has one; the others still match the result.
+     * @param {Object} dto - TMDB PersonDetailsDTO
+     * @returns {string[]}
+     */
+    static kinopoiskSearchNames(dto) {
+        const names = [...new Set([dto?.name, dto?.originalName, ...(Array.isArray(dto?.aliases) ? dto.aliases : [])]
+            .map(name => String(name || '').trim())
+            .filter(Boolean))];
+        const cyrillic = names.find(name => /[а-яё]/i.test(name));
+        return cyrillic ? [cyrillic, ...names.filter(name => name !== cyrillic)] : names;
     }
 
     /**
@@ -243,6 +270,22 @@ class PersonDetailsService {
         if (dto.identity.provider === 'KP') {
             const htmlService = this._ensureKinopoiskPersonHtmlService();
             if (!htmlService?.getMoviePostersByIds) throw new Error('Kinopoisk HTML poster service unavailable');
+            // The API lists a person's films without their year or type. The person's
+            // own Kinopoisk page has both for its first 50 films (one request); film
+            // pages read for posters fill in the rest.
+            if (typeof htmlService.getPersonFilmographyById === 'function') {
+                const page = await htmlService.getPersonFilmographyById(dto.identity.kpPersonId || dto.identity.providerId, { signal: options.signal });
+                if (options.signal.aborted) throw options.signal.reason;
+                const details = new Map((page?.items || [])
+                    .map(item => [Number(item.kinopoiskId), {
+                        year: item.year,
+                        mediaType: item.providerMediaType,
+                        character: PersonDetailsService.kinopoiskCharacters(item)
+                    }]));
+                if (this._applyKinopoiskFilmDetails([...Object.values(filmography).flat(), ...(dto.knownFor || [])], details)) {
+                    options.onUpdate?.();
+                }
+            }
             await this._applyKinopoiskHtmlPosters(filmography, options, htmlService, dto.knownFor);
             return;
         }
@@ -262,6 +305,7 @@ class PersonDetailsService {
             for (const item of [...Object.values(filmography).flat(), ...(dto.knownFor || [])]) {
                 const mapped = unique.get(mediaKey(item));
                 if (mapped?.kinopoiskId) item.kinopoiskId = mapped.kinopoiskId;
+                if (mapped?.characterLocal && mapped.category === item.category) item.characterLocal = mapped.characterLocal;
                 item.hasNavigationTarget = this._hasNavigationTarget(item);
             }
             dto._meta.mappedCount = uniqueMediaList.filter(item => this._hasNavigationTarget(item)).length;
@@ -272,7 +316,7 @@ class PersonDetailsService {
         // Preserve existing matching rules and queue isolation; all discovery is background work.
         const htmlService = this._ensureKinopoiskPersonHtmlService();
         const htmlPerson = htmlService?.getPersonFilmography
-            ? await htmlService.getPersonFilmography([dto.name, dto.originalName], { signal: options.signal })
+            ? await htmlService.getPersonFilmography(PersonDetailsService.kinopoiskSearchNames(dto), { signal: options.signal })
             : null;
         if (options.signal.aborted) throw options.signal.reason;
         // The Kinopoisk person found by name is the same person only when the birthdays
@@ -280,7 +324,9 @@ class PersonDetailsService {
         const kpPersonId = PersonDetailsService.matchKinopoiskPerson(dto, htmlPerson);
         if (kpPersonId) dto._meta.kpPersonMatch = { id: kpPersonId, verifiedBy: 'birthday' };
         if (htmlPerson?.items?.length > 0) {
-            this._applyKinopoiskHtmlMapping(filmography, htmlPerson.items);
+            // A namesake's film can share a title with this person's film: without a
+            // verified person a title must also agree on the year.
+            this._applyKinopoiskHtmlMapping(filmography, htmlPerson.items, { allowYearless: Boolean(kpPersonId) });
             publish();
             await this._applyKinopoiskHtmlTitleMapping(mappingCandidates, { ...options, onUpdate: publish });
             publish();
@@ -419,46 +465,51 @@ class PersonDetailsService {
         const rawCast = Array.isArray(raw.combined_credits?.cast) ? raw.combined_credits.cast : [];
         const rawCrew = Array.isArray(raw.combined_credits?.crew) ? raw.combined_credits.crew : [];
 
-        const filmography = {
-            acting: [],
-            directing: [],
-            writing: [],
-            production: [],
-            music: [],
-            other: []
-        };
+        const filmography = PersonDetailsService.emptyFilmography();
 
-        // Normalize Cast
-        const seenActing = new Set();
+        // Normalize Cast. TMDB gives one credit per character, so a title is listed once
+        // with every character the person played in it and the most episodes of a series.
+        const castByTitle = new Map();
+        const personNames = [name, originalName, ...aliases];
         for (const item of rawCast) {
             if (!item || !item.id || item.adult) continue;
             const mediaType = item.media_type === 'tv' ? 'tv' : 'movie';
             const mediaKey = `${mediaType}:${item.id}`;
-            if (seenActing.has(mediaKey)) continue;
-            seenActing.add(mediaKey);
-
-            filmography.acting.push(this._createFilmographyItem(item, mediaType, 'acting', item.character || 'Actor', 'Acting'));
+            const group = castByTitle.get(mediaKey) || { item, mediaType, roles: [], episodeCount: 0 };
+            group.roles.push({ character: String(item.character || '').trim(), self: this._isSelfCredit(item, personNames) });
+            group.episodeCount = Math.max(group.episodeCount, Number(item.episode_count) || 0);
+            castByTitle.set(mediaKey, group);
+        }
+        for (const group of castByTitle.values()) {
+            // Playing themselves in every credit of a title puts it under «self».
+            const roles = group.roles.filter(role => !role.self);
+            const category = roles.length > 0 ? 'acting' : 'self';
+            // Their own name as the character says nothing the tab does not.
+            const characters = [...new Set((roles.length > 0 ? roles : group.roles).map(role => role.character)
+                .filter(character => character && !(category === 'self' && this._isOwnName(character, personNames))))];
+            const entry = this._createFilmographyItem(group.item, group.mediaType, category, characters.join(' / ') || null, category === 'self' ? 'Self' : 'Acting');
+            entry.episodeCount = group.episodeCount > 0 ? group.episodeCount : null;
+            filmography[category].push(entry);
         }
 
-        // Normalize Crew
-        const seenCrewByCategory = {
-            directing: new Set(),
-            writing: new Set(),
-            production: new Set(),
-            music: new Set(),
-            other: new Set()
-        };
-
+        // Normalize Crew: one entry per title and category with all its jobs.
+        const crewByTitle = new Map();
         for (const item of rawCrew) {
             if (!item || !item.id || item.adult) continue;
             const mediaType = item.media_type === 'tv' ? 'tv' : 'movie';
-            const mediaKey = `${mediaType}:${item.id}`;
             const category = this._mapCrewCategory(item.department, item.job);
-
-            if (seenCrewByCategory[category].has(mediaKey)) continue;
-            seenCrewByCategory[category].add(mediaKey);
-
-            filmography[category].push(this._createFilmographyItem(item, mediaType, category, null, item.job || item.department));
+            const groupKey = `${category}|${mediaType}:${item.id}`;
+            const group = crewByTitle.get(groupKey) || { item, mediaType, category, jobs: [], episodeCount: 0 };
+            const job = String(item.job || item.department || '').trim();
+            if (job && !group.jobs.includes(job)) group.jobs.push(job);
+            group.episodeCount = Math.max(group.episodeCount, Number(item.episode_count) || 0);
+            crewByTitle.set(groupKey, group);
+        }
+        for (const group of crewByTitle.values()) {
+            const entry = this._createFilmographyItem(group.item, group.mediaType, group.category, null, group.jobs[0] || null);
+            entry.jobs = group.jobs;
+            entry.episodeCount = group.episodeCount > 0 ? group.episodeCount : null;
+            filmography[group.category].push(entry);
         }
 
         // 3. Collect Unique Media Items across all categories for Bounded Batch Mapping
@@ -627,45 +678,47 @@ class PersonDetailsService {
         // 2. Filmography Normalization (Native KP IDs — 0 mapping requests needed!)
         const rawMovies = Array.isArray(raw.movies) ? raw.movies : [];
 
-        const filmography = {
-            acting: [],
-            directing: [],
-            writing: [],
-            production: [],
-            music: [],
-            other: []
-        };
-
-        const seenKpByCategory = {
-            acting: new Set(),
-            directing: new Set(),
-            writing: new Set(),
-            production: new Set(),
-            music: new Set(),
-            other: new Set()
-        };
+        const filmography = PersonDetailsService.emptyFilmography();
+        const byCategory = Object.fromEntries(PersonDetailsService.CATEGORIES.map(category => [category, new Map()]));
 
         for (const item of rawMovies) {
             if (!item || !item.id) continue;
             const kpId = Number(item.id);
             if (!kpId || kpId <= 0) continue;
 
-            const category = this._mapKpProfessionToCategory(item.enProfession || item.profession);
-            if (seenKpByCategory[category].has(kpId)) continue;
-            seenKpByCategory[category].add(kpId);
+            let description = String(item.description || '').trim();
+            let category = this._mapKpProfessionToCategory(item.enProfession || item.profession);
+            if (category === 'acting' && this._isSelfRole(description, [name, originalName])) category = 'self';
+            const profession = item.enProfession || item.profession || null;
+            const isRole = category === 'acting' || category === 'self';
+            if (/^хроника$/i.test(description)) description = '(archive footage)';
+            else if (category === 'self' && this._isOwnName(description, [name, originalName])) description = '';
+            else if (category === 'acting' && String(profession).toUpperCase() === 'UNCREDITED' && description) description += ' (uncredited)';
+
+            // A second credit for the same film adds its character or job.
+            const existing = byCategory[category].get(kpId);
+            if (existing) {
+                if (description && isRole && !String(existing.character || '').split(' / ').includes(description)) {
+                    existing.character = existing.character ? `${existing.character} / ${description}` : description;
+                } else if (description && !isRole && !existing.jobs.includes(description)) {
+                    existing.jobs.push(description);
+                }
+                continue;
+            }
 
             const year = typeof item.year === 'number' ? item.year : null;
             const rating = typeof item.rating === 'number' && item.rating > 0 ? Number(item.rating.toFixed(1)) : null;
-
-            filmography[category].push({
+            const entry = {
                 providerMediaId: kpId,
                 providerMediaType: 'movie',
                 kinopoiskId: kpId,
                 tmdbId: null,
                 name: (item.name || item.alternativeName || '').trim(),
                 originalName: (item.alternativeName || '').trim() || null,
-                character: (item.description || '').trim() || null,
-                job: item.enProfession || item.profession || null,
+                character: isRole ? (description || null) : null,
+                job: profession,
+                // A crew credit's description is its precise job («исполнительный продюсер»).
+                jobs: !isRole && description ? [description] : (profession ? [profession] : []),
                 department: category,
                 year,
                 releaseDate: year ? `${year}-01-01` : null,
@@ -675,9 +728,13 @@ class PersonDetailsService {
                 hasNavigationTarget: true,
                 rating,
                 voteCount: null,
+                popularity: null,
+                episodeCount: null,
                 adult: false,
                 category
-            });
+            };
+            byCategory[category].set(kpId, entry);
+            filmography[category].push(entry);
         }
 
         // Collect all unique KP items for Known For
@@ -745,9 +802,12 @@ class PersonDetailsService {
         if (!filmography || typeof filmography !== 'object') return 0;
         const posterService = htmlService || this._ensureKinopoiskPersonHtmlService();
         if (!posterService || typeof posterService.getMoviePostersByIds !== 'function') return 0;
+        // The page opens on each role's newest titles (four rows of up to seven), so
+        // their posters are read first.
+        const newestFirst = list => [...list].sort((a, b) => (Number(b?.year) || 0) - (Number(a?.year) || 0));
         const items = [
             ...(Array.isArray(additionalItems) ? additionalItems : []),
-            ...Object.values(filmography).flatMap(list => list.slice(0, 20)),
+            ...Object.values(filmography).flatMap(list => newestFirst(list).slice(0, 28)),
             ...Object.values(filmography).flat()
         ];
         const ids = [...new Set(items.filter(item => item.posterSource !== 'kp-html')
@@ -756,24 +816,28 @@ class PersonDetailsService {
         if (ids.length === 0) return 0;
         let enrichedCount = 0;
         const enrichedIds = new Set();
-        const apply = (id, posterUrl) => {
-            if (options.signal?.aborted || enrichedIds.has(id) || !this._isValidArtworkUrl(posterUrl)) return;
-            for (const item of items) {
-                if (Number(item.kinopoiskId) !== Number(id)) continue;
-                item.posterUrl = posterUrl;
-                item.posterSource = 'kp-html';
-                item.hasArtwork = true;
-            }
-            if (!enrichedIds.has(id)) {
+        // A film page gives the film's year and type along with its poster.
+        const apply = (id, posterUrl, details = null) => {
+            if (options.signal?.aborted) return;
+            let changed = details ? this._applyKinopoiskFilmDetails(items, new Map([[Number(id), details]])) : false;
+            if (!enrichedIds.has(id) && this._isValidArtworkUrl(posterUrl)) {
+                for (const item of items) {
+                    if (Number(item.kinopoiskId) !== Number(id)) continue;
+                    item.posterUrl = posterUrl;
+                    item.posterSource = 'kp-html';
+                    item.hasArtwork = true;
+                }
                 enrichedIds.add(id);
                 enrichedCount++;
+                changed = true;
             }
-            options.onUpdate?.();
+            if (changed) options.onUpdate?.();
         };
         const posterMap = await posterService.getMoviePostersByIds(ids, {
             signal: options.signal,
             onPoster: apply,
-            reportFailure: true
+            reportFailure: true,
+            withDetails: true
         });
         for (const id of ids) apply(id, posterMap instanceof Map ? posterMap.get(id) : posterMap?.[id]);
 
@@ -797,6 +861,7 @@ class PersonDetailsService {
         const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : null;
         const rating = typeof item.vote_average === 'number' ? Number(item.vote_average.toFixed(1)) : null;
         const voteCount = typeof item.vote_count === 'number' ? item.vote_count : 0;
+        const normalizedJob = job ? String(job).trim() : null;
 
         return {
             providerMediaId: item.id,
@@ -806,19 +871,117 @@ class PersonDetailsService {
             name,
             originalName,
             character: character ? String(character).trim() : null,
-            job: job ? String(job).trim() : null,
+            job: normalizedJob,
+            jobs: normalizedJob ? [normalizedJob] : [],
             department: item.department || null,
             year,
-            releaseDate,
+            releaseDate: releaseDate || null,
             posterUrl,
             posterSource: posterUrl ? 'tmdb' : null,
             hasArtwork: Boolean(posterUrl),
             hasNavigationTarget: false,
             rating,
             voteCount,
+            popularity: typeof item.popularity === 'number' ? Number(item.popularity.toFixed(2)) : null,
+            episodeCount: null,
             adult: Boolean(item.adult),
             category
         };
+    }
+
+    /**
+     * The characters a Kinopoisk person page names for one film, joined.
+     * @param {Object} kpItem - KinopoiskPersonHtmlService filmography item
+     * @returns {string}
+     */
+    static kinopoiskCharacters(kpItem) {
+        const roles = Array.isArray(kpItem?.roles) && kpItem.roles.length > 0 ? kpItem.roles.map(role => role?.character) : [kpItem?.role];
+        return [...new Set(roles.map(name => String(name || '').trim()).filter(Boolean))].join(' / ');
+    }
+
+    /**
+     * Keeps Kinopoisk's character name beside the provider's when Kinopoisk writes it
+     * in Cyrillic, so a Russian interface can show it instead of a transliteration.
+     * Kinopoisk keeps a foreign character in its original spelling, as TMDB does.
+     * @param {Object} item
+     * @param {string} characters
+     * @returns {boolean} Whether the item changed
+     * @private
+     */
+    _applyLocalCharacter(item, characters) {
+        if (!item || !['acting', 'self'].includes(item.category)) return false;
+        const value = String(characters || '').trim();
+        if (!value || !/[а-яё]/i.test(value) || value === item.character || value === item.characterLocal) return false;
+        item.characterLocal = value;
+        return true;
+    }
+
+    /**
+     * The categories of a filmography, empty.
+     * @returns {Object<string, Array>}
+     */
+    static emptyFilmography() {
+        return Object.fromEntries(PersonDetailsService.CATEGORIES.map(category => [category, []]));
+    }
+
+    /**
+     * A TMDB cast credit in which the person plays themselves.
+     * @private
+     */
+    _isSelfCredit(item, personNames = []) {
+        const character = String(item?.character || '').trim();
+        if (character) return this._isSelfRole(character, personNames);
+        const genres = Array.isArray(item?.genre_ids) ? item.genre_ids : [];
+        return genres.some(id => PersonDetailsService.SELF_GENRE_IDS.has(Number(id)));
+    }
+
+    /**
+     * A part that is the person themselves: «Self», «играет самого себя», archive
+     * footage («хроника»), or the person's own name as the character.
+     * @param {string} text
+     * @param {string[]} [personNames]
+     * @returns {boolean}
+     * @private
+     */
+    _isSelfRole(text, personNames = []) {
+        const value = String(text || '').trim();
+        if (!value) return false;
+        if (PersonDetailsService.SELF_ROLE.test(value) || /^(?:хроника|\(?archive footage\)?)$/i.test(value)) return true;
+        return this._isOwnName(value, personNames);
+    }
+
+    _isOwnName(value, personNames = []) {
+        const normalized = this._normalizeTitle(value);
+        return Boolean(normalized) && personNames.some(name => name && this._normalizeTitle(name) === normalized);
+    }
+
+    /**
+     * Year and type of Kinopoisk films that the API leaves out, from the person's
+     * Kinopoisk page or a film page. Values already known are kept.
+     * @param {Array<Object>} items
+     * @param {Map<number, {year: number|null, mediaType: string|null}>} details
+     * @returns {boolean} Whether any item changed
+     * @private
+     */
+    _applyKinopoiskFilmDetails(items, details) {
+        if (!(details instanceof Map) || details.size === 0) return false;
+        let changed = false;
+        for (const item of items) {
+            const detail = details.get(Number(item?.kinopoiskId));
+            if (!detail) continue;
+            if (detail.character && this._applyLocalCharacter(item, detail.character)) changed = true;
+            const year = Number(detail.year);
+            if (!item.year && Number.isInteger(year) && year > 1850 && year < 2200) {
+                item.year = year;
+                item.releaseDate = item.releaseDate || `${year}-01-01`;
+                changed = true;
+            }
+            if (detail.mediaType === 'tv' && item.providerMediaType !== 'tv') {
+                item.providerMediaType = 'tv';
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     /**
@@ -892,7 +1055,10 @@ class PersonDetailsService {
      */
     _mapKpProfessionToCategory(profession) {
         const prof = (profession || '').toUpperCase();
-        if (prof === 'ACTOR' || prof === 'АКТЕР' || prof === 'АКТРИСА') return 'acting';
+        // Kinopoisk's «cameo» is its «Играет самого себя»: talk shows, ceremonies,
+        // documentaries. «uncredited» is a role without a screen credit.
+        if (['CAMEO', 'HIMSELF', 'HERSELF', 'ИГРАЕТ САМОГО СЕБЯ', 'ИГРАЕТ САМУ СЕБЯ'].includes(prof)) return 'self';
+        if (prof === 'ACTOR' || prof === 'АКТЕР' || prof === 'АКТРИСА' || prof === 'UNCREDITED') return 'acting';
         if (prof === 'DIRECTOR' || prof === 'РЕЖИССЕР') return 'directing';
         if (prof === 'WRITER' || prof === 'СЦЕНАРИСТ') return 'writing';
         if (prof === 'PRODUCER' || prof === 'ПРОДЮСЕР') return 'production';
@@ -902,15 +1068,21 @@ class PersonDetailsService {
 
     /**
      * Merge native Kinopoisk IDs from the person HTML payload into TMDB credits.
-     * Matching is local and bounded by title plus a one-year release tolerance.
+     * Matching is local and bounded by title plus a one-year release tolerance, and a
+     * film never matches a series.
      * @param {Object} filmography
      * @param {Array<Object>} kpItems
+     * @param {Object} [options]
+     * @param {boolean} [options.allowYearless=true] - Match a title alone when a year is
+     *   missing; only safe when the Kinopoisk person is verified as this person
      * @returns {number} Number of TMDB items enriched with a KP ID
      * @private
      */
-    _applyKinopoiskHtmlMapping(filmography, kpItems) {
+    _applyKinopoiskHtmlMapping(filmography, kpItems, { allowYearless = true } = {}) {
         const byTitleAndYear = new Map();
         const byTitle = new Map();
+        const byId = new Map(kpItems.map(kpItem => [Number(kpItem.kinopoiskId), kpItem]));
+        const typeOf = item => (item?.providerMediaType === 'tv' ? 'tv' : 'movie');
 
         for (const kpItem of kpItems) {
             const titles = [kpItem.name, kpItem.originalName]
@@ -919,9 +1091,9 @@ class PersonDetailsService {
             if (titles.length === 0) continue;
 
             for (const title of titles) {
-                byTitle.set(title, kpItem);
+                byTitle.set(`${typeOf(kpItem)}|${title}`, kpItem);
                 if (kpItem.year) {
-                    byTitleAndYear.set(`${title}|${kpItem.year}`, kpItem);
+                    byTitleAndYear.set(`${typeOf(kpItem)}|${title}|${kpItem.year}`, kpItem);
                 }
             }
         }
@@ -934,16 +1106,21 @@ class PersonDetailsService {
                 const titles = [tmdbItem.name, tmdbItem.originalName]
                     .map(title => this._normalizeTitle(title))
                     .filter(Boolean);
-                let match = null;
+                const type = typeOf(tmdbItem);
+                // A credit mapped before is matched by its Kinopoisk ID.
+                let match = byId.get(Number(tmdbItem.kinopoiskId)) || null;
 
-                for (const title of titles) {
+                for (const title of match ? [] : titles) {
                     const year = Number(tmdbItem.year);
                     if (year) {
-                        match = byTitleAndYear.get(`${title}|${year}`)
-                            || byTitleAndYear.get(`${title}|${year - 1}`)
-                            || byTitleAndYear.get(`${title}|${year + 1}`);
+                        match = byTitleAndYear.get(`${type}|${title}|${year}`)
+                            || byTitleAndYear.get(`${type}|${title}|${year - 1}`)
+                            || byTitleAndYear.get(`${type}|${title}|${year + 1}`);
                     }
-                    if (!match) match = byTitle.get(title);
+                    // A title alone decides only when one side has no year: two dated
+                    // films of the same name years apart are different films.
+                    const candidate = !match && allowYearless ? byTitle.get(`${type}|${title}`) : null;
+                    if (candidate && (!year || !candidate.year)) match = candidate;
                     if (match) break;
                 }
 
@@ -954,6 +1131,7 @@ class PersonDetailsService {
 
                 tmdbItem.kinopoiskId = Number(match.kinopoiskId);
                 tmdbItem.hasNavigationTarget = this._hasNavigationTarget(tmdbItem);
+                this._applyLocalCharacter(tmdbItem, PersonDetailsService.kinopoiskCharacters(match));
                 if (!matchedTmdbIds.has(tmdbItem.tmdbId)) {
                     matchedTmdbIds.add(tmdbItem.tmdbId);
                     matchedCount++;
@@ -1061,6 +1239,10 @@ class PersonDetailsService {
         let roleWeight = 1.0;
         const categories = item.allCategories || new Set([item.category]);
 
+        // A talk show or ceremony the person only appeared in is not what they are
+        // known for, however many votes it has.
+        if (categories.size === 1 && categories.has('self')) return 0.25 * (Math.log10((item.voteCount || 0) + 1) * (item.rating || 5.0));
+
         if (primaryDepartment) {
             const dept = primaryDepartment.toLowerCase();
             if (dept === 'directing' && categories.has('directing')) roleWeight = 1.3;
@@ -1099,7 +1281,7 @@ class PersonDetailsService {
         if (knownForDepartment) {
             const dept = knownForDepartment.toLowerCase();
             if (dept === 'directing' && filmography.directing.length > 0) result.push('Режиссёр');
-            else if (dept === 'acting' && filmography.acting.length > 0) result.push('Актёр');
+            else if (dept === 'acting' && (filmography.acting.length > 0 || filmography.self?.length > 0)) result.push('Актёр');
             else if (dept === 'writing' && filmography.writing.length > 0) result.push('Сценарист');
             else if (dept === 'production' && filmography.production.length > 0) result.push('Продюсер');
             else if (dept === 'sound' && filmography.music.length > 0) result.push('Композитор');
@@ -1189,11 +1371,32 @@ class PersonDetailsService {
             if (typeof chrome !== 'undefined' && chrome.storage?.local) {
                 await chrome.storage.local.set({ [storageKey]: entry });
                 await this._updateLruIndex(storageKey);
+                await this._dropLegacyCache();
             } else {
                 this._memoryCache.set(storageKey, entry);
             }
         } catch (err) {
             console.warn(`PersonDetailsService: cache write failed for ${personKey}:`, err.message);
+        }
+    }
+
+    /**
+     * Remove the persons an older cache namespace kept: nothing reads them again,
+     * and without this they would stay in storage for good. Runs once per page.
+     * @returns {Promise<void>}
+     * @private
+     */
+    async _dropLegacyCache() {
+        if (this._legacyCacheDropped) return;
+        this._legacyCacheDropped = true;
+        try {
+            const indexes = await chrome.storage.local.get(this.LEGACY_INDEX_KEYS);
+            const keys = this.LEGACY_INDEX_KEYS.flatMap(indexKey => (Array.isArray(indexes?.[indexKey]) ? indexes[indexKey] : []));
+            if (keys.length > 0 || this.LEGACY_INDEX_KEYS.some(indexKey => indexes?.[indexKey] !== undefined)) {
+                await chrome.storage.local.remove([...keys, ...this.LEGACY_INDEX_KEYS]);
+            }
+        } catch (err) {
+            console.warn('PersonDetailsService: legacy cache cleanup failed:', err.message);
         }
     }
 

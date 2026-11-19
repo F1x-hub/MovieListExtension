@@ -101,7 +101,9 @@ async function run() {
     const details = read('src/pages/movie-details/movie-details.js');
     assert.match(details, /const needsVoteRepair = resultKpRating <= 0\s*\|\| \(\(resultImdbRating <= 0 \|\| !hasImdbId\) && !imdbRecentlyChecked\)/,
         'a missing IMDb rating loads the hidden Kinopoisk page, which shows it');
-    assert.match(read('src/shared/services/TMDBService.js'), /append_to_response: 'credits,videos,content_ratings,images,external_ids'/,
+    // The main TV request also asks for every season's cast; both variants keep external_ids.
+    assert.match(read('src/shared/services/TMDBService.js'),
+        /append_to_response: options\.aggregateCredits\s*\?\s*'credits,aggregate_credits,videos,content_ratings,images,external_ids'\s*:\s*'credits,videos,content_ratings,images,external_ids'/,
         'TV details carry the IMDb ID');
 
     console.log('AnimeGo season matching tests passed');

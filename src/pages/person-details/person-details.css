@@ -411,6 +411,13 @@
     flex-shrink: 0;
 }
 
+/* Cards stretch to the tallest one (a series' episode line adds a row); the shared
+   `height: 100%` would keep each at its own height in this row. */
+.known-for-carousel .movie-card-component.mc-variant-search {
+    height: auto;
+    align-self: stretch;
+}
+
 .known-for-carousel .movie-card-component .mc-poster-container {
     aspect-ratio: 2 / 3;
     height: auto;
@@ -492,7 +499,25 @@
 /* ==========================================
    FILMOGRAPHY SECTION
    ========================================== */
-/* The filters are shared FilterChoice buttons (filter-controls.css); the page adds no skin. */
+/* Roles, media and sorting. The choices are shared FilterChoice buttons
+   (filter-controls.css); the page adds no skin, only the quiet counts inside. */
+.filmography-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--ui-color-border);
+}
+
+.filmography-toolbar__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+}
+
+.filmography-roles,
 .filmography-controls {
     display: flex;
     flex-wrap: wrap;
@@ -504,7 +529,30 @@
     min-width: 72px;
 }
 
-/* Category Sub-sections */
+.filmography-choice__count {
+    color: var(--ui-color-content-subtle);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+
+.filmography-sort {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.filmography-sort__label {
+    flex: 0 0 auto;
+    color: var(--ui-color-content-subtle);
+    font-size: var(--font-size-sm);
+}
+
+.filmography-sort .sort-control {
+    width: 220px;
+}
+
+/* The grid of the role tab in view */
 .filmography-categories-container {
     display: flex;
     flex-direction: column;
@@ -514,29 +562,62 @@
 .filmography-category {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 24px;
 }
 
-.filmography-category__header {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--ui-color-border);
-}
-
+/* The role tab already names the grid; screen readers still get a heading. */
 .filmography-category__title {
-    margin: 0;
-    color: var(--ui-color-content);
-    font-size: var(--font-size-lg);
-    font-weight: 600;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
-.filmography-category__count {
+/* What the person did on a title, under its year */
+.person-details-content .movie-card-component .person-credit {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 2px 0 0;
+    min-width: 0;
+}
+
+.person-credit__role {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    color: var(--ui-color-content-muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.person-credit__episodes {
     color: var(--ui-color-content-subtle);
-    font-size: var(--font-size-sm);
-    font-weight: 500;
+    font-size: var(--font-size-2xs);
+    line-height: 1.35;
     font-variant-numeric: tabular-nums;
+}
+
+/* «Анонс»: a text label beside the year, not a colour. */
+.person-credit__status {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 0 5px;
+    border: 1px solid var(--ui-color-border-hover);
+    border-radius: var(--radius-sm);
+    color: var(--ui-color-content);
+    font-size: var(--font-size-3xs);
+    font-weight: 600;
+    line-height: 1.6;
+    letter-spacing: 0.02em;
+    vertical-align: 1px;
 }
 
 .filmography-grid {
@@ -591,6 +672,11 @@
 
 .btn-show-more-filmography {
     align-self: center;
+}
+
+/* `.btn` sets a display, which would show the button after the last row. */
+.btn-show-more-filmography[hidden] {
+    display: none;
 }
 
 .filmography-empty-message {
@@ -673,6 +759,15 @@
     .filmography-grid {
         grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
         gap: 12px;
+    }
+
+    .filmography-sort {
+        width: 100%;
+    }
+
+    .filmography-sort .sort-control {
+        flex: 1 1 auto;
+        width: auto;
     }
 }
 

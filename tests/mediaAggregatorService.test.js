@@ -694,6 +694,53 @@ console.log('\n--- 6. Testing MediaAggregatorService async getMovieDetails flow 
     await emptyLogoAggregator.getMovieDetails(24682);
     assert.strictEqual(emptyLogoTmdbRequests, 1, 'Healed empty logo cache must remain warm');
 
+    // 6.6.3 A cast cached before the cast schema (a series' latest season only, the
+    // first 30 actors) is aggregated again once with every season, then stays warm.
+    const oldCastKp = { id: 24683, name: 'Old Cast Series', type: 'tv-series', isSeries: true, externalId: { tmdb: 13582 } };
+    const latestSeasonCast = ['Lead', 'Partner', 'Chief', 'Analyst'].map((name, order) => ({ id: order + 1, name, character: `${name} Role`, order }));
+    cachedMovies[24683] = MediaAggregatorService.aggregate(oldCastKp, {
+        tmdbId: 13582,
+        name: 'Old Cast Series',
+        type: 'tv',
+        logoUrl: '',
+        collection: null,
+        credits: { cast: latestSeasonCast, crew: [] }
+    });
+    assert.strictEqual(cachedMovies[24683]._meta.providers.tmdb.castSchemaVersion, MediaAggregatorService.CAST_SCHEMA_VERSION);
+    delete cachedMovies[24683]._meta.providers.tmdb.castSchemaVersion;
+    let oldCastTmdbRequests = 0;
+    const oldCastAggregator = new MediaAggregatorService({
+        kinopoiskService: { async getMovieById() { return oldCastKp; } },
+        tmdbService: {
+            isConfigured() { return true; },
+            async getMovieDetails(tmdbId, imdbId, mediaType) {
+                oldCastTmdbRequests++;
+                assert.strictEqual(tmdbId, 13582);
+                assert.strictEqual(mediaType, 'tv');
+                return {
+                    tmdbId,
+                    name: 'Old Cast Series',
+                    type: 'tv',
+                    logoUrl: '',
+                    collection: null,
+                    credits: { cast: [...latestSeasonCast, { id: 5, name: 'Ray Fisher', character: 'Henry Hays', episodeCount: 8, order: 4 }], crew: [] }
+                };
+            }
+        },
+        idMappingService: null,
+        movieCacheService: mockCacheService
+    });
+    const rebuiltCast = await oldCastAggregator.getMovieDetails(24683);
+    assert.strictEqual(oldCastTmdbRequests, 1, 'A cast cached before the cast schema is aggregated again once');
+    assert.ok(rebuiltCast.credits.cast.some(actor => actor.name === 'Ray Fisher' && actor.episodeCount === 8), 'The rebuilt cast lists every season');
+    assert.strictEqual(rebuiltCast._meta.providers.tmdb.castSchemaVersion, MediaAggregatorService.CAST_SCHEMA_VERSION);
+    await oldCastAggregator.getMovieDetails(24683);
+    assert.strictEqual(oldCastTmdbRequests, 1, 'The rebuilt cast stays warm');
+    // A newer client's cast in the shared cache is not rebuilt by this one.
+    cachedMovies[24683]._meta.providers.tmdb.castSchemaVersion = MediaAggregatorService.CAST_SCHEMA_VERSION + 1;
+    await oldCastAggregator.getMovieDetails(24683);
+    assert.strictEqual(oldCastTmdbRequests, 1, 'A newer cast schema stays warm');
+
     // 6.7 Pre-collection-schema hybrid cache refreshes once, then retains franchise metadata.
     const staleCollectionKp = {
         id: 258328,

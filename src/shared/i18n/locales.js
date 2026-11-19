@@ -2433,7 +2433,10 @@ export const locales = {
                 age_title: "Age when the film was released",
                 age_one: "y/o",
                 age_few: "y/o",
-                age_many: "y/o"
+                age_many: "y/o",
+                episodes_one: "episode",
+                episodes_few: "episodes",
+                episodes_many: "episodes"
             }
         },
         search: {
@@ -2679,6 +2682,9 @@ export const locales = {
             awards: "Awards",
             aliases: "Other names",
             show_more_aliases: "Show more"
+        },
+        character_names: {
+            original_title: "Original: {name}"
         },
         awards: {
             win: "Win",
@@ -5127,7 +5133,10 @@ export const locales = {
                 age_title: "Возраст на момент выхода фильма",
                 age_one: "год",
                 age_few: "года",
-                age_many: "лет"
+                age_many: "лет",
+                episodes_one: "эпизод",
+                episodes_few: "эпизода",
+                episodes_many: "эпизодов"
             }
         },
         search: {
@@ -5433,6 +5442,9 @@ export const locales = {
             awards: "Награды",
             aliases: "Другие имена",
             show_more_aliases: "Показать ещё"
+        },
+        character_names: {
+            original_title: "Оригинал: {name}"
         },
         awards: {
             win: "Победа",

@@ -382,6 +382,121 @@ console.log('\n--- 9. Testing Legacy Consumer Safety ---');
     console.log('  ✅ 9.1 Legacy consumers execute without exception');
 }
 
+// --- Test 9b: Kinopoisk actors TMDB leaves out follow its billing ---
+console.log('\n--- 9b. Testing Kinopoisk Actors Missing From TMDB ---');
+{
+    const keys = MediaAggregatorService.personNameKeys;
+    const shareKey = (a, b) => keys(a).some(key => keys(b).includes(key));
+    assert.ok(shareKey('Константин Хабенский', 'Konstantin Khabenskiy'), 'Transliteration meets the Cyrillic spelling');
+    assert.ok(shareKey('Константин Хабенский', 'Konstantin Khabensky'), 'An -y ending meets -ий');
+    assert.ok(shareKey('Евгений Ткачук', 'Yevgeni Tkachuk'), 'Vowel variants meet through the consonants');
+    assert.ok(shareKey('Юлия Снигирь', 'Yuliya Snigir'), 'Ю, я and the soft sign transliterate');
+    assert.ok(shareKey('Kar-Wai Wong', 'Wong Kar-wai'), 'Word order does not matter');
+    assert.ok(!shareKey('Chris Pratt', 'Christopher Pratt'), 'A different first name is a different person');
+    assert.deepStrictEqual(keys(''), [], 'No name, no key');
+
+    const tmdbData = {
+        credits: {
+            cast: [
+                { id: 1, name: 'Konstantin Khabenskiy', original_name: 'Konstantin Khabenskiy', character: 'Lead', order: 0 },
+                { id: 2, name: 'Ray Fisher', original_name: 'Ray Fisher', character: 'Victor Stone', order: 1 },
+                { id: 3, name: 'Second Lead', original_name: 'Second Lead', order: 2 },
+                { id: 4, name: 'Third Lead', original_name: 'Third Lead', order: 3 }
+            ]
+        }
+    };
+    const kpMovie = {
+        persons: [
+            // Already in TMDB: by Latin name, and by a transliteration without an enName.
+            { id: 501, name: 'Рэй Фишер', enName: 'Ray Fisher', enProfession: 'actor' },
+            { id: 502, name: 'Константин Хабенский', enName: null, enProfession: 'actor' },
+            // Missing from TMDB.
+            { id: 503, name: 'Иван Гость', enName: null, enProfession: 'actor', description: 'Сосед', photo: 'https://kp.example/503.jpg' },
+            { id: 504, name: 'Мария Эпизод', enName: 'Mariya Epizod', enProfession: 'actor' },
+            { id: 504, name: 'Мария Эпизод', enName: 'Mariya Epizod', enProfession: 'actor' },
+            { id: 505, name: 'Режиссёр', enName: 'Director Person', enProfession: 'director' }
+        ]
+    };
+    const fieldSources = {};
+    const result = MediaAggregatorService._normalizeUnifiedCredits(kpMovie, tmdbData, fieldSources);
+    assert.deepStrictEqual(result.cast.map(member => member.id), ['tmdb:1', 'tmdb:2', 'tmdb:3', 'tmdb:4', 'kp:503', 'kp:504'],
+        'TMDB billing comes first, then each Kinopoisk actor it lacks, once; crew stays out');
+    const guest = result.cast[4];
+    assert.strictEqual(guest.kpPersonId, 503);
+    assert.strictEqual(guest.name, 'Иван Гость');
+    assert.strictEqual(guest.character, 'Сосед');
+    assert.strictEqual(guest.photoUrl, 'https://kp.example/503.jpg');
+    assert.strictEqual(guest.providerSource, 'KP');
+    assert.ok(guest.order > 1000, 'Appended actors sort after every billing position');
+    assert.strictEqual(result.cast[1].kpPersonId, 501, 'A Latin-name match keeps enriching the TMDB entry');
+    assert.strictEqual(fieldSources['credits.cast'], 'hybrid');
+
+    const localized = MediaAggregatorService._normalizeUnifiedCredits({ persons: [
+        { id: 601, name: 'Юрий Никулин', enName: 'Yuri Nikulin', enProfession: 'actor', description: 'Балбес' },
+        { id: 602, name: 'Майкл Дж. Фокс', enName: 'Michael J. Fox', enProfession: 'actor', description: 'Marty McFly' }
+    ] }, { credits: { cast: [
+        { id: 1, name: 'Yuri Nikulin', original_name: 'Yuri Nikulin', character: 'Balbes', order: 0 },
+        { id: 2, name: 'Michael J. Fox', original_name: 'Michael J. Fox', character: 'Marty McFly', order: 1 },
+        { id: 3, name: 'C', original_name: 'C', order: 2 },
+        { id: 4, name: 'D', original_name: 'D', order: 3 }
+    ] } }).cast;
+    assert.deepStrictEqual(localized.slice(0, 2).map(actor => [actor.character, actor.characterLocal]), [['Balbes', 'Балбес'], ['Marty McFly', null]],
+        'Kinopoisk’s Cyrillic character is kept for a Russian interface; a Latin one adds nothing');
+
+    const longCast = {
+        credits: { cast: Array.from({ length: 160 }, (_, i) => ({ id: i + 1, name: `Actor ${i}`, original_name: `Actor ${i}`, order: i })) }
+    };
+    const bounded = MediaAggregatorService._normalizeUnifiedCredits({ persons: [{ id: 9, name: 'Extra', enProfession: 'actor' }] }, longCast);
+    assert.strictEqual(bounded.cast.length, MediaAggregatorService.MAX_CAST, 'The cast keeps 150 people, not 30');
+    assert.strictEqual(bounded.cast[149].id, 'tmdb:150');
+
+    const series = { credits: { cast: [
+        { id: 7, name: 'A', original_name: 'A', episodeCount: 8, order: 0 },
+        { id: 8, name: 'B', original_name: 'B', episodeCount: 1, order: 1 },
+        { id: 9, name: 'C', original_name: 'C', order: 2 },
+        { id: 10, name: 'D', original_name: 'D', order: 3 }
+    ] } };
+    const seriesCast = MediaAggregatorService._normalizeUnifiedCredits({}, series).cast;
+    assert.deepStrictEqual(seriesCast.map(member => member.episodeCount), [8, 1, null, null], 'Episode counts reach the film page');
+
+    console.log('  ✅ 9b.1 Kinopoisk actors missing from TMDB follow its billing, once, without duplicates');
+}
+
+// --- Test 9c: A series' cast covers every season ---
+console.log('\n--- 9c. Testing TMDB Series Cast From Every Season ---');
+{
+    const { default: TMDBService } = await import('../src/shared/services/TMDBService.js');
+    const tmdb = new TMDBService();
+    const tvCast = tmdb.normalizeTvCast({
+        credits: { cast: [{ id: 40, name: 'Latest Season Only', original_name: 'Latest Season Only', character: 'Detective', order: 0 }] },
+        aggregate_credits: { cast: [
+            { id: 10, name: 'Мэттью', original_name: 'Matthew', total_episode_count: 9, order: 12, roles: [{ character: 'Rust Cohle', episode_count: 9 }] },
+            { id: 11, name: 'Ray Fisher', original_name: 'Ray Fisher', total_episode_count: 8, order: 41, profile_path: '/ray.jpg', roles: [
+                { character: 'Henry Hays', episode_count: 8 }, { character: 'Henry Hays', episode_count: 1 }, { character: '', episode_count: 1 }
+            ] },
+            { id: 12, name: 'Guest', original_name: 'Guest', total_episode_count: 1, order: 3, roles: [{ character: 'Barman', episode_count: 1 }, { character: 'Voice', episode_count: 1 }] }
+        ] }
+    });
+    assert.deepStrictEqual(tvCast.map(member => member.id), [10, 11, 12], 'Every season’s cast, most episodes first');
+    assert.deepStrictEqual(tvCast.map(member => member.order), [0, 1, 2], 'The list order becomes the billing order');
+    assert.strictEqual(tvCast[1].character, 'Henry Hays', 'Repeated characters are named once');
+    assert.strictEqual(tvCast[2].character, 'Barman / Voice', 'Several characters are joined');
+    assert.strictEqual(tvCast[1].episodeCount, 8);
+    assert.strictEqual(tvCast[1].photoUrl, 'https://image.tmdb.org/t/p/w185/ray.jpg');
+    const latestOnly = tmdb.normalizeTvCast({ credits: { cast: [{ id: 40, name: 'Latest', character: 'Detective', order: 0 }] } });
+    assert.deepStrictEqual(latestOnly.map(member => member.id), [40], 'Without aggregate credits the latest season is used');
+
+    const urls = [];
+    tmdb._fetchWithRotation = async (url) => {
+        urls.push(new URL(url));
+        return { ok: true, json: async () => ({ id: 1, name: 'Series', overview: 'Text', images: { logos: [{ file_path: '/logo.png', iso_639_1: 'ru', width: 800, height: 200 }] } }) };
+    };
+    await tmdb._getTvDetails(1);
+    assert.strictEqual(urls[0].searchParams.get('append_to_response'), 'credits,aggregate_credits,videos,content_ratings,images,external_ids',
+        'The main series request asks for every season’s cast');
+    console.log('  ✅ 9c.1 A series lists the cast of every season with characters and episode counts');
+}
+
 // --- Test 10: Zero Network Requests Invariant Assertion ---
 console.log('\n--- 10. Testing Zero Network Requests Invariant ---');
 {

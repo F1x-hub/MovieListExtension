@@ -138,6 +138,75 @@ const ssrSearchHtml = `<script>window.Ya.__ssr_initial_data = ${JSON.stringify({
 }
 
 {
+    // A film page also gives the film's year and whether it is a series.
+    const service = new KinopoiskPersonHtmlService({ fetchImpl: async () => { throw new Error('No network expected'); } });
+    const ssr = state => `<script>window.Ya.__ssr_initial_data = ${JSON.stringify({ apolloState: state })};</script>`;
+    assert.deepStrictEqual(service.parseMovieDetailsHtml(ssr({ 'Film:448': { __typename: 'Film', productionYear: 1994 } }), 448), { year: 1994, mediaType: 'movie' });
+    assert.deepStrictEqual(service.parseMovieDetailsHtml(ssr({ 'MiniSeries:77': { __typename: 'MiniSeries', releaseYears: [{ start: 2019 }] } }), 77), { year: 2019, mediaType: 'tv' });
+    assert.deepStrictEqual(service.parseMovieDetailsHtml('<title>Настоящий детектив (сериал, 2014 – ...) — смотреть онлайн — Кинопоиск</title>', 1), { year: 2014, mediaType: 'tv' },
+        'Without SSR state the page title gives year and type');
+    assert.deepStrictEqual(service.parseMovieDetailsHtml('<title>Бегущий по лезвию 2049 (2017) — Кинопоиск</title>', 2), { year: 2017, mediaType: 'movie' },
+        'A number in the title itself is not the year');
+    assert.deepStrictEqual(service.parseMovieDetailsHtml('<p>nothing</p>', 3), { year: null, mediaType: null });
+
+    const personState = {
+        'Person:1': { id: 1, name: 'P', 'filmographyRelations:{"roleSlugs":["ACTOR"]}': { items: [
+            { movie: { __ref: 'MiniSeries:5' } }, { movie: { __ref: 'TvShow:6' } }, { movie: { __ref: 'Film:7' } }
+        ] } },
+        'MiniSeries:5': { __typename: 'MiniSeries', id: 5, title: { russian: 'Мини' }, releaseYears: [{ start: 2020 }] },
+        'TvShow:6': { __typename: 'TvShow', id: 6, title: { russian: 'Шоу' } },
+        'Film:7': { __typename: 'Film', id: 7, title: { russian: 'Фильм' }, productionYear: 2001 }
+    };
+    assert.deepStrictEqual(service.parsePersonPageHtml(ssr(personState), 1).items.map(item => item.providerMediaType), ['tv', 'tv', 'movie'],
+        'Mini-series and TV shows are series on a person page too');
+
+    const store = {};
+    globalThis.chrome = { storage: { local: {
+        async get(keys) { return Object.fromEntries([].concat(keys).map(key => [key, store[key]])); },
+        async set(items) { Object.assign(store, JSON.parse(JSON.stringify(items))); },
+        async remove(keys) { for (const key of [].concat(keys)) delete store[key]; }
+    } } };
+    const fetched = [];
+    const withDetails = new KinopoiskPersonHtmlService({ fetchImpl: async (url) => {
+        const id = Number(url.match(/\/film\/(\d+)\//)[1]);
+        fetched.push(id);
+        return { ok: true, text: async () => `<img class="film-poster" src="https://avatars.example/${id}.jpg"><title>Фильм (${2000 + id}) — Кинопоиск</title>` };
+    } });
+    // An entry kept before details existed, and one that has them.
+    store[withDetails.MOVIE_POSTER_CACHE_PREFIX + 5] = { posterUrl: 'https://avatars.example/old-5.jpg', timestamp: Date.now() };
+    store[withDetails.MOVIE_POSTER_CACHE_PREFIX + 6] = { posterUrl: 'https://avatars.example/6.jpg', year: 2006, mediaType: 'tv', detailsVersion: 1, timestamp: Date.now() };
+    const seen = new Map();
+    const calls = [];
+    await withDetails.getMoviePostersByIds([5, 6, 7], { withDetails: true, onPoster: (id, poster, details) => {
+        calls.push([id, poster]);
+        seen.set(id, [poster, details]);
+    } });
+    assert.deepStrictEqual(fetched, [7, 5], 'A film without a poster is read first; an entry without details is read again after it; one with them is not');
+    assert.deepStrictEqual(calls.slice(0, 2), [[5, 'https://avatars.example/old-5.jpg'], [6, 'https://avatars.example/6.jpg']], 'Cached posters show before any page is read');
+    assert.deepStrictEqual(seen.get(6), ['https://avatars.example/6.jpg', { year: 2006, mediaType: 'tv' }]);
+    assert.deepStrictEqual(seen.get(7), ['https://avatars.example/7.jpg', { year: 2007, mediaType: 'movie' }]);
+    assert.strictEqual(store[withDetails.MOVIE_POSTER_CACHE_PREFIX + 5].year, 2005, 'The refreshed entry keeps the year');
+    assert.strictEqual(store[withDetails.MOVIE_POSTER_CACHE_PREFIX + 5].detailsVersion, 1);
+
+    // A real film page without a poster is kept with its year; a page with neither is retried.
+    const noPoster = new KinopoiskPersonHtmlService({ fetchImpl: async (url) => ({
+        ok: true,
+        text: async () => (url.includes('/film/9/') ? '<title>Короткий метр (2011) — Кинопоиск</title>' : '<p>Подтвердите, что вы не робот</p>')
+    }) });
+    assert.strictEqual(await noPoster.getMoviePosterById(9, { reportFailure: true, withDetails: true }), null);
+    assert.strictEqual(store[noPoster.MOVIE_POSTER_CACHE_PREFIX + 9].year, 2011, 'The film without a poster is cached with its year');
+    await assert.rejects(noPoster.getMoviePosterById(10, { reportFailure: true, withDetails: true }), /no valid poster/, 'A check page is not cached');
+    assert.strictEqual(store[noPoster.MOVIE_POSTER_CACHE_PREFIX + 10], undefined);
+
+    const plain = new KinopoiskPersonHtmlService({ fetchImpl: async () => { throw new Error('No network expected'); } });
+    store[plain.MOVIE_POSTER_CACHE_PREFIX + 8] = { posterUrl: 'https://avatars.example/8.jpg', timestamp: Date.now() };
+    assert.strictEqual((await plain.getMoviePostersByIds([8])).get(8), 'https://avatars.example/8.jpg', 'Without withDetails an old entry is still a hit');
+    delete globalThis.chrome;
+
+    console.log('  ✅ Film pages give year and type (SSR or title); old poster entries are read again only when details are wanted');
+}
+
+{
     let fetchCount = 0;
     const service = new KinopoiskPersonHtmlService({ fetchImpl: async (url) => {
         fetchCount++;

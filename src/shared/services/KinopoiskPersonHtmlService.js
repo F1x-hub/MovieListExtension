@@ -16,11 +16,17 @@ class KinopoiskPersonHtmlService {
         this.movieSearchBlocked = false;
         this.moviePosterCache = new Map();
         this.moviePosterInFlight = new Map();
+        // Year and type read from the same film pages: { year, mediaType }.
+        this.movieDetailsCache = new Map();
         // v3 invalidates previous promo/og:image results after switching to
-        // exact `img.film-poster` extraction for every native movie ID.
+        // exact `img.film-poster` extraction for every native movie ID. An entry
+        // with `detailsVersion` also keeps the film's year and type.
         this.MOVIE_POSTER_CACHE_PREFIX = 'kp_movie_poster_html_v3_';
         this.MOVIE_POSTER_CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
+        this.MOVIE_DETAILS_VERSION = 1;
     }
+
+    static SERIES_TYPENAMES = new Set(['TvSeries', 'MiniSeries', 'TvShow']);
 
     async getPersonFilmography(names, options = {}) {
         const candidateNames = Array.isArray(names)
@@ -80,7 +86,10 @@ class KinopoiskPersonHtmlService {
         const numericId = Number(kinopoiskId);
         if (!Number.isSafeInteger(numericId) || numericId <= 0) return null;
 
-        if (this.moviePosterCache.has(numericId)) {
+        // `withDetails` also wants the film's year and type: an entry cached before
+        // they were kept is read again once.
+        const known = !options.withDetails || this.movieDetailsCache.has(numericId);
+        if (this.moviePosterCache.has(numericId) && known) {
             return this.moviePosterCache.get(numericId);
         }
         if (this.moviePosterInFlight.has(numericId)) {
@@ -89,7 +98,8 @@ class KinopoiskPersonHtmlService {
 
         const request = (async () => {
             const cached = options.posterCache?.get(numericId) || await this._readMoviePosterCache(numericId);
-            if (cached.hit) {
+            if (cached.details) this.movieDetailsCache.set(numericId, cached.details);
+            if (cached.hit && (!options.withDetails || cached.details)) {
                 this.moviePosterCache.set(numericId, cached.posterUrl);
                 return cached.posterUrl;
             }
@@ -102,9 +112,15 @@ class KinopoiskPersonHtmlService {
                 );
                 if (options.signal?.aborted) throw options.signal.reason;
                 const posterUrl = this.parseMoviePosterHtml(html, numericId);
-                if (!posterUrl && options.reportFailure) throw new Error('Movie page has no valid poster');
+                const details = this.parseMovieDetailsHtml(html, numericId);
+                this.movieDetailsCache.set(numericId, details);
+                // A page with neither a poster nor a year is not a film page (a check
+                // page, for one) and is tried again; a real film may have no poster.
+                if (!posterUrl && !details.year && !details.mediaType && options.reportFailure) {
+                    throw new Error('Movie page has no valid poster');
+                }
                 this.moviePosterCache.set(numericId, posterUrl);
-                await this._writeMoviePosterCache(numericId, posterUrl);
+                await this._writeMoviePosterCache(numericId, posterUrl, details);
                 return posterUrl;
             } catch (error) {
                 console.warn('[KinopoiskPersonHtmlService] Movie poster page failed:', {
@@ -142,27 +158,46 @@ class KinopoiskPersonHtmlService {
                 for (const id of ids) {
                     const entry = entries[this.MOVIE_POSTER_CACHE_PREFIX + id];
                     posterCache.set(id, entry && Date.now() - entry.timestamp < this.MOVIE_POSTER_CACHE_TTL
-                        ? { hit: true, posterUrl: this._normalizeArtworkUrl(entry.posterUrl) }
+                        ? { hit: true, posterUrl: this._normalizeArtworkUrl(entry.posterUrl), details: this._readCachedMovieDetails(entry) }
                         : { hit: false });
                 }
             } catch { /* Per-ID reads remain available if storage failed. */ }
         }
+        // A cached poster shows at once. With `withDetails`, a poster cached before the
+        // year and type were kept is read again, after the films with no poster yet.
+        const queue = [];
+        const refresh = [];
+        for (const id of ids) {
+            const cached = posterCache.get(id);
+            if (!cached?.hit) {
+                queue.push(id);
+                continue;
+            }
+            this.moviePosterCache.set(id, cached.posterUrl);
+            if (cached.details) this.movieDetailsCache.set(id, cached.details);
+            result.set(id, cached.posterUrl);
+            options.onPoster?.(id, cached.posterUrl, cached.details || null);
+            if (options.withDetails && !cached.details) refresh.push(id);
+        }
+        queue.push(...refresh);
         let nextIndex = 0;
         let failed = false;
-        const workerCount = Math.min(2, ids.length);
+        const workerCount = Math.min(2, queue.length);
         const worker = async () => {
-            while (nextIndex < ids.length && !options.signal?.aborted) {
-                const id = ids[nextIndex++];
+            while (nextIndex < queue.length && !options.signal?.aborted) {
+                const id = queue[nextIndex++];
                 let poster;
                 try {
                     poster = await this.getMoviePosterById(id, { ...options, posterCache });
                 } catch {
                     failed = true;
+                    // A page without a poster can still give the film's year and type.
+                    if (this.movieDetailsCache.get(id)) options.onPoster?.(id, null, this.movieDetailsCache.get(id));
                     continue;
                 }
                 if (options.signal?.aborted) throw options.signal.reason;
                 result.set(id, poster);
-                options.onPoster?.(id, poster);
+                options.onPoster?.(id, poster, this.movieDetailsCache.get(id) || null);
             }
         };
 
@@ -485,13 +520,9 @@ class KinopoiskPersonHtmlService {
         }
 
         const state = this._extractSsrState(html);
-        const numericId = Number(kinopoiskId);
         const apolloState = state?.apolloState || {};
-        const movieKeys = Number.isSafeInteger(numericId) && numericId > 0
-            ? [`Film:${numericId}`, `TvSeries:${numericId}`]
-            : Object.keys(apolloState).filter(key => /^(Film|TvSeries):\d+$/.test(key));
 
-        for (const key of movieKeys) {
+        for (const key of this._movieStateKeys(apolloState, kinopoiskId)) {
             const movie = apolloState[key];
             const posterUrl = this._readPosterUrl(movie?.gallery?.posters?.vertical)
                 || this._readPosterUrl(movie?.poster)
@@ -500,6 +531,64 @@ class KinopoiskPersonHtmlService {
         }
 
         return null;
+    }
+
+    /**
+     * The film's year and whether it is a series, from a public Kinopoisk film page:
+     * its SSR state first, then the page title («Настоящий детектив (сериал, 2014 – ...)»).
+     * @param {string} html
+     * @param {number|string|null} kinopoiskId
+     * @returns {{year: number|null, mediaType: 'movie'|'tv'|null}}
+     */
+    parseMovieDetailsHtml(html, kinopoiskId = null) {
+        const details = { year: null, mediaType: null };
+        if (typeof html !== 'string' || html.length === 0) return details;
+
+        const apolloState = this._extractSsrState(html)?.apolloState || {};
+        for (const key of this._movieStateKeys(apolloState, kinopoiskId)) {
+            const movie = apolloState[key];
+            if (!movie) continue;
+            const typename = movie.__typename || key.split(':')[0];
+            details.mediaType = KinopoiskPersonHtmlService.SERIES_TYPENAMES.has(typename) ? 'tv' : 'movie';
+            details.year = this._readMovieYear(movie);
+            break;
+        }
+
+        const title = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || '';
+        const parenthetical = title.match(/\(([^()]*\b(?:18|19|20|21)\d{2}\b[^()]*)\)/)?.[1] || '';
+        if (!details.year) {
+            const year = Number(parenthetical.match(/\b((?:18|19|20|21)\d{2})\b/)?.[1]);
+            details.year = Number.isInteger(year) ? year : null;
+        }
+        if (!details.mediaType && parenthetical) {
+            details.mediaType = /сериал|series|тв-шоу|tv show/i.test(parenthetical) ? 'tv' : 'movie';
+        }
+        return details;
+    }
+
+    /**
+     * Apollo keys of the film itself on its page, in the order they are tried.
+     * @private
+     */
+    _movieStateKeys(apolloState, kinopoiskId) {
+        const numericId = Number(kinopoiskId);
+        const typenames = ['Film', ...KinopoiskPersonHtmlService.SERIES_TYPENAMES];
+        return Number.isSafeInteger(numericId) && numericId > 0
+            ? typenames.map(typename => `${typename}:${numericId}`)
+            : Object.keys(apolloState).filter(key => new RegExp(`^(${typenames.join('|')}):\\d+$`).test(key));
+    }
+
+    /**
+     * Year and type kept with a cached poster, when the entry has them.
+     * @private
+     */
+    _readCachedMovieDetails(entry) {
+        if (!entry || entry.detailsVersion !== this.MOVIE_DETAILS_VERSION) return null;
+        const year = Number(entry.year);
+        return {
+            year: Number.isInteger(year) && year > 0 ? year : null,
+            mediaType: entry.mediaType === 'tv' || entry.mediaType === 'movie' ? entry.mediaType : null
+        };
     }
 
     _readHtmlAttribute(tag, attributeName) {
@@ -541,7 +630,8 @@ class KinopoiskPersonHtmlService {
             }
             return {
                 hit: true,
-                posterUrl: this._normalizeArtworkUrl(entry.posterUrl)
+                posterUrl: this._normalizeArtworkUrl(entry.posterUrl),
+                details: this._readCachedMovieDetails(entry)
             };
         } catch (error) {
             console.warn('[KinopoiskPersonHtmlService] Movie poster cache read failed:', error.message);
@@ -549,13 +639,18 @@ class KinopoiskPersonHtmlService {
         }
     }
 
-    async _writeMoviePosterCache(kinopoiskId, posterUrl) {
+    async _writeMoviePosterCache(kinopoiskId, posterUrl, details = null) {
         if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
         const storageKey = `${this.MOVIE_POSTER_CACHE_PREFIX}${kinopoiskId}`;
         try {
             await chrome.storage.local.set({
                 [storageKey]: {
                     posterUrl: posterUrl || null,
+                    ...(details ? {
+                        year: details.year || null,
+                        mediaType: details.mediaType || null,
+                        detailsVersion: this.MOVIE_DETAILS_VERSION
+                    } : {}),
                     timestamp: Date.now()
                 }
             });
@@ -838,7 +933,7 @@ class KinopoiskPersonHtmlService {
                 seen.add(movieId);
                 items.push({
                     providerMediaId: movieId,
-                    providerMediaType: movie.__typename === 'TvSeries' ? 'tv' : 'movie',
+                    providerMediaType: KinopoiskPersonHtmlService.SERIES_TYPENAMES.has(movie.__typename) ? 'tv' : 'movie',
                     kinopoiskId: movieId,
                     name: movie.title?.russian || movie.title?.original || '',
                     originalName: movie.title?.original || null,

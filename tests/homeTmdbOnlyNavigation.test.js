@@ -320,7 +320,7 @@ const cachedLocally = new MediaAggregatorService({
     movieCacheService: { getCachedMovie: async () => assert.fail('A resolved local read needs no Firestore'), cacheMovie: async () => {} }
 });
 const verifiedLocalCopy = { kinopoiskId: 482, name: 'История игрушек', tmdbId: 999, lastUpdated: new Date().toISOString(),
-    identity: { status: 'VERIFIED' }, _meta: { providers: { kp: { relationsSchemaVersion: 1 }, tmdb: { logoChecked: true, logoSelectionVersion: 99, collectionChecked: true, collectionCheckVersion: 1 } } },
+    identity: { status: 'VERIFIED' }, _meta: { providers: { kp: { relationsSchemaVersion: 1 }, tmdb: { logoChecked: true, logoSelectionVersion: 99, collectionChecked: true, collectionCheckVersion: 1, castSchemaVersion: MediaAggregatorService.CAST_SCHEMA_VERSION } } },
     sequelsAndPrequels: [], similarMovies: [] };
 await cachedLocally.getMovieDetails(482, { ...homeRouteOptions, prefetchedCachedMovie: verifiedLocalCopy, prefetchedCacheResolved: true });
 assert.equal(earlyTmdbCalls, 0, 'A film answered by the local cache spends no TMDB request');

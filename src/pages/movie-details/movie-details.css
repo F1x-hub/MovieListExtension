@@ -1770,7 +1770,8 @@
     overflow: hidden;
 }
 
-.actor-age {
+.actor-age,
+.actor-episodes {
     font-family: var(--font-family);
     font-size: var(--font-size-2xs);
     color: var(--theme-text-secondary, var(--theme-text-muted));

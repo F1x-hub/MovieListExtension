@@ -8,7 +8,8 @@
  * - Safe biography rendering with collapse/expand toggle (XSS-safe textContent)
  * - Sanitized facts section with expandable toggle
  * - Known For section using MovieCard carousel (max 10, verified KP IDs only)
- * - Filmography section with media filters (All/Movies/Series) and category-specific +20 pagination
+ * - Filmography: one role at a time (main role first) with media filters, sorting,
+ *   the character or job and episode count on every card, and paging by whole rows
  * - Delegated CSP-safe event handling
  */
 
@@ -32,6 +33,23 @@ function createAppError(code, options = {}) {
 }
 
 class PersonDetailsPageController {
+    static FILMOGRAPHY_CATEGORIES = ['acting', 'directing', 'writing', 'production', 'music', 'self', 'other'];
+    static FILMOGRAPHY_SORTS = ['newest', 'oldest', 'rating', 'popular'];
+    static FILMOGRAPHY_SORT_KEY = 'personFilmographySortV1';
+    // Rows shown at first and added by «Показать ещё»; the cards per row follow the grid.
+    static FILMOGRAPHY_ROWS = 4;
+    static FALLBACK_COLUMNS = 6;
+    // «Self - Host», «Himself», «Играет самого себя»: the words before the actual part.
+    static SELF_PREFIX = /^\s*(?:self|him\s*self|her\s*self|them\s*sel(?:f|ves)|(?:играет\s+)?(?:сам(?:ого|у|а)?|самих)\s+себя)\b\s*(?:[-–—:,]\s*)?/i;
+    // The job a role tab already names, so a card does not repeat it.
+    static CATEGORY_JOBS = {
+        acting: ['actor', 'actress', 'acting'],
+        directing: ['director', 'режиссер', 'режиссёр'],
+        writing: ['writer', 'сценарист'],
+        production: ['producer', 'продюсер'],
+        music: ['composer', 'композитор', 'original music composer', 'music']
+    };
+
     constructor() {
         this.i18n = window.i18n || new I18n();
         this.personDetailsService = typeof window.PersonDetailsService !== 'undefined'
@@ -51,15 +69,17 @@ class PersonDetailsPageController {
         this.currentPerson = null;
         this.personRequestController = null;
         window.addEventListener?.('pagehide', () => this.personRequestController?.abort());
-        this.activeMediaFilter = 'all'; // 'all' | 'movie' | 'tv'
-        this.categoryVisibleCounts = {
-            acting: 20,
-            directing: 20,
-            writing: 20,
-            production: 20,
-            music: 20,
-            other: 20
-        };
+        // Filmography view: the role tab, 'all' | 'movie' | 'tv', the order and how many rows show.
+        this.activeRole = null;
+        this.activeMediaFilter = 'all';
+        this.activeSort = this.readStoredSort();
+        this.filmographyRows = PersonDetailsPageController.FILMOGRAPHY_ROWS;
+        this.filmographyColumns = 0;
+        this.filmographySortControl = null;
+        this.filmographyResizeObserver = null;
+        this.filmographyLayoutFrame = null;
+        // Character names in Russian in the Russian interface (CharacterNameTranslator).
+        this.characterTranslation = null;
 
         this.isBioExpanded = false;
         this.isFactsExpanded = false;
@@ -318,6 +338,9 @@ class PersonDetailsPageController {
                 } else if (action === 'filter-filmography') {
                     const filter = btn.getAttribute('data-filter') || 'all';
                     this.setMediaFilter(filter);
+                } else if (action === 'filter-filmography-role') {
+                    const role = btn.getAttribute('data-role');
+                    if (role) this.setFilmographyRole(role);
                 } else if (action === 'show-more-category') {
                     const category = btn.getAttribute('data-category');
                     if (category) {
@@ -366,6 +389,13 @@ class PersonDetailsPageController {
         const primaryName = person.name || person.originalName || 'Person';
         document.title = `${primaryName} — Movie Rating Extension`;
 
+        // A new person starts on their main role, all media and the first rows.
+        this.filmographySortControl?.destroy?.();
+        this.filmographySortControl = null;
+        this.activeRole = null;
+        this.activeMediaFilter = 'all';
+        this.filmographyRows = PersonDetailsPageController.FILMOGRAPHY_ROWS;
+
         const heroHtml = this.renderHero(person);
         const bioHtml = this.renderBiography(person);
         const factsHtml = this.renderFacts(person);
@@ -384,10 +414,29 @@ class PersonDetailsPageController {
             ${factsHtml}
         `;
 
+        // Before the cards mount: the previous render's translation must not reach them.
+        this.setupCharacterTranslation();
         // Post-render: Mount MovieCard instances in KnownFor and Filmography
         this.refreshPlaceholderPosters(person);
         this.mountMovieCards(person);
+        this.bindFilmographyControls();
         if (typeof Utils !== 'undefined') Utils.bindImageReveal?.(this.personContainer, '.person-hero__portrait');
+    }
+
+    /**
+     * Character names in Russian by themselves in the Russian interface: TMDB and
+     * Kinopoisk keep foreign characters in their original spelling, and Chrome's
+     * on-device translator shows them in Russian (CharacterNameTranslator).
+     */
+    setupCharacterTranslation() {
+        this.characterTranslation?.destroy();
+        this.characterTranslation = null;
+        const Translator = typeof window !== 'undefined' ? window.CharacterNameTranslator : null;
+        if (typeof Translator?.shared !== 'function' || this.i18n.currentLocale !== 'ru') return;
+        this.characterTranslation = Translator.shared().autoTranslate({
+            elements: () => this.personContainer?.querySelectorAll?.('.person-credit__role') || [],
+            originalLabel: name => this.i18n.get('character_names.original_title').replace('{name}', name)
+        });
     }
 
     /**
@@ -749,18 +798,11 @@ class PersonDetailsPageController {
      * @returns {string}
      */
     renderFilmography(person) {
-        const filmography = person.filmography || {};
-        const categories = ['acting', 'directing', 'writing', 'production', 'music', 'other'];
+        const state = this.getFilmographyState(person);
 
         // Artwork and navigation are separate concerns. Keep provider-backed items visible
         // even when TMDB -> KP mapping is unresolved.
-        let totalRenderableCount = 0;
-        for (const cat of categories) {
-            const items = Array.isArray(filmography[cat]) ? filmography[cat].filter(i => this.isRenderableFilmographyItem(i)) : [];
-            totalRenderableCount += items.length;
-        }
-
-        if (totalRenderableCount === 0) {
+        if (state.roles.length === 0) {
             return `
                 <section class="person-section" id="filmographySection" aria-labelledby="filmographyHeading">
                     <div class="person-section__header">
@@ -773,23 +815,44 @@ class PersonDetailsPageController {
             `;
         }
 
+        const count = value => `<span class="filmography-choice__count" data-count>${value}</span>`;
+        const roleChoices = state.roles.length > 1 ? `
+            <div class="filmography-roles filter-choices" role="group" aria-label="${this.escapeHtml(this.i18n.get('person_details.role_filter'))}">
+                ${state.roles.map(role => `
+                <button type="button" class="filmography-role-choice filter-choice ${role.category === state.role ? 'is-active' : ''}" aria-pressed="${role.category === state.role}" data-action="filter-filmography-role" data-role="${role.category}">
+                    <span>${this.escapeHtml(this.getFilmographyRoleLabel(role.category))}</span>${count(role.items.length)}
+                </button>
+                `).join('')}
+            </div>
+        ` : '';
+        const mediaChoice = (filter, labelKey) => `
+                    <button type="button" class="filmography-filter-pill filter-choice ${state.mediaFilter === filter ? 'active is-active' : ''}" aria-pressed="${state.mediaFilter === filter}" data-action="filter-filmography" data-filter="${filter}"${filter !== 'all' && state.mediaCounts[filter] === 0 ? ' disabled' : ''}>
+                        <span>${this.escapeHtml(this.i18n.get(labelKey))}</span>${count(state.mediaCounts[filter])}
+                    </button>`;
+        const sortOptions = this.getFilmographySortOptions(person)
+            .map(sort => `<option value="${sort}"${sort === state.sort ? ' selected' : ''}>${this.escapeHtml(this.i18n.get(`person_details.sort_${sort}`))}</option>`)
+            .join('');
+
         return `
-            <section class="person-section" id="filmographySection" aria-labelledby="filmographyHeading">
+            <section class="person-section person-filmography" id="filmographySection" aria-labelledby="filmographyHeading">
                 <div class="person-section__header">
                     <h2 class="person-section__title" id="filmographyHeading">
                         <span>${this.escapeHtml(this.i18n.get('person_details.filmography'))}</span>
-                        <span class="person-section__count">${totalRenderableCount}</span>
+                        <span class="person-section__count" id="filmographyTotal">${state.total}</span>
                     </h2>
-                    <div class="filmography-controls filter-choices" role="group" aria-label="${this.escapeHtml(this.i18n.get('person_details.filmography'))}">
-                        <button type="button" class="filmography-filter-pill filter-choice ${this.activeMediaFilter === 'all' ? 'active is-active' : ''}" aria-pressed="${this.activeMediaFilter === 'all'}" data-action="filter-filmography" data-filter="all">
-                            ${this.escapeHtml(this.i18n.get('person_details.all_media'))}
-                        </button>
-                        <button type="button" class="filmography-filter-pill filter-choice ${this.activeMediaFilter === 'movie' ? 'active is-active' : ''}" aria-pressed="${this.activeMediaFilter === 'movie'}" data-action="filter-filmography" data-filter="movie">
-                            ${this.escapeHtml(this.i18n.get('person_details.movies_media'))}
-                        </button>
-                        <button type="button" class="filmography-filter-pill filter-choice ${this.activeMediaFilter === 'tv' ? 'active is-active' : ''}" aria-pressed="${this.activeMediaFilter === 'tv'}" data-action="filter-filmography" data-filter="tv">
-                            ${this.escapeHtml(this.i18n.get('person_details.series_media'))}
-                        </button>
+                </div>
+                <div class="filmography-toolbar">
+                    ${roleChoices}
+                    <div class="filmography-toolbar__row">
+                        <div class="filmography-controls filter-choices" role="group" aria-label="${this.escapeHtml(this.i18n.get('person_details.media_filter'))}">
+                            ${mediaChoice('all', 'person_details.all_media')}
+                            ${mediaChoice('movie', 'person_details.movies_media')}
+                            ${mediaChoice('tv', 'person_details.series_media')}
+                        </div>
+                        <label class="filmography-sort">
+                            <span class="filmography-sort__label">${this.escapeHtml(this.i18n.get('person_details.sort_label'))}</span>
+                            <select class="filmography-sort__select" id="filmographySort">${sortOptions}</select>
+                        </label>
                     </div>
                 </div>
                 <div class="filmography-categories-container" id="filmographyCategoriesContainer">
@@ -800,59 +863,14 @@ class PersonDetailsPageController {
     }
 
     /**
-     * Render all active Filmography Categories based on current filter & pagination.
+     * The grid of the role tab in view, with its «show more» button. Cards are
+     * mounted into it by syncFilmographyGrid.
      * @param {Object} person
      * @returns {string}
      */
     renderFilmographyCategories(person) {
-        const filmography = person.filmography || {};
-        const categoryOrder = ['acting', 'directing', 'writing', 'production', 'music', 'other'];
-        const labelMap = {
-            acting: this.i18n.get('person_details.acting'),
-            directing: this.i18n.get('person_details.directing'),
-            writing: this.i18n.get('person_details.writing'),
-            production: this.i18n.get('person_details.production'),
-            music: this.i18n.get('person_details.music'),
-            other: this.i18n.get('person_details.other')
-        };
-
-        const sections = [];
-
-        for (const category of categoryOrder) {
-            let items = Array.isArray(filmography[category]) ? filmography[category] : [];
-
-            // Keep valid provider items visible even when navigation mapping is unresolved.
-            items = items.filter(i => this.isRenderableFilmographyItem(i));
-
-            // Apply media filter if not 'all'
-            if (this.activeMediaFilter !== 'all') {
-                items = items.filter(i => (i.providerMediaType || 'movie').toLowerCase() === this.activeMediaFilter);
-            }
-
-            if (items.length === 0) continue;
-
-            const visibleLimit = this.categoryVisibleCounts[category] || 20;
-            const hasMore = items.length > visibleLimit;
-
-            sections.push(`
-                <div class="filmography-category" data-category="${category}">
-                    <div class="filmography-category__header">
-                        <h3 class="filmography-category__title">${this.escapeHtml(labelMap[category] || category)}</h3>
-                        <span class="filmography-category__count">${items.length}</span>
-                    </div>
-                    <div class="filmography-grid" id="filmographyGrid_${category}">
-                        <!-- MovieCards mounted dynamically in mountMovieCards -->
-                    </div>
-                    ${hasMore ? `
-                    <button type="button" class="btn btn-secondary btn-show-more-filmography" data-action="show-more-category" data-category="${category}">
-                        ${this.escapeHtml(this.i18n.get('person_details.show_more'))} (+${Math.min(20, items.length - visibleLimit)})
-                    </button>
-                    ` : ''}
-                </div>
-            `);
-        }
-
-        if (sections.length === 0) {
+        const state = this.getFilmographyState(person);
+        if (!state.role || state.items.length === 0) {
             return `
                 <div class="filmography-empty-message">
                     <p>${this.escapeHtml(this.i18n.get('person_details.filmography_empty'))}</p>
@@ -860,7 +878,303 @@ class PersonDetailsPageController {
             `;
         }
 
-        return sections.join('');
+        const remaining = Math.max(0, state.items.length - this.getFilmographyVisibleLimit());
+        return `
+            <div class="filmography-category" data-category="${state.role}">
+                <h3 class="filmography-category__title">${this.escapeHtml(this.getFilmographyRoleLabel(state.role))}</h3>
+                <div class="filmography-grid" id="filmographyGrid_${state.role}">
+                    <!-- MovieCards mounted dynamically in syncFilmographyGrid -->
+                </div>
+                <button type="button" class="btn btn-secondary btn-show-more-filmography" data-action="show-more-category" data-category="${state.role}"${remaining > 0 ? '' : ' hidden'}>
+                    ${this.escapeHtml(this.formatShowMore(Math.min(remaining, this.getFilmographyPageStep())))}
+                </button>
+            </div>
+        `;
+    }
+
+    /**
+     * Everything the filmography shows for the current choices: the roles in order
+     * (main role first) with their titles, the role in view, its titles per media
+     * type, and the titles of the current filter in the current order.
+     * @param {Object} person
+     * @returns {{roles: Array<{category: string, items: Array}>, role: string|null, mediaFilter: string, mediaCounts: Object, items: Array, sort: string, total: number}}
+     */
+    getFilmographyState(person) {
+        const filmography = person?.filmography || {};
+        const roles = PersonDetailsPageController.FILMOGRAPHY_CATEGORIES
+            .map(category => ({ category, items: this.uniqueFilmographyItems(filmography[category]) }))
+            .filter(role => role.items.length > 0);
+        const primary = this.getPrimaryFilmographyRole(person, roles);
+        if (primary) roles.sort((a, b) => (b.category === primary) - (a.category === primary));
+
+        const role = roles.some(entry => entry.category === this.activeRole) ? this.activeRole : (roles[0]?.category || null);
+        const roleItems = roles.find(entry => entry.category === role)?.items || [];
+        const mediaCounts = { all: roleItems.length, movie: 0, tv: 0 };
+        for (const item of roleItems) mediaCounts[this.creditMediaType(item)]++;
+        // A filter with nothing in this role falls back to all titles.
+        const mediaFilter = this.activeMediaFilter !== 'all' && mediaCounts[this.activeMediaFilter] > 0 ? this.activeMediaFilter : 'all';
+        const sort = this.getFilmographySortOptions(person).includes(this.activeSort) ? this.activeSort : 'newest';
+        const items = this.sortFilmographyItems(
+            mediaFilter === 'all' ? roleItems : roleItems.filter(item => this.creditMediaType(item) === mediaFilter),
+            sort
+        );
+        const total = new Set(roles.flatMap(entry => entry.items.map(item => this.personMediaKey(item)))).size;
+        return { roles, role, mediaFilter, mediaCounts, items, sort, total };
+    }
+
+    uniqueFilmographyItems(items) {
+        const seen = new Set();
+        return (Array.isArray(items) ? items : []).filter(item => {
+            if (!this.isRenderableFilmographyItem(item)) return false;
+            const key = this.personMediaKey(item);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
+
+    /**
+     * The role the person is known for, so a director's page opens on directing:
+     * TMDB's department, a Kinopoisk person's first profession, otherwise the role
+     * with the most titles (appearances as themselves count last).
+     * @param {Object} person
+     * @param {Array<{category: string, items: Array}>} roles
+     * @returns {string|null}
+     */
+    getPrimaryFilmographyRole(person, roles) {
+        const present = new Set(roles.map(role => role.category));
+        const department = {
+            acting: 'acting', directing: 'directing', writing: 'writing', production: 'production', sound: 'music'
+        }[String(person?.knownForDepartment || '').toLowerCase()];
+        if (department && present.has(department)) return department;
+
+        const profession = String(person?.professions?.[0] || '').toLowerCase();
+        const byProfession = [
+            [/акт[её]р|актриса|actor|actress/, 'acting'],
+            [/режисс[её]р|director/, 'directing'],
+            [/сценарист|writer/, 'writing'],
+            [/продюсер|producer/, 'production'],
+            [/композитор|composer/, 'music']
+        ].find(([pattern]) => pattern.test(profession))?.[1];
+        if (byProfession && present.has(byProfession)) return byProfession;
+
+        const candidates = roles.filter(role => role.category !== 'self');
+        return (candidates.length > 0 ? candidates : roles)
+            .reduce((best, role) => (!best || role.items.length > best.items.length ? role : best), null)?.category || null;
+    }
+
+    getFilmographyRoleLabel(category) {
+        return this.i18n.get(`person_details.${category}`);
+    }
+
+    /**
+     * Orders a person can sort by. Popularity needs vote counts, which only TMDB has.
+     * @param {Object} person
+     * @returns {string[]}
+     */
+    getFilmographySortOptions(person) {
+        const hasVotes = Object.values(person?.filmography || {}).flat().some(item => Number(item?.voteCount) > 0);
+        return PersonDetailsPageController.FILMOGRAPHY_SORTS.filter(sort => sort !== 'popular' || hasVotes);
+    }
+
+    readStoredSort() {
+        try {
+            const value = globalThis.localStorage?.getItem(PersonDetailsPageController.FILMOGRAPHY_SORT_KEY);
+            return PersonDetailsPageController.FILMOGRAPHY_SORTS.includes(value) ? value : 'newest';
+        } catch {
+            return 'newest';
+        }
+    }
+
+    creditMediaType(item) {
+        return String(item?.providerMediaType || 'movie').toLowerCase() === 'tv' ? 'tv' : 'movie';
+    }
+
+    /**
+     * The release date a credit sorts by: TMDB's full date, otherwise 1 January of
+     * its year (a Kinopoisk film often has only a year, and sometimes not even that).
+     * @param {Object} item
+     * @returns {string|null}
+     */
+    creditDate(item) {
+        const date = String(item?.releaseDate || '').match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+        if (date) return date;
+        const year = Number(item?.year);
+        return Number.isInteger(year) && year > 0 ? `${year}-01-01` : null;
+    }
+
+    todayIsoDate() {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
+
+    /**
+     * A title not out yet: a TMDB premiere after today, or a later year. Kinopoisk
+     * gives only years, so its current-year films are never called announced.
+     * @param {Object} item
+     * @returns {boolean}
+     */
+    isUpcomingCredit(item) {
+        const year = Number(item?.year);
+        if (Number(item?.tmdbId) > 0 && /^\d{4}-\d{2}-\d{2}/.test(String(item?.releaseDate || ''))) {
+            return String(item.releaseDate).slice(0, 10) > this.todayIsoDate();
+        }
+        return Number.isInteger(year) && year > new Date().getFullYear();
+    }
+
+    /**
+     * Sorts a role's titles. Newest first lists TMDB titles without a date at the top,
+     * where TMDB keeps work in production; a Kinopoisk title without a year is
+     * unknown, not upcoming, and goes last in every order. Ratings are TMDB's
+     * weighted toward the average for few votes, or Kinopoisk's own.
+     * @param {Array<Object>} items
+     * @param {string} sort
+     * @returns {Array<Object>}
+     */
+    sortFilmographyItems(items, sort = 'newest') {
+        const titleOf = item => String(item?.name || item?.originalName || '');
+        const votesOf = item => Number(item?.voteCount) || 0;
+        const ratingOf = item => {
+            const rating = Number(item?.rating) || 0;
+            if (rating <= 0) return null;
+            if (!(Number(item?.tmdbId) > 0)) return rating;
+            const votes = votesOf(item);
+            if (votes <= 0) return null;
+            const weight = 100;
+            return (votes / (votes + weight)) * rating + (weight / (votes + weight)) * 6.5;
+        };
+        const dated = items.map(item => ({
+            item,
+            date: this.creditDate(item),
+            // TMDB keeps a date off titles still in production.
+            upcoming: !this.creditDate(item) && Number(item?.tmdbId) > 0
+        }));
+        const groupOf = entry => {
+            if (entry.date) return 1;
+            return entry.upcoming ? (sort === 'oldest' ? 2 : 0) : 3;
+        };
+        const byDate = (a, b, direction) => {
+            const group = groupOf(a) - groupOf(b);
+            if (group !== 0) return group;
+            if (a.date && b.date && a.date !== b.date) return direction * a.date.localeCompare(b.date);
+            return votesOf(b.item) - votesOf(a.item) || titleOf(a.item).localeCompare(titleOf(b.item), 'ru');
+        };
+        const byNumber = (a, b, value) => {
+            const left = value(a.item);
+            const right = value(b.item);
+            if (left === null && right === null) return byDate(a, b, -1);
+            if (left === null) return 1;
+            if (right === null) return -1;
+            return right - left || byDate(a, b, -1);
+        };
+        const compare = {
+            newest: (a, b) => byDate(a, b, -1),
+            oldest: (a, b) => byDate(a, b, 1),
+            rating: (a, b) => byNumber(a, b, ratingOf),
+            popular: (a, b) => byNumber(a, b, item => (votesOf(item) > 0 ? votesOf(item) + (Number(item?.popularity) || 0) / 1000 : null))
+        }[sort] || ((a, b) => byDate(a, b, -1));
+        return dated.sort(compare).map(entry => entry.item);
+    }
+
+    /**
+     * Cards shown: whole rows of the grid, so the last row is never left ragged.
+     * @returns {number}
+     */
+    getFilmographyVisibleLimit() {
+        const columns = this.filmographyColumns || PersonDetailsPageController.FALLBACK_COLUMNS;
+        return Math.max(1, columns * this.filmographyRows);
+    }
+
+    /** Cards one «Показать ещё» adds. */
+    getFilmographyPageStep() {
+        return (this.filmographyColumns || PersonDetailsPageController.FALLBACK_COLUMNS) * PersonDetailsPageController.FILMOGRAPHY_ROWS;
+    }
+
+    /**
+     * Columns the grid lays out now, or 0 while it is not laid out (a hidden page).
+     * @param {HTMLElement} grid
+     * @returns {number}
+     */
+    measureFilmographyColumns(grid) {
+        if (!grid || typeof window.getComputedStyle !== 'function') return 0;
+        const tracks = String(window.getComputedStyle(grid).gridTemplateColumns || '').trim().split(/\s+/).filter(Boolean);
+        return tracks.length > 0 && tracks.every(track => /^\d+(?:\.\d+)?px$/.test(track)) ? tracks.length : 0;
+    }
+
+    formatShowMore(count) {
+        const template = this.i18n.get('person_details.show_more_count');
+        return typeof template === 'string' && template.includes('{count}')
+            ? template.replace('{count}', String(count))
+            : `${this.i18n.get('person_details.show_more')} (${count})`;
+    }
+
+    /**
+     * «8 эпизодов» / «8 episodes».
+     * @param {number|null} count
+     * @returns {string}
+     */
+    formatEpisodes(count) {
+        const episodes = Number(count);
+        if (!Number.isInteger(episodes) || episodes <= 0) return '';
+        const forms = this.i18n.get('person_details.episodes');
+        if (!forms || typeof forms !== 'object') return String(episodes);
+        let category = 'other';
+        try {
+            category = new Intl.PluralRules(this.i18n.currentLocale || 'ru').select(episodes);
+        } catch { /* The plural form only picks a word. */ }
+        return (forms[category] || forms.other || '{count}').replace('{count}', String(episodes));
+    }
+
+    /**
+     * What the person did on a title: the characters for a role, the precise job
+     * for crew («Исполнительный продюсер», «Роман») when the tab does not already
+     * say it, without the «Self» of an appearance as themselves.
+     * @param {Object} item
+     * @returns {string}
+     */
+    creditRoleText(item) {
+        const category = item?.category;
+        if (category === 'acting' || category === 'self') {
+            // Kinopoisk's Cyrillic name where it has one (Russian productions); TMDB and
+            // Kinopoisk both keep a foreign character in its original spelling. TMDB's
+            // «(voice)»-style notes stay with the Kinopoisk name.
+            let character = item?.character;
+            if (this.i18n.currentLocale !== 'en' && item?.characterLocal) {
+                const notes = /\(/.test(item.characterLocal) ? [] : (String(item?.character || '').match(/\((?:voice|uncredited|archive footage)\)/gi) || []);
+                character = [item.characterLocal, ...new Set(notes.map(note => note.toLowerCase()))].join(' ');
+            }
+            const parts = String(character || '').split(' / ')
+                .map(part => (category === 'self' ? part.replace(PersonDetailsPageController.SELF_PREFIX, '') : part).trim())
+                .filter(Boolean)
+                // Kinopoisk writes some parts in lower case («отец»).
+                .map(part => part.charAt(0).toLocaleUpperCase() + part.slice(1));
+            return this.localizeCreditNotes([...new Set(parts)].join(' / '));
+        }
+        const jobs = (Array.isArray(item?.jobs) && item.jobs.length > 0 ? item.jobs : [item?.job])
+            .map(job => String(job || '').trim())
+            .filter(job => job && !(PersonDetailsPageController.CATEGORY_JOBS[category] || []).includes(job.toLowerCase()));
+        return [...new Set(jobs.map(job => this.localizeJob(job)))].slice(0, 3).join(', ');
+    }
+
+    localizeJob(job) {
+        const jobs = this.i18n.get('person_details.jobs');
+        const label = jobs && typeof jobs === 'object' ? jobs[job.toLowerCase()] : null;
+        return label || job.charAt(0).toLocaleUpperCase() + job.slice(1);
+    }
+
+    /**
+     * «(voice)», «(uncredited)» and «(archive footage)» in TMDB's characters, in the
+     * interface language.
+     * @param {string} text
+     * @returns {string}
+     */
+    localizeCreditNotes(text) {
+        const notes = this.i18n.get('person_details.credit_notes');
+        if (!text || !notes || typeof notes !== 'object') return text || '';
+        return text.replace(/\((voice|uncredited|archive footage)\)/gi, (match, note) => {
+            const label = notes[note.toLowerCase().replace(' ', '_')];
+            return label ? `(${label})` : match;
+        });
     }
 
     /**
@@ -883,30 +1197,117 @@ class PersonDetailsPageController {
 
         this.bindKnownForCarousel();
 
-        // 2. Mount Filmography Category cards
-        const filmography = person.filmography || {};
-        const categories = ['acting', 'directing', 'writing', 'production', 'music', 'other'];
+        // 2. Mount the cards of the role tab in view
+        this.syncFilmographyGrid(person);
+    }
 
-        for (const category of categories) {
-            const gridEl = document.getElementById(`filmographyGrid_${category}`);
-            if (!gridEl) continue;
+    /**
+     * Brings the role tab's grid in line with the current choices. Cards already
+     * shown are kept, in their new order, unless their data changed, so a late
+     * poster or year neither reloads the other posters nor resets the page.
+     * @param {Object} [person]
+     * @returns {Array<HTMLElement>} The cards added by this call
+     */
+    syncFilmographyGrid(person = this.currentPerson) {
+        if (!person) return [];
+        const state = this.getFilmographyState(person);
+        this.activeRole = state.role;
+        this.activeMediaFilter = state.mediaFilter;
+        const grid = state.role ? document.getElementById(`filmographyGrid_${state.role}`) : null;
+        if (!grid) return [];
 
-            let items = Array.isArray(filmography[category]) ? filmography[category] : [];
-            items = items.filter(i => this.isRenderableFilmographyItem(i));
-
-            if (this.activeMediaFilter !== 'all') {
-                items = items.filter(i => (i.providerMediaType || 'movie').toLowerCase() === this.activeMediaFilter);
-            }
-
-            const visibleLimit = this.categoryVisibleCounts[category] || 20;
-            const visibleItems = items.slice(0, visibleLimit);
-
-            gridEl.innerHTML = '';
-            for (const item of visibleItems) {
-                const cardEl = this.createPersonMovieCard(item, { lazyPoster: true });
-                if (cardEl) gridEl.appendChild(cardEl);
+        this.filmographyColumns = this.measureFilmographyColumns(grid) || this.filmographyColumns;
+        const visible = state.items.slice(0, this.getFilmographyVisibleLimit());
+        const current = Array.from(grid.children || []);
+        const existing = new Map(current.map(card => [card.dataset?.personMediaKey, card]));
+        const added = [];
+        const cards = visible.map(item => {
+            const card = existing.get(this.personMediaKey(item));
+            if (card && card.dataset.personCardState === this.personCardState(item)) return card;
+            const created = this.createPersonMovieCard(item, { lazyPoster: true });
+            added.push(created);
+            return created;
+        });
+        const unchanged = cards.length === current.length && cards.every((card, index) => card === current[index]);
+        if (!unchanged) {
+            if (typeof grid.replaceChildren === 'function') {
+                grid.replaceChildren(...cards);
+            } else {
+                grid.innerHTML = '';
+                cards.forEach(card => grid.appendChild(card));
             }
         }
+
+        const button = typeof document.querySelector === 'function'
+            ? document.querySelector(`.btn-show-more-filmography[data-category="${state.role}"]`)
+            : null;
+        if (button) {
+            const remaining = Math.max(0, state.items.length - visible.length);
+            button.hidden = remaining === 0;
+            button.textContent = this.formatShowMore(Math.min(remaining, this.getFilmographyPageStep()));
+        }
+        this.syncFilmographyToolbar(state);
+        // New cards get their character names in Russian too.
+        void this.characterTranslation?.refresh();
+        return added;
+    }
+
+    /**
+     * Updates the tab counts, the pressed choices and the total without rebuilding
+     * the buttons, so keyboard focus stays where it is.
+     * @param {Object} state - getFilmographyState result
+     */
+    syncFilmographyToolbar(state) {
+        const section = document.getElementById('filmographySection');
+        if (!section || typeof section.querySelectorAll !== 'function') return;
+        for (const button of section.querySelectorAll('[data-action="filter-filmography-role"]')) {
+            const role = state.roles.find(entry => entry.category === button.getAttribute('data-role'));
+            const active = role?.category === state.role;
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-pressed', String(active));
+            const count = button.querySelector('[data-count]');
+            if (count && role) count.textContent = String(role.items.length);
+        }
+        for (const button of section.querySelectorAll('[data-action="filter-filmography"]')) {
+            const filter = button.getAttribute('data-filter');
+            const active = filter === state.mediaFilter;
+            button.classList.toggle('active', active);
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-pressed', String(active));
+            button.disabled = filter !== 'all' && !state.mediaCounts[filter];
+            const count = button.querySelector('[data-count]');
+            if (count) count.textContent = String(state.mediaCounts[filter] || 0);
+        }
+        const total = document.getElementById('filmographyTotal');
+        if (total) total.textContent = String(state.total);
+    }
+
+    /**
+     * The sort menu and the grid's column tracking, after the section is in the page.
+     */
+    bindFilmographyControls() {
+        const select = document.getElementById('filmographySort');
+        if (select && typeof select.addEventListener === 'function') {
+            select.addEventListener('change', () => this.setFilmographySort(select.value));
+            this.filmographySortControl = window.SortControl?.enhance?.(select) || null;
+        }
+
+        this.filmographyResizeObserver?.disconnect();
+        this.filmographyResizeObserver = null;
+        const container = document.getElementById('filmographyCategoriesContainer');
+        if (!container || typeof ResizeObserver === 'undefined') return;
+        // Rows stay whole when the window resizes, and the page's first layout (it
+        // renders hidden) sets the real number of columns.
+        this.filmographyResizeObserver = new ResizeObserver(() => {
+            if (this.filmographyLayoutFrame !== null) return;
+            this.filmographyLayoutFrame = window.requestAnimationFrame(() => {
+                this.filmographyLayoutFrame = null;
+                const grid = document.getElementById(`filmographyGrid_${this.activeRole}`);
+                const columns = this.measureFilmographyColumns(grid);
+                if (columns && columns !== this.filmographyColumns) this.syncFilmographyGrid();
+            });
+        });
+        this.filmographyResizeObserver.observe(container);
     }
 
     /**
@@ -1113,6 +1514,7 @@ class PersonDetailsPageController {
         if (!this.personPosterUrl(item)) {
             this.replacePersonMoviePosterFallback(card);
         }
+        this.decoratePersonCredit(card, item);
 
         console.log('[PersonDetails] Movie card rendered', {
             name: item.name || item.originalName || null,
@@ -1139,7 +1541,51 @@ class PersonDetailsPageController {
     }
 
     personCardState(item) {
-        return JSON.stringify([item.kinopoiskId || null, this.personPosterUrl(item), item.posterSource || null]);
+        return JSON.stringify([
+            item.kinopoiskId || null, this.personPosterUrl(item), item.posterSource || null,
+            item.year || null, this.creditMediaType(item), item.character || null, item.characterLocal || null,
+            item.jobs || null, item.episodeCount || null
+        ]);
+    }
+
+    /**
+     * Adds what the person did on the title under the card's year: the character or
+     * job and, for a series, the episodes; a title not out yet says so beside its year.
+     * @param {HTMLElement} card
+     * @param {Object} item
+     */
+    decoratePersonCredit(card, item) {
+        const content = card?.querySelector?.('.mc-content');
+        if (!content || typeof document.createElement !== 'function') return;
+        const role = this.creditRoleText(item);
+        const episodes = this.formatEpisodes(item?.episodeCount);
+        if (role || episodes) {
+            const credit = document.createElement('p');
+            credit.className = 'person-credit';
+            if (role) {
+                const roleLine = document.createElement('span');
+                roleLine.className = 'person-credit__role';
+                roleLine.textContent = role;
+                roleLine.title = role;
+                credit.appendChild(roleLine);
+            }
+            if (episodes) {
+                const episodesLine = document.createElement('span');
+                episodesLine.className = 'person-credit__episodes';
+                episodesLine.textContent = episodes;
+                credit.appendChild(episodesLine);
+            }
+            content.appendChild(credit);
+        }
+        if (this.isUpcomingCredit(item)) {
+            const meta = content.querySelector?.('.mc-meta-subtitle');
+            if (meta) {
+                const status = document.createElement('span');
+                status.className = 'person-credit__status';
+                status.textContent = this.i18n.get('person_details.upcoming');
+                meta.appendChild(status);
+            }
+        }
     }
 
     /**
@@ -1168,17 +1614,19 @@ class PersonDetailsPageController {
     updateEnrichedCards(person) {
         this.currentPerson = person;
         this.refreshPlaceholderPosters(person);
-        const items = new Map([...Object.values(person.filmography || {}).flat(), ...(person.knownFor || [])]
-            .map(item => [this.personMediaKey(item), item]));
-        for (const card of this.personContainer?.querySelectorAll?.('[data-person-media-key]') || []) {
-            const item = items.get(card.dataset.personMediaKey);
+        // Known For cards change in place; the filmography grid is brought in line
+        // below, since a late year or type can also move a title or its filter.
+        const knownFor = new Map((person.knownFor || []).map(item => [this.personMediaKey(item), item]));
+        const track = document.getElementById('knownForCarousel');
+        for (const card of track?.querySelectorAll?.('[data-person-media-key]') || []) {
+            const item = knownFor.get(card.dataset.personMediaKey);
             if (!item || card.dataset.personCardState === this.personCardState(item)) continue;
             const replacement = this.createPersonMovieCard(item, { lazyPoster: card.dataset.lazyPoster === 'true' });
-            const track = card.parentElement;
-            const scrollLeft = track?.scrollLeft;
+            const scrollLeft = track.scrollLeft;
             card.replaceWith(replacement);
-            if (track) track.scrollLeft = scrollLeft;
+            track.scrollLeft = scrollLeft;
         }
+        this.syncFilmographyGrid(person);
     }
 
     getPersonMoviePosterPlaceholder() {
@@ -1277,53 +1725,65 @@ class PersonDetailsPageController {
      * @param {string} filter - 'all' | 'movie' | 'tv'
      */
     setMediaFilter(filter) {
-        if (this.activeMediaFilter === filter) return;
+        if (!['all', 'movie', 'tv'].includes(filter) || this.activeMediaFilter === filter) return;
         this.activeMediaFilter = filter;
-
-        // Reset pagination visible limits on filter switch
-        this.categoryVisibleCounts = {
-            acting: 20,
-            directing: 20,
-            writing: 20,
-            production: 20,
-            music: 20,
-            other: 20
-        };
-
-        const container = document.getElementById('filmographyCategoriesContainer');
-        if (container && this.currentPerson) {
-            container.innerHTML = this.renderFilmographyCategories(this.currentPerson);
-            this.mountMovieCards(this.currentPerson);
-            if (typeof Utils !== 'undefined') Utils.revealContent?.(container);
-        }
-
-        // Update active filter pills
-        const pills = document.querySelectorAll('.filmography-filter-pill');
-        pills.forEach(pill => {
-            if (pill.getAttribute('data-filter') === filter) {
-                pill.classList.add('active');
-                pill.classList.add('is-active');
-                pill.setAttribute('aria-pressed', 'true');
-            } else {
-                pill.classList.remove('active');
-                pill.classList.remove('is-active');
-                pill.setAttribute('aria-pressed', 'false');
-            }
-        });
+        this.filmographyRows = PersonDetailsPageController.FILMOGRAPHY_ROWS;
+        this.refreshFilmographyView();
     }
 
     /**
-     * Increment visible items for a specific filmography category (+20).
-     * @param {string} category
+     * Shows another role tab, from its first rows; a media filter it has nothing
+     * for goes back to all titles.
+     * @param {string} role
      */
-    showMoreCategory(category) {
-        this.categoryVisibleCounts[category] = (this.categoryVisibleCounts[category] || 20) + 20;
+    setFilmographyRole(role) {
+        if (!PersonDetailsPageController.FILMOGRAPHY_CATEGORIES.includes(role) || this.activeRole === role) return;
+        this.activeRole = role;
+        this.filmographyRows = PersonDetailsPageController.FILMOGRAPHY_ROWS;
         const container = document.getElementById('filmographyCategoriesContainer');
         if (container && this.currentPerson) {
             container.innerHTML = this.renderFilmographyCategories(this.currentPerson);
-            this.mountMovieCards(this.currentPerson);
+            this.syncFilmographyGrid(this.currentPerson);
             if (typeof Utils !== 'undefined') Utils.revealContent?.(container);
         }
+    }
+
+    /**
+     * Orders the titles and remembers the order for the next person.
+     * @param {string} sort
+     */
+    setFilmographySort(sort) {
+        if (!PersonDetailsPageController.FILMOGRAPHY_SORTS.includes(sort) || this.activeSort === sort) return;
+        this.activeSort = sort;
+        try {
+            globalThis.localStorage?.setItem(PersonDetailsPageController.FILMOGRAPHY_SORT_KEY, sort);
+        } catch { /* The order is still applied to this page. */ }
+        this.filmographyRows = PersonDetailsPageController.FILMOGRAPHY_ROWS;
+        this.refreshFilmographyView();
+    }
+
+    refreshFilmographyView() {
+        const container = document.getElementById('filmographyCategoriesContainer');
+        if (!container || !this.currentPerson) return;
+        this.syncFilmographyGrid(this.currentPerson);
+        if (typeof Utils !== 'undefined') Utils.revealContent?.(container);
+    }
+
+    /**
+     * Adds the next rows. When the button goes away with the last of them, keyboard
+     * focus moves to the first new card instead of falling back to the page.
+     * @param {string} category
+     */
+    showMoreCategory(category) {
+        if (category !== this.activeRole) return;
+        this.filmographyRows += PersonDetailsPageController.FILMOGRAPHY_ROWS;
+        const button = typeof document.querySelector === 'function'
+            ? document.querySelector(`.btn-show-more-filmography[data-category="${category}"]`)
+            : null;
+        const hadFocus = Boolean(button && document.activeElement === button);
+        const added = this.syncFilmographyGrid(this.currentPerson);
+        // The title link is the card's keyboard stop; the poster link is skipped by Tab.
+        if (hadFocus && button.hidden) (added[0]?.querySelector?.('.mc-title-link') || added[0]?.querySelector?.('[data-action="view-details"]'))?.focus?.();
     }
 
     /**

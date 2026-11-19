@@ -15,7 +15,61 @@
 const TMDB_LOGO_SELECTION_VERSION = 3;
 
 class MediaAggregatorService {
+    // Actors kept per title, TMDB's billing plus the Kinopoisk actors it lacks
+    // (TMDBService.MAX_CAST is the same number).
+    static MAX_CAST = 150;
+    // The cast's shape: 1 is every season of a series, 150 actors and Kinopoisk's
+    // actors TMDB lacks. A cached film with an older cast is aggregated again once.
+    static CAST_SCHEMA_VERSION = 1;
+
+    static CYRILLIC_TO_LATIN = {
+        а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i',
+        й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't',
+        у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'i', ь: '',
+        э: 'e', ю: 'iu', я: 'ia', і: 'i', ї: 'i', є: 'e', ґ: 'g'
+    };
+
     /**
+     * Keys under which spellings of one person's name meet: «Константин Хабенский»,
+     * "Konstantin Khabenskiy" and "Konstantin Khabensky" share one, and the consonant
+     * key also joins vowel variants ("Yevgeni"/«Евгений»). Words are sorted, so a
+     * reversed order agrees too. A match only decides that a Kinopoisk actor is
+     * already in TMDB's cast, so a rare false match hides an actor and never
+     * merges two people.
+     * @param {string} value
+     * @returns {string[]}
+     */
+    static personNameKeys(value) {
+        const words = String(value || '')
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[а-яёіїєґ]/g, letter => MediaAggregatorService.CYRILLIC_TO_LATIN[letter] ?? letter)
+            .split(/[^a-z]+/)
+            .map(word => word
+                .replace(/shch|sch/g, 'sh')
+                .replace(/tch/g, 'ch')
+                .replace(/tz/g, 'ts')
+                .replace(/kh/g, 'h')
+                .replace(/x/g, 'ks')
+                .replace(/ph/g, 'f')
+                .replace(/th/g, 't')
+                .replace(/ck/g, 'k')
+                .replace(/c(?=[eiy])/g, 's')
+                .replace(/c(?!h)/g, 'k')
+                .replace(/w/g, 'v')
+                .replace(/[yj]/g, 'i')
+                .replace(/(.)\1+/g, '$1'))
+            .filter(Boolean)
+            .sort();
+        if (words.length === 0) return [];
+        const spelled = words.join('');
+        const consonants = words.map(word => word.replace(/[aeiou]/g, '')).join('');
+        return consonants.length >= 4 && consonants !== spelled ? [spelled, consonants] : [spelled];
+    }
+
+    /**
+     * @param {Object} [dependencies]
      * @param {Object} [dependencies]
      * @param {Object} [dependencies.kinopoiskService]
      * @param {Object} [dependencies.tmdbService]
@@ -970,7 +1024,8 @@ class MediaAggregatorService {
                         collectionChecked: Boolean(tmdbData && (
                             tmdbData.collection !== undefined || tmdbData.belongs_to_collection !== undefined
                         )),
-                        collectionCheckVersion: 1
+                        collectionCheckVersion: 1,
+                        castSchemaVersion: MediaAggregatorService.CAST_SCHEMA_VERSION
                     }
                 },
                 fieldSources
@@ -1019,7 +1074,7 @@ class MediaAggregatorService {
         if (rawTmdbCast.length >= 4) {
             const validTmdbCast = rawTmdbCast
                 .filter(p => p && (p.name || p.original_name || p.originalName))
-                .slice(0, 30);
+                .slice(0, MediaAggregatorService.MAX_CAST);
 
             cast = validTmdbCast.map((p, idx) => {
                 const tmdbIdNum = Number(p.id);
@@ -1035,6 +1090,7 @@ class MediaAggregatorService {
                 let kpPersonId = null;
                 let photoUrl = p.photoUrl || (p.profile_path ? `https://image.tmdb.org/t/p/w185${p.profile_path}` : (p.photo || null));
                 let character = p.character || null;
+                let characterLocal = null;
 
                 if (matchedKp) {
                     if (matchedKp.name && typeof matchedKp.name === 'string' && matchedKp.name.trim().length > 0) {
@@ -1047,12 +1103,17 @@ class MediaAggregatorService {
                     if (!character && matchedKp.description) {
                         character = String(matchedKp.description).trim();
                     }
+                    // Kinopoisk's character in Cyrillic, for a Russian interface; a foreign
+                    // character keeps its original spelling on Kinopoisk too.
+                    const kpCharacter = String(matchedKp.description || '').trim();
+                    if (/[а-яё]/i.test(kpCharacter) && kpCharacter !== character) characterLocal = kpCharacter;
                     if (!photoUrl && matchedKp.photo) {
                         photoUrl = matchedKp.photo;
                     }
                 }
 
                 const creditId = tmdbPersonId ? `tmdb:${tmdbPersonId}` : (kpPersonId ? `kp:${kpPersonId}` : `cast:${idx}`);
+                const episodeCount = Number(p.episodeCount);
 
                 return {
                     id: creditId,
@@ -1063,6 +1124,8 @@ class MediaAggregatorService {
                     photoUrl: photoUrl || null,
                     role: 'ACTOR',
                     character: character || null,
+                    characterLocal,
+                    episodeCount: Number.isInteger(episodeCount) && episodeCount > 0 ? episodeCount : null,
                     job: 'Actor',
                     department: 'Acting',
                     order: typeof p.order === 'number' ? p.order : idx,
@@ -1072,6 +1135,41 @@ class MediaAggregatorService {
 
             // Ensure order ascending
             cast.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+
+            // Kinopoisk names actors TMDB leaves out (guest roles, small parts, much of a
+            // Russian cast). Their person pages list this title, so they follow TMDB's
+            // billing instead of being dropped.
+            const knownKpIds = new Set(cast.map(member => member.kpPersonId).filter(Boolean));
+            const knownNameKeys = new Set(cast.flatMap(member => [member.name, member.originalName])
+                .flatMap(name => MediaAggregatorService.personNameKeys(name)));
+            for (const person of kpPersons) {
+                if (cast.length >= MediaAggregatorService.MAX_CAST) break;
+                if ((person?.enProfession || '').toUpperCase() !== 'ACTOR') continue;
+                const kpPersonId = Number(person.id) > 0 ? Number(person.id) : null;
+                const name = String(person.name || person.enName || '').trim();
+                if (!kpPersonId || !name || knownKpIds.has(kpPersonId)) continue;
+                const nameKeys = [person.name, person.enName].flatMap(value => MediaAggregatorService.personNameKeys(value));
+                if (nameKeys.some(key => knownNameKeys.has(key))) continue;
+                knownKpIds.add(kpPersonId);
+                nameKeys.forEach(key => knownNameKeys.add(key));
+                hasCastEnrichment = true;
+                cast.push({
+                    id: `kp:${kpPersonId}`,
+                    kpPersonId,
+                    tmdbPersonId: null,
+                    name,
+                    originalName: person.enName ? String(person.enName).trim() : null,
+                    photoUrl: person.photo || null,
+                    role: 'ACTOR',
+                    character: person.description ? String(person.description).trim() : null,
+                    episodeCount: null,
+                    job: 'Actor',
+                    department: 'Acting',
+                    // After every TMDB billing position.
+                    order: 10000 + cast.length,
+                    providerSource: 'KP'
+                });
+            }
             fieldSources['credits.cast'] = hasCastEnrichment ? 'hybrid' : 'tmdb';
         } else if (kpPersons.length > 0) {
             // KP Cast Fallback
@@ -1081,7 +1179,7 @@ class MediaAggregatorService {
                     return prof === 'ACTOR';
                 })
                 .filter(p => p.name || p.enName)
-                .slice(0, 30);
+                .slice(0, MediaAggregatorService.MAX_CAST);
 
             cast = kpActors.map((p, idx) => {
                 const kpIdNum = Number(p.id);
@@ -1263,7 +1361,7 @@ class MediaAggregatorService {
         }
 
         return {
-            cast: cast.slice(0, 30),
+            cast: cast.slice(0, MediaAggregatorService.MAX_CAST),
             crew: boundedCrew
         };
     }
@@ -1378,6 +1476,13 @@ class MediaAggregatorService {
                             (cached._meta?.providers?.tmdb?.collectionChecked !== true ||
                                 cached._meta?.providers?.tmdb?.collectionCheckVersion !== 1)
                         );
+                        // A cast cached before every season and Kinopoisk's extra actors
+                        // (a series showed its latest season only) is built again once.
+                        const needsCastSchemaHeal = Boolean(
+                            cachedTmdbId &&
+                            canHealFromTmdb &&
+                            (Number(cached._meta?.providers?.tmdb?.castSchemaVersion) || 0) < MediaAggregatorService.CAST_SCHEMA_VERSION
+                        );
 
                         // KP-only cache records may be missing the IMDb/alternate
                         // title evidence required for reverse recovery. Resolve
@@ -1442,10 +1547,12 @@ class MediaAggregatorService {
                             isCorruptedCachedMovie ||
                             needsIdentityMappingHeal ||
                             needsLogoSchemaHeal ||
-                            needsCollectionSchemaHeal || relationsRefreshRequired
+                            needsCollectionSchemaHeal ||
+                            needsCastSchemaHeal || relationsRefreshRequired
                         );
                         relationsOnlyRepair = relationsRefreshRequired && !isCorruptedCachedMovie
-                            && !needsIdentityMappingHeal && !needsLogoSchemaHeal && !needsCollectionSchemaHeal;
+                            && !needsIdentityMappingHeal && !needsLogoSchemaHeal && !needsCollectionSchemaHeal
+                            && !needsCastSchemaHeal;
 
                         MediaAggregatorService.logFranchiseDebug('A_CACHE', {
                             kinopoiskId: numKpId,

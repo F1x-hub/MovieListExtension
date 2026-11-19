@@ -38,6 +38,10 @@ const tmdbConfig = (typeof globalThis !== 'undefined' && globalThis.TMDB_CONFIG)
  * TMDB IDs are never used as the application's primary movie identifier.
  */
 class TMDBService {
+    // Actors kept per title. TMDB lists every credited actor, often well over a
+    // hundred; 30 used to cut off people whose page lists the title.
+    static MAX_CAST = 150;
+
     constructor() {
         this.baseUrl = tmdbConfig.BASE_URL;
         this.defaultLanguage = tmdbConfig.DEFAULT_LANGUAGE || 'ru-RU';
@@ -1365,7 +1369,7 @@ class TMDBService {
      * @returns {Promise<Object>}
      */
     async _getTvDetails(tmdbId, imdbId = '') {
-        const tv = await this._fetchTvDetails(tmdbId, this.defaultLanguage);
+        const tv = await this._fetchTvDetails(tmdbId, this.defaultLanguage, { aggregateCredits: true });
 
         if (!Array.isArray(tv.images?.logos) || tv.images.logos.length === 0) {
             const allLanguageTv = await this._fetchTvDetails(
@@ -1394,7 +1398,11 @@ class TMDBService {
         const params = new URLSearchParams({
             language,
             // external_ids carries the IMDb ID; TV details have no imdb_id field.
-            append_to_response: 'credits,videos,content_ratings,images,external_ids',
+            // `credits` holds only the latest season's cast; the cast of every
+            // season is `aggregate_credits`, asked for by the main request only.
+            append_to_response: options.aggregateCredits
+                ? 'credits,aggregate_credits,videos,content_ratings,images,external_ids'
+                : 'credits,videos,content_ratings,images,external_ids',
         });
         if (!options.includeAllImageLanguages) {
             params.set('include_image_language', 'ru,en,null');
@@ -1705,7 +1713,7 @@ class TMDBService {
             } : null,
             videos: this.normalizeVideos(movie.videos),
             credits: {
-                cast: (Array.isArray(movie.credits?.cast) ? movie.credits.cast : []).slice(0, 30).map(p => ({
+                cast: (Array.isArray(movie.credits?.cast) ? movie.credits.cast : []).slice(0, TMDBService.MAX_CAST).map(p => ({
                     id: p.id,
                     name: p.name || '',
                     originalName: p.original_name || p.name || '',
@@ -1952,14 +1960,7 @@ class TMDBService {
             collection: null,
             videos: this.normalizeVideos(tv.videos),
             credits: {
-                cast: (Array.isArray(tv.credits?.cast) ? tv.credits.cast : []).slice(0, 30).map(p => ({
-                    id: p.id,
-                    name: p.name || '',
-                    originalName: p.original_name || p.name || '',
-                    character: p.character || '',
-                    photoUrl: this.buildImageUrl(p.profile_path, 'w185'),
-                    order: typeof p.order === 'number' ? p.order : null
-                })),
+                cast: this.normalizeTvCast(tv),
                 crew: (Array.isArray(tv.credits?.crew) ? tv.credits.crew : []).slice(0, 30).map(p => ({
                     id: p.id,
                     name: p.name || '',
@@ -1973,6 +1974,43 @@ class TMDBService {
             sequelsAndPrequels: [],
             similarMovies: []
         };
+    }
+
+    /**
+     * A series' cast from every season. `credits` lists only the latest season, so
+     * an actor of an earlier one was missing although their own page lists the
+     * series. `aggregate_credits` names everyone with their characters and episode
+     * counts, most episodes first; its `order` values are not that order.
+     * @param {Object} tv - TMDB TV details response
+     * @returns {Array<Object>}
+     */
+    normalizeTvCast(tv) {
+        const aggregate = Array.isArray(tv?.aggregate_credits?.cast) ? tv.aggregate_credits.cast : [];
+        if (aggregate.length > 0) {
+            return aggregate.slice(0, TMDBService.MAX_CAST).map((p, index) => {
+                const characters = [...new Set((Array.isArray(p.roles) ? p.roles : [])
+                    .map(role => String(role?.character || '').trim())
+                    .filter(Boolean))];
+                const episodeCount = Number(p.total_episode_count);
+                return {
+                    id: p.id,
+                    name: p.name || '',
+                    originalName: p.original_name || p.name || '',
+                    character: characters.slice(0, 3).join(' / '),
+                    episodeCount: Number.isInteger(episodeCount) && episodeCount > 0 ? episodeCount : null,
+                    photoUrl: this.buildImageUrl(p.profile_path, 'w185'),
+                    order: index
+                };
+            });
+        }
+        return (Array.isArray(tv?.credits?.cast) ? tv.credits.cast : []).slice(0, TMDBService.MAX_CAST).map(p => ({
+            id: p.id,
+            name: p.name || '',
+            originalName: p.original_name || p.name || '',
+            character: p.character || '',
+            photoUrl: this.buildImageUrl(p.profile_path, 'w185'),
+            order: typeof p.order === 'number' ? p.order : null
+        }));
     }
 
     /**

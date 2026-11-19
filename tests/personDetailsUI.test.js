@@ -295,10 +295,11 @@ console.log('\n--- 5. Testing Known For Section & Viability Threshold ---');
 // ==========================================
 // 6. FILMOGRAPHY FILTERS & PAGINATION
 // ==========================================
-console.log('\n--- 6. Testing Filmography Filters & Initial 20-Item Bounds ---');
+console.log('\n--- 6. Testing Filmography Roles, Filters, Sorting & Paging ---');
 
 {
     const controller = new PersonDetailsPageController();
+    controller.i18n.currentLocale = 'ru';
 
     const sampleFilmography = {
         acting: [
@@ -319,18 +320,89 @@ console.log('\n--- 6. Testing Filmography Filters & Initial 20-Item Bounds ---')
 
     const person = { filmography: sampleFilmography };
 
-    // 6.1 Category headers & active filters
+    // 6.1 Role tabs with counts, media filters and the sort menu
     const filmographyHtml = controller.renderFilmography(person);
     assert.ok(filmographyHtml.includes('data-filter="all"'), 'All filter rendered');
     assert.ok(filmographyHtml.includes('data-filter="movie"'), 'Movies filter rendered');
     assert.ok(filmographyHtml.includes('data-filter="tv"'), 'Series filter rendered');
+    assert.ok(filmographyHtml.includes('data-role="acting"') && filmographyHtml.includes('data-role="directing"'), 'Every role with titles gets a tab');
+    assert.ok(!filmographyHtml.includes('data-role="music"'), 'A role without titles gets no tab');
+    assert.ok(filmographyHtml.indexOf('data-role="directing"') < filmographyHtml.indexOf('data-role="acting"'), 'The role with most titles comes first when nothing else names one');
+    assert.ok(/data-filter="tv"[^>]*disabled/.test(filmographyHtml), 'Series filter is disabled when the role has no series');
+    assert.ok(filmographyHtml.includes('id="filmographySort"') && filmographyHtml.includes('value="newest" selected'), 'Sort menu starts on the newest titles');
+    assert.ok(!filmographyHtml.includes('value="popular"'), 'Popularity needs vote counts, which this person lacks');
+    assert.ok(filmographyHtml.includes('id="filmographyTotal">27<'), 'The heading counts every title once');
 
-    // 6.2 Categories markup
+    // 6.2 The grid of the role in view, with whole-row paging
     const categoriesHtml = controller.renderFilmographyCategories(person);
-    assert.ok(categoriesHtml.includes('data-category="acting"'), 'Acting category rendered');
-    assert.ok(categoriesHtml.includes('data-category="directing"'), 'Directing category rendered');
+    assert.ok(categoriesHtml.includes('data-category="directing"'), 'The first role is in view');
+    assert.ok(!categoriesHtml.includes('data-category="acting"'), 'Other roles wait behind their tabs');
     assert.ok(!categoriesHtml.includes('data-category="music"'), 'Empty music category omitted');
-    assert.ok(categoriesHtml.includes('btn-show-more-filmography'), 'Show more button rendered for > 20 items');
+    assert.ok(categoriesHtml.includes('btn-show-more-filmography') && !/btn-show-more-filmography[^>]*hidden/.test(categoriesHtml), 'Show more button rendered for more titles than four rows');
+    assert.ok(categoriesHtml.includes('Показать ещё 1'), 'The button says how many titles it adds');
+    controller.activeRole = 'acting';
+    assert.ok(controller.renderFilmographyCategories(person).includes('data-category="acting"'), 'A chosen role tab shows its own grid');
+    assert.ok(/btn-show-more-filmography[^>]*hidden/.test(controller.renderFilmographyCategories(person)), 'A short role has no show more button');
+    controller.activeRole = null;
+
+    // 6.2.1 The main role: TMDB's department, then a Kinopoisk profession, never «self» first
+    const roles = (filmography, extra = {}) => controller.getFilmographyState({ filmography, ...extra }).roles.map(role => role.category);
+    const mixed = {
+        acting: [{ tmdbId: 1, name: 'A' }],
+        directing: [{ tmdbId: 2, name: 'B' }, { tmdbId: 3, name: 'C' }],
+        self: [{ tmdbId: 4, name: 'D' }, { tmdbId: 5, name: 'E' }, { tmdbId: 6, name: 'F' }]
+    };
+    assert.deepStrictEqual(roles(mixed), ['directing', 'acting', 'self'], 'Appearances as themselves never lead');
+    assert.deepStrictEqual(roles(mixed, { knownForDepartment: 'Acting' }), ['acting', 'directing', 'self'], 'TMDB department leads');
+    assert.deepStrictEqual(roles(mixed, { professions: ['Актриса', 'Продюсер'] }), ['acting', 'directing', 'self'], 'A Kinopoisk profession leads');
+
+    // 6.2.2 Orders: announced and newest first, oldest first, weighted rating, popularity
+    const sortable = [
+        { tmdbId: 10, name: 'Old classic', releaseDate: '1994-09-23', rating: 8.7, voteCount: 28000 },
+        { tmdbId: 11, name: 'In production', releaseDate: null },
+        { tmdbId: 12, name: 'Recent hit', releaseDate: '2023-07-21', rating: 8.1, voteCount: 9000, popularity: 90 },
+        { tmdbId: 13, name: 'Few votes', releaseDate: '2020-01-01', rating: 9.8, voteCount: 3 },
+        { tmdbId: 14, name: 'Unrated', releaseDate: '2010-05-05', rating: 0, voteCount: 0 }
+    ];
+    const order = sort => controller.sortFilmographyItems(sortable, sort).map(item => item.tmdbId);
+    assert.deepStrictEqual(order('newest'), [11, 12, 13, 14, 10], 'TMDB titles without a date are in production and lead the newest');
+    assert.deepStrictEqual(order('oldest'), [10, 14, 13, 12, 11], 'Oldest first puts undated titles after dated ones');
+    assert.deepStrictEqual(order('rating'), [10, 12, 13, 11, 14], 'Three votes of 9.8 do not beat thousands of 8.7');
+    assert.deepStrictEqual(order('popular'), [10, 12, 13, 11, 14], 'Popularity follows vote counts');
+    const kpSortable = [
+        { kinopoiskId: 20, name: 'No year', rating: 7 },
+        { kinopoiskId: 21, name: 'Year', year: 2015, rating: 6 },
+        { kinopoiskId: 22, name: 'Later', year: 2019, rating: 8 }
+    ];
+    assert.deepStrictEqual(controller.sortFilmographyItems(kpSortable, 'newest').map(item => item.kinopoiskId), [22, 21, 20], 'A Kinopoisk title without a year is unknown and goes last');
+    assert.deepStrictEqual(controller.sortFilmographyItems(kpSortable, 'rating').map(item => item.kinopoiskId), [22, 20, 21], 'Kinopoisk ratings sort as they are');
+
+    // 6.2.3 What the person did, episodes, and announcements
+    assert.strictEqual(controller.creditRoleText({ category: 'acting', character: 'Victor Stone / Cyborg (voice)' }), 'Victor Stone / Cyborg (озвучка)', 'TMDB notes are translated');
+    assert.strictEqual(controller.creditRoleText({ category: 'self', character: 'Self - Host / Self (archive footage)' }), 'Host / (архивные кадры)', 'An appearance as themselves drops «Self»');
+    assert.strictEqual(controller.creditRoleText({ category: 'self', character: 'Himself' }), '', 'Nothing is left of a plain «Himself»');
+    assert.strictEqual(controller.creditRoleText({ category: 'production', jobs: ['Producer', 'Executive Producer'] }), 'Исполнительный продюсер', 'The tab already says producer; the precise job is shown');
+    assert.strictEqual(controller.creditRoleText({ category: 'writing', jobs: ['Screenplay', 'Novel'] }), 'Сценарий, Роман', 'Writing jobs are translated');
+    assert.strictEqual(controller.creditRoleText({ category: 'other', jobs: ['OPERATOR'] }), 'Оператор', 'Kinopoisk job codes are translated');
+    assert.strictEqual(controller.creditRoleText({ category: 'production', jobs: ['исполнительный продюсер'] }), 'Исполнительный продюсер', 'Kinopoisk descriptions read as a label');
+    assert.strictEqual(controller.creditRoleText({ category: 'directing', jobs: ['Director'] }), '', 'Nothing repeats the tab');
+    assert.strictEqual(controller.creditRoleText({ category: 'acting', character: 'Shurik', characterLocal: 'Шурик' }), 'Шурик', 'The Russian interface shows Kinopoisk’s Cyrillic name');
+    assert.strictEqual(controller.creditRoleText({ category: 'acting', character: 'Father (voice)', characterLocal: 'отец' }), 'Отец (озвучка)', 'A lower-case Kinopoisk part is capitalized and keeps TMDB’s voice note');
+    assert.strictEqual(controller.creditRoleText({ category: 'acting', character: 'Ivan (uncredited)', characterLocal: 'Иван (в титрах не указан)' }), 'Иван (в титрах не указан)', 'A Kinopoisk name with its own note gets no second one');
+    controller.i18n.currentLocale = 'en';
+    assert.strictEqual(controller.creditRoleText({ category: 'acting', character: 'Shurik', characterLocal: 'Шурик' }), 'Shurik', 'The English interface keeps the provider’s name');
+    controller.i18n.currentLocale = 'ru';
+    assert.notStrictEqual(controller.personCardState({ character: 'A' }), controller.personCardState({ character: 'A', characterLocal: 'А' }), 'A late Cyrillic name replaces the card');
+    assert.strictEqual(controller.formatEpisodes(8), '8 эпизодов');
+    assert.strictEqual(controller.formatEpisodes(22), '22 эпизода');
+    assert.strictEqual(controller.formatEpisodes(1), '1 эпизод');
+    assert.strictEqual(controller.formatEpisodes(null), '');
+    const nextYear = new Date().getFullYear() + 1;
+    assert.strictEqual(controller.isUpcomingCredit({ tmdbId: 1, releaseDate: `${nextYear}-03-01`, year: nextYear }), true, 'A later premiere is announced');
+    assert.strictEqual(controller.isUpcomingCredit({ tmdbId: 1, releaseDate: '2001-03-01', year: 2001 }), false);
+    assert.strictEqual(controller.isUpcomingCredit({ kinopoiskId: 1, year: new Date().getFullYear() }), false, 'A Kinopoisk year alone never says announced for this year');
+    assert.strictEqual(controller.isUpcomingCredit({ kinopoiskId: 1, year: nextYear }), true);
+    assert.strictEqual(controller.isUpcomingCredit({ tmdbId: 1, releaseDate: null }), false, 'An undated title is sorted as upcoming but not labelled');
 
     // 6.3 Unmapped filmography remains visible when provider identity exists
     const unmappedPerson = {
@@ -375,6 +447,9 @@ console.log('\n--- 6. Testing Filmography Filters & Initial 20-Item Bounds ---')
     assert.ok(personDetailsCss.includes('font-variant-numeric: tabular-nums'), 'Section counts use quiet numeric styling');
     assert.ok(!personDetailsCss.includes('.person-section__count {\n    font-size: 14px'), 'Section counts no longer use oversized pill styling');
     assert.ok(personDetailsCss.includes('.filmography-filter-pill {'), 'Filmography filter selector remains scoped');
+    assert.ok(/\.btn-show-more-filmography\[hidden\]\s*\{\s*display:\s*none/.test(personDetailsCss), 'A hidden show more button stays hidden despite the .btn display');
+    assert.ok(/\.known-for-carousel \.movie-card-component\.mc-variant-search \{\s*height: auto;\s*align-self: stretch;/.test(personDetailsCss), 'Known For cards share the height of the tallest one');
+    assert.ok(!/\.filmography-choice__count[^{]*\{[^}]*background/.test(personDetailsCss), 'Choice counts are quiet text, not badges');
     // The page's own white "active" skin lost to filter-controls.css in the dark theme
     // and left dark text on a dark button; the filters now use the shared look alone.
     assert.ok(!/\.filmography-filter-pill[^{]*\.active/.test(personDetailsCss), 'Filmography filters do not restyle the shared active choice');

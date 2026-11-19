@@ -54,11 +54,17 @@ globalThis.i18n = {
                 },
                 actors_tab: {
                     no_data: 'Информация об актерах отсутствует',
-                    unknown: 'Неизвестно'
+                    unknown: 'Неизвестно',
+                    episodes_one: 'эпизод',
+                    episodes_few: 'эпизода',
+                    episodes_many: 'эпизодов'
                 },
                 profession: {
                     actor: 'Актёр'
                 }
+            },
+            person_details: {
+                credit_notes: { voice: 'озвучка', uncredited: 'без упоминания в титрах', archive_footage: 'архивные кадры' }
             }
         }
     },
@@ -122,6 +128,7 @@ const castMethod = extractMethod(movieDetailsSource, 'getMovieCast');
 const crewMethod = extractMethod(movieDetailsSource, 'getMovieCrew');
 const formatCrewMethod = extractMethod(movieDetailsSource, 'formatCrewCategory');
 const actorCardMethod = extractMethod(movieDetailsSource, 'renderActorCard');
+const creditNotesMethod = extractMethod(movieDetailsSource, 'localizeCreditNotes');
 const actorsTabMethod = extractMethod(movieDetailsSource, 'renderActorsTab');
 const actorsColumnCountMethod = extractMethod(movieDetailsSource, 'getActorsGridColumnCount');
 const actorsVisibilityMethod = extractMethod(movieDetailsSource, 'applyActorsGridVisibility');
@@ -133,6 +140,7 @@ MockMovieDetailsManager.prototype.getMovieCast = function ${castMethod.slice(cas
 MockMovieDetailsManager.prototype.getMovieCrew = function ${crewMethod.slice(crewMethod.indexOf('('))};
 MockMovieDetailsManager.prototype.formatCrewCategory = function ${formatCrewMethod.slice(formatCrewMethod.indexOf('('))};
 MockMovieDetailsManager.prototype.renderActorCard = function ${actorCardMethod.slice(actorCardMethod.indexOf('('))};
+MockMovieDetailsManager.prototype.localizeCreditNotes = function ${creditNotesMethod.slice(creditNotesMethod.indexOf('('))};
 MockMovieDetailsManager.prototype.renderActorsTab = function ${actorsTabMethod.slice(actorsTabMethod.indexOf('('))};
 MockMovieDetailsManager.prototype.getActorsGridColumnCount = function ${actorsColumnCountMethod.slice(actorsColumnCountMethod.indexOf('('))};
 MockMovieDetailsManager.prototype.applyActorsGridVisibility = function ${actorsVisibilityMethod.slice(actorsVisibilityMethod.indexOf('('))};
@@ -220,22 +228,38 @@ console.log('--- Part 38: Actor Source Resolver Tests ---');
     console.log('  ✅ 4. Partial canonical fallback operates independently for cast and crew');
 }
 
-// 5. Cast sorted by order & max 30
+// 5. Cast sorted by order, the whole credited cast up to 150
 {
     const movie = {
         credits: {
-            cast: Array.from({ length: 45 }, (_, i) => ({
+            cast: Array.from({ length: 170 }, (_, i) => ({
                 id: `tmdb:${i}`,
                 name: `Actor ${i}`,
-                order: 44 - i // reverse order
+                order: 169 - i // reverse order
             }))
         }
     };
     const cast = manager.getMovieCast(movie);
-    assert.strictEqual(cast.length, 30, 'Bounded to max 30');
+    assert.strictEqual(cast.length, 150, 'Bounded to max 150, not the old 30');
     assert.strictEqual(cast[0].order, 0, 'First item has smallest order');
-    assert.strictEqual(cast[29].order, 29, '30th item has order 29');
-    console.log('  ✅ 5. Cast sorted by order ASC and bounded to 30');
+    assert.strictEqual(cast[149].order, 149, '150th item has order 149');
+    const tabHtml = manager.renderActorsTab(cast);
+    assert.strictEqual((tabHtml.match(/class="actor-card/g) || []).length, 150, 'The tab renders every kept actor');
+
+    const guest = manager.renderActorCard({ id: 'tmdb:7', name: 'Guest', character: 'Henry Hays', episodeCount: 8 });
+    assert.ok(guest.includes('class="actor-episodes">8 эпизодов<'), 'A series actor names the episodes played');
+    assert.ok(manager.renderActorCard({ id: 'tmdb:9', name: 'Regular', episodeCount: 22 }).includes('>22 эпизода<'), 'Episode counts use Russian plural forms');
+    assert.ok(manager.renderActorCard({ id: 'tmdb:10', name: 'Cameo', episodeCount: 1 }).includes('>1 эпизод<'), 'One episode is singular');
+    assert.ok(!manager.renderActorCard({ id: 'tmdb:8', name: 'Film actor' }).includes('actor-episodes'), 'A film actor has no episode line');
+    const nikulin = { id: 'tmdb:11', name: 'Юрий Никулин', character: 'Balbes', characterLocal: 'Балбес' };
+    assert.ok(manager.renderActorCard(nikulin).includes('>Балбес<'), 'The Russian interface shows Kinopoisk’s Cyrillic character');
+    const voiced = { id: 'tmdb:12', name: 'Ray Fisher', character: 'Cyborg (voice) / Victor Stone (uncredited) (archive footage)' };
+    assert.ok(manager.renderActorCard(voiced).includes('>Cyborg (озвучка) / Victor Stone (без упоминания в титрах) (архивные кадры)<'), 'TMDB’s notes read as on the person page');
+    globalThis.i18n.currentLocale = 'en';
+    assert.ok(manager.renderActorCard(nikulin).includes('>Balbes<'), 'The English interface keeps TMDB’s');
+    assert.ok(manager.renderActorCard(voiced).includes('>Cyborg (voice) / Victor Stone (uncredited) (archive footage)<'), 'and TMDB’s notes');
+    globalThis.i18n.currentLocale = 'ru';
+    console.log('  ✅ 5. Cast sorted by order ASC and bounded to 150; series actors show their episodes');
 }
 
 // ==========================================
@@ -409,9 +433,9 @@ console.log('\n--- Part 41: Anime & Voice Cast Tests ---');
     assert.strictEqual(cast[0].character, 'Frieren (voice)', '(voice) preserved');
 
     const html = manager.renderActorsTab(cast);
-    assert.ok(html.includes('Frieren (voice)'));
+    assert.ok(html.includes('Frieren (озвучка)'), 'The voice note stays, in the Russian interface’s words');
     assert.ok(!html.includes('Иван Дубляжев'), 'Voice director not in cast');
-    console.log('  ✅ 15. Anime Japanese voice cast preserved; (voice) character string intact');
+    console.log('  ✅ 15. Anime Japanese voice cast preserved; the (voice) note is kept and localized');
 }
 
 // ==========================================

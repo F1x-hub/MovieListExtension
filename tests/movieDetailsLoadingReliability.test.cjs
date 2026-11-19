@@ -619,5 +619,63 @@ function firebase(services = {}) {
     assert.equal(missingVotes(null, { kp: 8.1 }, { kp: 1200 }), false, 'cached votes are enough');
     assert.equal(missingVotes(null, {}, {}), false, 'no rating, nothing to show');
 
+    // The cached first paint listed the latest season; the complete movie lists every
+    // season and Kinopoisk's extra actors, and the Actors tab follows without a reload.
+    {
+        const { JSDOM } = require('jsdom');
+        const dom = new JSDOM('<button id="tab-btn-actors" class="tab-btn disabled" disabled></button>'
+            + '<div class="tab-pane active" id="tab-actors"><div class="actors-tab-wrapper"><div class="actors-grid" id="actorsGrid">'
+            + '<a class="actor-card" href="#">Latest season only</a></div></div></div>');
+        const previousDocument = context.document;
+        context.document = dom.window.document;
+        const patched = Object.create(prototype);
+        const castSignature = context.window.MovieDetailsManager.castSignature;
+        patched.renderedCastSignature = castSignature([{ id: 'tmdb:1' }]);
+        const movie = { kinopoiskId: 5, credits: { cast: [
+            { id: 'tmdb:1', name: 'Lead', order: 0 },
+            { id: 'tmdb:2', name: 'Ray Fisher', character: 'Henry Hays', episodeCount: 8, order: 1 },
+            { id: 'kp:3', kpPersonId: 3, name: 'Гость', order: 10003 }
+        ] } };
+        patched.patchActorsTab(movie);
+        const doc = dom.window.document;
+        assert.equal(doc.querySelectorAll('#actorsGrid .actor-card').length, 3, 'the complete cast replaces the cached one');
+        assert.ok(doc.querySelector('.actor-episodes'), 'episode counts appear');
+        assert.equal(doc.getElementById('tab-btn-actors').disabled, false, 'the tab opens once it has actors');
+        const drawn = doc.getElementById('actorsGrid');
+        patched.patchActorsTab(movie);
+        assert.equal(doc.getElementById('actorsGrid'), drawn, 'the same cast is not drawn twice');
+        assert.notEqual(castSignature([{ id: 'tmdb:2', episodeCount: 8 }]), castSignature([{ id: 'tmdb:2', episodeCount: 1 }]), 'episode counts are part of the key');
+
+        // In the Russian interface the Actors tab's characters translate by themselves with
+        // Chrome's on-device translator: no button, and the English interface keeps them.
+        const CharacterNameTranslator = require('../src/shared/services/CharacterNameTranslator.js');
+        const kept = {};
+        CharacterNameTranslator.instance = new CharacterNameTranslator({
+            translatorApi: { availability: async () => 'available', create: async () => ({ translate: async text => `RU:${text}` }) },
+            storage: { async get(keys) { return Object.fromEntries([].concat(keys).map(key => [key, kept[key]])); }, async set(items) { Object.assign(kept, items); } },
+            eventTarget: null
+        });
+        context.window.CharacterNameTranslator = CharacterNameTranslator;
+        context.i18n.currentLocale = 'ru';
+        patched.renderedCastSignature = '';
+        patched.patchActorsTab(movie);
+        assert.equal(doc.querySelector('[data-action="translate-character-names"]'), null, 'no button: the names translate by themselves');
+        await patched.characterTranslation.ready;
+        const henry = [...doc.querySelectorAll('#actorsGrid .actor-character')].find(node => node.dataset.characterOriginal === 'Henry Hays');
+        assert.equal(henry?.textContent, 'RU:Henry Hays', 'the Actors tab translates characters, keeping the original');
+        context.i18n.currentLocale = 'en';
+        patched.renderedCastSignature = '';
+        patched.patchActorsTab(movie);
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(patched.characterTranslation, null, 'the English interface translates nothing');
+        assert.ok([...doc.querySelectorAll('#actorsGrid .actor-character')].some(node => node.textContent === 'Henry Hays'), 'and keeps the original names');
+        CharacterNameTranslator.instance = null;
+        delete context.window.CharacterNameTranslator;
+        delete context.i18n.currentLocale;
+
+        context.document = previousDocument;
+        dom.window.close();
+    }
+
     console.log('Movie Details loading reliability tests passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
