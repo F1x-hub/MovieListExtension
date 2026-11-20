@@ -1,5 +1,16 @@
 export const whatsNew = [
     {
+        id: '1.5.8', version: '1.5.8', date: '2026-11-21',
+        highlights: [
+            { id: 'salvo', title: { ru: 'Залп', en: 'Salvo' }, text: { ru: 'Пошаговая артиллерия на островах, которые разрушает каждый взрыв: одиннадцать видов оружия, ветер, ящики с припасами и боты трёх уровней. Играйте одни или онлайн с другими пользователями расширения.', en: 'Turn-based artillery on islands that every explosion carves: eleven weapons, wind, supply crates and bots at three levels. Play alone or online with other extension users.' } },
+            { id: 'every-award', title: { ru: 'Все награды фильма', en: 'Every award a film has' }, text: { ru: 'Во вкладке «Награды» не только «Оскар» и «Золотой глобус», а все церемонии с Кинопоиска: BAFTA, Канны, Венеция, «Ника» и другие, с победами, номинациями и людьми.', en: 'The Awards tab lists every ceremony Kinopoisk has, not only the Oscars and the Golden Globes: BAFTA, Cannes, Venice, the Nika and more, with wins, nominations and the people.' } },
+            { id: 'person-page', title: { ru: 'Новая страница персоны', en: 'A new person page' }, text: { ru: 'Награды человека, фильмография по вкладкам «Актёрские работы», «Режиссура» и «Продюсирование» с сортировкой, а у каждой работы указан персонаж или должность.', en: 'The person’s awards, a filmography split into acting, directing and producing tabs with sorting, and a character or job on every credit.' } },
+            { id: 'full-cast', title: { ru: 'Весь актёрский состав', en: 'The whole cast' }, text: { ru: 'У сериала видны актёры всех сезонов, а не только последнего, до 150 человек, и у каждого число эпизодов.', en: 'A series lists the actors of every season, not only the last one, up to 150 people, each with an episode count.' } },
+            { id: 'character-names-ru', title: { ru: 'Имена персонажей по-русски', en: 'Character names in Russian' }, text: { ru: 'Имена героев зарубежных фильмов Chrome переводит прямо на устройстве, без кнопки. Оригинал виден в подсказке.', en: 'In the Russian interface, Chrome translates foreign films’ character names on the device, with no button. The original shows in the tooltip.' } },
+            { id: 'late-source', title: { ru: 'Медленный источник не теряется', en: 'A slow source is kept' }, text: { ru: 'Если видео начало играть на несколько секунд позже, надпись «Источник недоступен» пропадает, и плеер остаётся на этом источнике.', en: 'When a video starts a few seconds late, the unavailable message goes away and the player stays on that source.' } }
+        ]
+    },
+    {
         id: '1.5.7', version: '1.5.7', date: '2026-11-18',
         highlights: [
             { id: 'chess-3d', title: { ru: 'Шахматы в 3D', en: '3D chess' }, text: { ru: 'Играйте с ботом шести уровней или с другими пользователями расширения: с часами, рейтингом и реваншем.', en: 'Play a bot with six levels or other extension users, with clocks, ratings and rematches.' } },
