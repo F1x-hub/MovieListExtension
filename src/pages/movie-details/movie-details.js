@@ -2,6 +2,8 @@ import { i18n } from '../../shared/i18n/I18n.js';
 import { getRatingTheme } from '../../shared/config/franchiseRatingThemes.js';
 import { getRatingIconMarkup } from '../../shared/components/RatingIcons.js';
 import { CustomDatePicker, CustomTimePicker } from '../../shared/components/CustomDateTimePicker.js';
+import { playAnnounceStamp, blobToStampImage, announceStampLayer } from './announce-stamp/AnnounceStampScene.js';
+import { runAnnounce } from './announce-stamp/announceFlow.js';
 
 function createAppError(code, options = {}) {
     const ErrorCtor = globalThis.AppError;
@@ -2159,7 +2161,6 @@ class MovieDetailsManager {
         const movie = this.selectedMovie;
         if (!movie) return;
 
-        const text = movie.description || '';
         const date = document.getElementById('announceDate')?.value;
         const time = document.getElementById('announceTime')?.value;
 
@@ -2178,40 +2179,38 @@ class MovieDetailsManager {
         const [year, month, day] = date.split('-');
         const rawDateStr = `${day}.${month}.${year}, ${time}`;
 
-        const btn = document.getElementById('sendAnnounceBtn');
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = 'Отправка...';
-        }
+        const button = document.getElementById('sendAnnounceBtn');
+        if (button?.disabled) return;
+        if (button) button.disabled = true;
 
         try {
-            const response = await chrome.runtime.sendMessage({
-                type: 'SCHEDULE_ANNOUNCE',
+            const outcome = await runAnnounce({
                 movie: {
                     kinopoiskId: movie.kinopoiskId,
                     name: movie.name || movie.alternativeName || '',
                     year: movie.year || '',
                     posterUrl: movie.posterUrl || '',
-                    description: text,
+                    description: movie.description || '',
                 },
+                date,
+                time,
                 scheduledAt,
-                rawDateStr
+                rawDateStr,
+                settings: this.announceStampSettings,
+                playScene: playAnnounceStamp,
+                sendMessage: message => chrome.runtime.sendMessage(message),
+                encodeImage: blobToStampImage,
+                onHiddenResult: (result) => {
+                    Utils.showToast(result.ok ? result.message : result.error, result.ok ? 'success' : 'error');
+                    if (result.ok) this.closeAnnounceModal();
+                }
             });
-
-            if (response?.success) {
-                Utils.showToast(`Анонс запланирован на ${rawDateStr}`, 'success');
-                this.closeAnnounceModal();
-            } else {
-                Utils.showToast(response?.error || 'Ошибка при планировании', 'error');
-            }
+            if (outcome.status === 'sent') this.closeAnnounceModal();
         } catch (err) {
-            console.error('[MovieDetails] Announce send error:', err);
-            Utils.showToast('Не удалось отправить задание. Убедитесь, что бот запущен.', 'error');
+            console.error('[MovieDetails] Announce stamp scene error:', err);
+            Utils.showToast('Не удалось показать анонс', 'error');
         } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg> Запланировать`;
-            }
+            if (button) button.disabled = false;
         }
     }
 
@@ -3938,6 +3937,13 @@ class MovieDetailsManager {
             close: () => window.ConfirmDialog?.cancel(),
             getFocusContainer: () => window.ConfirmDialog?.getElement() || null,
             stopPropagation: true
+        });
+        // The stamp scene is a native modal <dialog> opened above the announce form.
+        stack.register('announce-stamp', {
+            order: 8,
+            isOpen: () => announceStampLayer.isOpen(),
+            close: () => announceStampLayer.close(),
+            getFocusContainer: () => announceStampLayer.getElement()
         });
         stack.register('announce', {
             order: 10,

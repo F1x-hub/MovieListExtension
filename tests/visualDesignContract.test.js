@@ -39,6 +39,8 @@ const exceptionScopedFiles = [
     'src/pages/battleship/battleship.css',
     // Chess: porcelain and obsidian piece glyphs and the flat board's stone squares.
     'src/pages/chess/chess.css',
+    // Announce stamp scene: the stamp body and its ink are content; the panel uses tokens.
+    'src/pages/movie-details/announce-stamp/announce-stamp.css',
     'src/pages/bookmarks/bookmarks.css',
     'src/pages/calendar/calendar.css',
     'src/pages/settings/settings.css',

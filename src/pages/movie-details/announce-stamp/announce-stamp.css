@@ -1,0 +1,284 @@
+/*
+ * Announce stamp scene (AnnounceStampScene.js).
+ * The poster, the stamp and its ink are content with their own physical look
+ * (docs/design-system.md, exception "Announce stamp"); the stamp itself is
+ * drawn in WebGL (announceStampStage.js). The status panel, buttons and close
+ * control use the shared neutral tokens.
+ */
+
+.announce-stamp {
+    /* Room kept under the poster for the status panel, which floats over the stage. */
+    --stamp-panel-space: 150px;
+
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ui-color-content);
+    overflow: hidden;
+    overscroll-behavior: contain;
+}
+
+@media (width < 640px) {
+    .announce-stamp {
+        --stamp-panel-space: 200px;
+    }
+}
+
+/* One cell: the stage fills the screen and the panel floats over its bottom,
+   so the panel can change height without moving the poster. */
+.announce-stamp[open] {
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+
+.announce-stamp::backdrop {
+    background: rgb(0 0 0 / 0.88);
+    overflow: hidden;
+    overscroll-behavior: contain;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .announce-stamp[open],
+    .announce-stamp[open]::backdrop {
+        transition: opacity var(--motion-duration-base, 180ms) var(--motion-ease-out, ease-out);
+    }
+
+    @starting-style {
+        .announce-stamp[open],
+        .announce-stamp[open]::backdrop {
+            opacity: 0;
+        }
+    }
+}
+
+.announce-stamp [hidden] {
+    display: none !important;
+}
+
+/* ── Stage ─────────────────────────────────────────────────────────────── */
+
+/* The poster and the JPEG centre in the space above the panel. */
+.announce-stamp__viewport {
+    position: relative;
+    grid-area: 1 / 1;
+    display: grid;
+    place-items: center;
+    min-height: 0;
+    padding-block-end: var(--stamp-panel-space);
+}
+
+/* WebGL flight (announceStampStage.js): fills the stage, under the final JPEG. */
+.announce-stamp__stage {
+    position: absolute;
+    inset: 0;
+    display: none;
+    pointer-events: none;
+}
+
+.announce-stamp--flight .announce-stamp__stage {
+    display: block;
+}
+
+.announce-stamp__canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* Aiming: the stamp follows the pointer, the wheel turns it, a click strikes. */
+.announce-stamp--aiming .announce-stamp__viewport,
+.announce-stamp--aiming .announce-stamp__stage {
+    cursor: crosshair;
+    touch-action: none;
+    overscroll-behavior: contain;
+}
+
+.announce-stamp--aiming .announce-stamp__stage {
+    pointer-events: auto;
+}
+
+.announce-stamp__aim {
+    position: absolute;
+    overflow: visible;
+    pointer-events: none;
+    fill: none;
+    stroke-linejoin: round;
+}
+
+/* Dashes in the chosen ink on a halo that contrasts with it (set by the scene). */
+.announce-stamp__aim-halo {
+    stroke: var(--stamp-ink-halo, rgb(255 255 255 / 0.7));
+    stroke-width: 7;
+    stroke-dasharray: 10 7;
+    fill: rgb(255 255 255 / 0.1);
+}
+
+.announce-stamp__aim-line {
+    stroke: var(--stamp-ink, rgb(192 38 45));
+    stroke-width: 3.5;
+    stroke-dasharray: 10 7;
+}
+
+/* Flat poster: the reduced-motion and no-WebGL scene. */
+.announce-stamp__paper {
+    position: relative;
+    grid-area: 1 / 1;
+    width: var(--paper-w, 360px);
+    height: var(--paper-h, 540px);
+    border-radius: 3px;
+    box-shadow: 0 30px 80px rgb(0 0 0 / 0.55);
+}
+
+.announce-stamp--flight .announce-stamp__paper {
+    visibility: hidden;
+}
+
+.announce-stamp__poster {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    object-fit: fill;
+    user-select: none;
+}
+
+.announce-stamp__impression {
+    position: absolute;
+    opacity: var(--stamp-ink-opacity, 0.9);
+    pointer-events: none;
+    user-select: none;
+}
+
+/* The exported JPEG: the poster as sent, and the scene's last view. */
+.announce-stamp__flat {
+    position: relative;
+    grid-area: 1 / 1;
+    width: var(--paper-w, 360px);
+    height: var(--paper-h, 540px);
+    border-radius: 3px;
+    box-shadow: 0 30px 80px rgb(0 0 0 / 0.55);
+}
+
+.announce-stamp__loading {
+    position: relative;
+    grid-area: 1 / 1;
+}
+
+/* ── Status panel and close control (neutral UI chrome) ────────────────── */
+
+.announce-stamp__panel {
+    position: relative;
+    grid-area: 1 / 1;
+    align-self: end;
+    justify-self: center;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 12px 16px;
+    max-width: min(560px, calc(100vw - 32px));
+    max-height: calc(var(--stamp-panel-space) - 40px);
+    min-height: 62px;
+    margin-block-end: 28px;
+    overflow: auto;
+    padding: 12px 16px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--radius-lg, 12px);
+    background: var(--ui-color-surface);
+    box-shadow: var(--elevation-3);
+}
+
+.announce-stamp__message {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.announce-stamp__status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: var(--font-size-md, 14px);
+    font-weight: 600;
+    color: var(--ui-color-content);
+}
+
+.announce-stamp__hint {
+    margin: 0;
+    font-size: var(--font-size-xs, 12px);
+    color: var(--ui-color-content-muted);
+}
+
+.announce-stamp__status-icon:empty { display: none; }
+.announce-stamp__status-icon { display: inline-flex; }
+.announce-stamp[data-status="sent"] .announce-stamp__status-icon { color: var(--ui-color-status-success); }
+.announce-stamp[data-status="failed"] .announce-stamp__status-icon,
+.announce-stamp[data-status="render-failed"] .announce-stamp__status-icon { color: var(--ui-color-status-danger); }
+
+.announce-stamp[data-status="sending"] .announce-stamp__status-text::after {
+    content: '';
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-inline-start: 8px;
+    vertical-align: -1px;
+    border: 2px solid var(--ui-color-content-subtle);
+    border-top-color: var(--ui-color-content);
+    border-radius: var(--radius-circle, 50%);
+
+    @media (prefers-reduced-motion: no-preference) {
+        animation: announce-stamp-spin 800ms linear infinite;
+    }
+}
+
+@keyframes announce-stamp-spin {
+    to { rotate: 1turn; }
+}
+
+.announce-stamp__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.announce-stamp__actions:not(:has(button:not([hidden]))) { display: none; }
+
+.announce-stamp__close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--radius-md, 8px);
+    background: var(--ui-color-surface);
+    color: var(--ui-color-content);
+    cursor: pointer;
+    transition: background-color var(--motion-duration-fast, 120ms) var(--motion-ease-standard, ease),
+        border-color var(--motion-duration-fast, 120ms) var(--motion-ease-standard, ease);
+}
+
+.announce-stamp__close:hover {
+    background: var(--ui-color-surface-muted);
+    border-color: var(--ui-color-border-hover);
+}
+
+@media (width < 640px) {
+    .announce-stamp__close {
+        top: 10px;
+        right: 10px;
+    }
+}

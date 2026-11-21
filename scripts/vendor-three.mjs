@@ -1,9 +1,10 @@
 /**
  * Builds libs/three.games.min.js: a tree-shaken ES module with only the parts of
- * three.js the 3D games import (the Rubik's Cube, chess and Battleship renderers
- * under src/shared/games/). The extension has no bundler, so the vendored file is
- * committed; rerun `npm run vendor:three` after upgrading the `three` dependency
- * or importing new names from the bundle in a game module.
+ * three.js the extension imports: the 3D games (the Rubik's Cube, chess and
+ * Battleship renderers under src/shared/games/) and the film page's announce
+ * stamp (src/pages/movie-details/announce-stamp/). The extension has no bundler,
+ * so the vendored file is committed; rerun `npm run vendor:three` after upgrading
+ * the `three` dependency or importing new names from the bundle in one of those modules.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
@@ -23,10 +24,12 @@ function gameModules(dir) {
     });
 }
 
-/** Every name a game module imports from the vendored bundle, sorted. */
-export function importedNames(dir = path.join(root, 'src/shared/games')) {
+const CONSUMER_DIRS = ['src/shared/games', 'src/pages/movie-details/announce-stamp'];
+
+/** Every name a consumer module imports from the vendored bundle, sorted. */
+export function importedNames(dirs = CONSUMER_DIRS.map(dir => path.join(root, dir))) {
     const names = new Set();
-    gameModules(dir).forEach(file => {
+    [].concat(dirs).flatMap(dir => gameModules(dir)).forEach(file => {
         for (const match of readFileSync(file, 'utf8').matchAll(IMPORT_PATTERN)) {
             match[1].split(',').map(name => name.trim()).filter(Boolean).forEach(name => names.add(name));
         }
@@ -36,7 +39,7 @@ export function importedNames(dir = path.join(root, 'src/shared/games')) {
 
 function build() {
     const names = importedNames();
-    if (!names.length) throw new Error(`No imports from ${BUNDLE} found under src/shared/games/`);
+    if (!names.length) throw new Error(`No imports from ${BUNDLE} found under ${CONSUMER_DIRS.join(', ')}`);
     const workDir = mkdtempSync(path.join(tmpdir(), 'vendor-three-'));
     const entry = path.join(workDir, 'entry.mjs');
     const threePath = path.join(root, 'node_modules/three/build/three.module.js').split(path.sep).join('/');

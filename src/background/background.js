@@ -422,7 +422,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             body: JSON.stringify({
                 movie: message.movie,
                 scheduledAt: message.scheduledAt,
-                rawDateStr: message.rawDateStr
+                rawDateStr: message.rawDateStr,
+                // Optional poster with the screening stamp: { data: base64, contentType }.
+                ...(message.stampImage ? { stampImage: message.stampImage } : {})
             })
         })
         .then(async (res) => {
