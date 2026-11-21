@@ -64,6 +64,21 @@ Color is allowed only when it carries content or an unavoidable semantic:
    («Ваша оценка: 7») and each button's `aria-pressed` say the score as well.
    The pictures added for Iron Man, Avengers, Superman and Dune share one size,
    read at 16–20px in both themes, and reproduce no logo or wordmark.
+8. the announce stamp: in the film page's announce scene
+   (`src/pages/movie-details/announce-stamp/`) the stamp is an object, not
+   chrome. It is drawn in WebGL as the extension's two poles made physical: an
+   obsidian lacquered body and handle, a zinc collar and a zinc cap engraved with
+   the clapperboard mark, on a graphite desk. The ink of its impression (red by
+   default, set in the scene's settings; dark blue, black or white where red
+   would not read on the poster, or as the owner switches it) is content drawn
+   over the poster, on a soft halo of its own shape (white under dark ink,
+   near-black under white ink) so it reads on busy posters: a
+   cinema ticket with the clapperboard mark, the label, the date and, on the
+   stub, «НАЧАЛО» and the time, always as text. While the owner aims, the place
+   is a dashed outline of that ticket in the ink, on a halo that contrasts with it. The stage behind it
+   is a dark scrim in both themes; its status panel, buttons and close control
+   use only the neutral `--ui-*` tokens, and a sent or failed result has an icon
+   next to its text.
 
 Exceptions must remain local, documented, and visually subordinate to the
 neutral interface. Semantic states require a label, icon, shape, border style, or
@@ -200,9 +215,12 @@ The corner of an element follows its role, not its page. The scale lives in
 | `--radius-lg` | 12px | Cards, posters, panels, banners, popovers |
 | `--radius-xl` | 16px | Page surfaces, modals, large sections |
 | `--radius-pill` | 999px | Non-interactive counters and tracks only: count badges, progress bars, slider and switch tracks |
-| `--radius-circle` | 50% | Square elements only: avatars, dots, spinners, icon-only round buttons |
+| `--radius-circle` | 50% | Square non-interactive elements only: avatars, dots, spinners |
 
-Buttons, tabs and choices are never pill-shaped. `50%` on a wide element draws
+Buttons, tabs and choices are never pill-shaped, and icon-only buttons (close,
+remove, clear, play, small actions) are never circles: like every control they
+are rounded squares with `--radius-md`, or `--radius-sm` below about 16px.
+`npm run test:visual-design` fails on a control selector with a circular radius. `50%` on a wide element draws
 an ellipse, so wide counters and bars use `--radius-pill`; `--radius-full` is a
 legacy alias of it. A child inset in a rounded frame takes the frame's radius
 minus the inset (`calc(var(--radius-xl) - 1px)` inside a 1px border).
