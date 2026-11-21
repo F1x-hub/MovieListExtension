@@ -135,7 +135,7 @@
     right: 14px;
     background: rgba(255, 255, 255, 0.08);
     border: none;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-md);
     width: 24px;
     height: 24px;
     color: var(--theme-text-muted, #a1a1aa);
@@ -801,7 +801,7 @@
     line-height: 1;
     width: 32px;
     height: 32px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;

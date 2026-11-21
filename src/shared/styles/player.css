@@ -1015,7 +1015,7 @@ body.player-modal-open {
 .player-surface__primary-action {
     width: 80px;
     height: 80px;
-    border-radius: var(--radius-circle, 50%);
+    border-radius: var(--radius-md, 8px);
     background-color: color-mix(in srgb, var(--theme-text-primary) 88%, transparent);
     border: none;
     cursor: pointer;
@@ -1435,7 +1435,7 @@ body.player-modal-open {
     width: 32px;
     height: 32px;
     flex: 0 0 32px;
-    border-radius: var(--radius-circle, 50%);
+    border-radius: var(--radius-md, 8px);
     display: inline-flex;
     align-items: center;
     justify-content: center;

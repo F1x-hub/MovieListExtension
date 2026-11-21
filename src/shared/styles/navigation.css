@@ -677,7 +677,7 @@
     height: 26px;
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.04);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-md);
     color: var(--theme-text-secondary);
     font-size: var(--font-size-2xs);
     cursor: pointer;

@@ -661,7 +661,7 @@ html.season-newyear .popup-logo-img {
     color: var(--ny-round-ink);
     background: var(--ny-round-bg);
     border: 1px solid var(--ny-round-edge);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-md);
     cursor: pointer;
 }
 

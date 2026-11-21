@@ -60,7 +60,7 @@
     height: 32px;
     padding: 0;
     border: 1px dashed var(--theme-border);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--theme-text-muted);
     cursor: pointer;

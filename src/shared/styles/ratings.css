@@ -277,7 +277,7 @@
     justify-content: center;
     width: 14px;
     height: 14px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-sm);
     background: rgba(255, 255, 255, 0.06);
     color: var(--theme-text-secondary);
     cursor: pointer;

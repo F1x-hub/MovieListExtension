@@ -251,7 +251,7 @@
     background: rgba(0, 0, 0, 0.6);
     color: white;
     border: none;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-md, 8px);
     width: 28px;
     height: 28px;
     cursor: pointer;

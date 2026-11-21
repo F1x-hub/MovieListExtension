@@ -293,4 +293,17 @@ for (const file of cssFilesInSource.filter((item) => !seasonalFiles.includes(ite
     }
 }
 
+// Corners follow the role: controls are rounded squares (`--radius-md`, or `--radius-sm`
+// when tiny), never circles; circles are for avatars, dots and spinners only.
+const ROUND_RADIUS = /border-radius\s*:\s*(?:50%|var\(--radius-circle[^;]*\))\s*[;}]/;
+const CONTROL_SELECTOR = /(?:close|btn|button|action|toggle|dismiss|remove|clear|trigger)(?![\w-]*(?:avatar|dot|spinner|icon|thumb|preview))/i;
+for (const file of cssFilesInSource) {
+    const source = read(file).replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const [, selector, body] of source.matchAll(/([^{}@]+)\{([^{}]*)\}/g)) {
+        const name = selector.trim().replace(/\s+/g, ' ');
+        if (!ROUND_RADIUS.test(body) || !CONTROL_SELECTOR.test(name) || /::(?:before|after)|avatar|slider/i.test(name)) continue;
+        assert.fail(`${file}: ${name} is a control with a circular radius; use var(--radius-md)`);
+    }
+}
+
 console.log('Visual design contract tests passed');
