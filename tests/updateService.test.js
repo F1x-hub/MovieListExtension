@@ -341,6 +341,86 @@ assert.match(source, /\\d\+\(\?:\\\.\\d\+\)\{2,3\}/);
     assert.strictEqual(staleStorage.extension_update_state_v2.availableVersion, null);
     assert.ok(!staleStorage.extension_update_state_v2.reloadOperationId,
         'a superseded journal must not schedule an extension reload');
+
+    // Automatic updates after a popup dismissal and across service-worker restarts.
+    const settleWorker = async () => { for (let i = 0; i < 60; i += 1) await new Promise(resolve => setImmediate(resolve)); };
+    function startWorker(workerStorage, existingAlarms = new Map()) {
+        const applyRequests = [];
+        const createdAlarms = [];
+        const workerContext = {
+            chrome: {
+                runtime: {
+                    id: extensionId,
+                    getManifest: () => ({ version: '1.2.9' }),
+                    sendNativeMessage: (name, message, callback) => {
+                        if (message.action === 'apply') applyRequests.push(message.operationId);
+                        callback({ success: true, configured: true, updaterVersion: '1.1.4', operation: null, status: 'queued' });
+                    }
+                },
+                storage: { local: {
+                    async get(keys) { return Object.fromEntries(keys.map(key => [key, workerStorage[key]])); },
+                    async set(values) { Object.assign(workerStorage, JSON.parse(JSON.stringify(values))); }
+                } },
+                alarms: {
+                    async get(name) { return existingAlarms.get(name); },
+                    create(name, info) { createdAlarms.push({ name, info }); existingAlarms.set(name, { name, ...info }); },
+                    clear: () => Promise.resolve(true)
+                },
+                tabs: { query: async () => [], sendMessage() {}, remove: async () => {} }
+            },
+            fetch: async (url) => ({ ok: true, status: url.includes('components') ? 404 : 200,
+                async text() { return url.endsWith('.sig') ? 'test-signature' : JSON.stringify(metadata); } }),
+            console: { log() {}, warn() {}, error() {} }, setTimeout: () => 0, clearTimeout() {}, AbortController, URL,
+            crypto: { randomUUID: () => '00000000-0000-4000-8000-000000000005' }
+        };
+        workerContext.globalThis = workerContext;
+        vm.runInNewContext(source, workerContext, { filename: 'UpdateService-worker.js' });
+        workerContext.UpdateService.setupBackground();
+        return { applyRequests, createdAlarms };
+    }
+
+    const expiredDeferral = {
+        extension_update_settings_v1: { autoUpdateEnabled: true },
+        extension_update_state_v2: { status: 'deferred', deferredUntil: Date.now() - 60 * 60 * 1000, nextCheckAt: 0 }
+    };
+    const afterDeferral = startWorker(expiredDeferral);
+    await settleWorker();
+    assert.strictEqual(afterDeferral.applyRequests.length, 1,
+        'an expired popup deferral must not block the automatic install');
+    assert.strictEqual(expiredDeferral.extension_update_state_v2.deferredUntil, 0,
+        'the expired deferral is cleared');
+
+    const activeDeferral = {
+        extension_update_settings_v1: { autoUpdateEnabled: true },
+        extension_update_state_v2: { status: 'deferred', deferredUntil: Date.now() + 60 * 60 * 1000, nextCheckAt: 0 }
+    };
+    const duringDeferral = startWorker(activeDeferral);
+    await settleWorker();
+    assert.strictEqual(duringDeferral.applyRequests.length, 0, 'an unexpired deferral still waits');
+
+    const foundBeforeRestart = {
+        extension_update_settings_v1: { autoUpdateEnabled: true },
+        extension_update_state_v2: {
+            status: 'available', availableVersion: '1.3.0', metadata, metadataText: JSON.stringify(metadata),
+            signature: 'test-signature', deferredUntil: 0, nextCheckAt: Date.now() + 5 * 60 * 60 * 1000
+        }
+    };
+    const restartedWorker = startWorker(foundBeforeRestart);
+    await settleWorker();
+    assert.strictEqual(restartedWorker.applyRequests.length, 1,
+        'a release already found is installed on restart without waiting for the next six-hour download');
+
+    const sharedAlarms = new Map();
+    const upToDate = { extension_update_settings_v1: { autoUpdateEnabled: true },
+        extension_update_state_v2: { status: 'up_to_date', nextCheckAt: Date.now() + 60 * 60 * 1000 } };
+    const firstStart = startWorker(upToDate, sharedAlarms);
+    await settleWorker();
+    const laterStart = startWorker(upToDate, sharedAlarms);
+    await settleWorker();
+    assert.deepStrictEqual(firstStart.createdAlarms.map(alarm => alarm.name), ['checkUpdates']);
+    assert.strictEqual(laterStart.createdAlarms.length, 0,
+        'a service-worker restart must keep the periodic check alarm instead of restarting its countdown');
+
     console.log('updateService.test.js passed');
 })().catch((error) => {
     console.error(error);

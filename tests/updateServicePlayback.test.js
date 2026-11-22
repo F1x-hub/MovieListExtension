@@ -205,28 +205,38 @@ function createHarness({
         'settings must reconcile a stale installing state with the native operation journal');
     assert.strictEqual(reconciledState.state.errorCode, 'UPDATE_REPLACEMENT_FAILED');
 
-    const activePlayback = createHarness({ executeResult: true });
+    // An ordinary tab (YouTube, music) is untouched by an extension reload, so
+    // its playback never holds an update back, automatic or manual.
+    for (const automaticRun of [true, false]) {
+        const ordinaryTabPlayback = createHarness({ executeResult: true, automatic: automaticRun });
+        const ordinaryResult = await ordinaryTabPlayback.apply();
+        assert.strictEqual(ordinaryResult.status, 'succeeded',
+            'playback in an ordinary tab must not block an update');
+        assert.strictEqual(ordinaryTabPlayback.applyCalls, 1);
+    }
+
+    const activePlayback = createHarness({ extensionPage: true, extensionPlayback: true });
     const blockedResult = await activePlayback.apply();
     assert.strictEqual(blockedResult.status, 'waiting_for_safe_moment');
     assert.strictEqual(blockedResult.requiresConfirmation, true,
         'manual update must expose a confirmation requirement');
-    assert.deepStrictEqual(Array.from(blockedResult.playbackReasons), ['tab_media']);
+    assert.deepStrictEqual(Array.from(blockedResult.playbackReasons), ['extension_page_media']);
     assert.strictEqual(activePlayback.applyCalls, 0);
     assert.strictEqual(activePlayback.alarms.length, 1);
 
-    const manualFlow = createHarness({ executeResult: true });
+    const manualFlow = createHarness({ extensionPage: true, extensionPlayback: true });
     const manualResult = await manualFlow.installLatest();
     assert.strictEqual(manualResult.status, 'waiting_for_safe_moment');
     assert.strictEqual(manualResult.requiresConfirmation, true,
         'the settings button must receive a confirmation-required result');
 
-    const confirmedPlayback = createHarness({ executeResult: true, allowPlayback: true });
+    const confirmedPlayback = createHarness({ extensionPage: true, extensionPlayback: true, allowPlayback: true });
     const confirmedResult = await confirmedPlayback.apply();
     assert.strictEqual(confirmedResult.status, 'succeeded',
         'explicit user confirmation must allow a manual update during playback');
     assert.strictEqual(confirmedPlayback.applyCalls, 1);
 
-    const automaticPlayback = createHarness({ executeResult: true, automatic: true });
+    const automaticPlayback = createHarness({ extensionPage: true, extensionPlayback: true, automatic: true });
     const automaticResult = await automaticPlayback.apply();
     assert.strictEqual(automaticResult.status, 'waiting_for_safe_moment');
     assert.strictEqual(automaticResult.requiresConfirmation, false,
@@ -236,14 +246,12 @@ function createHarness({
     assert.match(settingsSource, /allowPlayback: true/);
     assert.match(settingsSource, /result\.status === 'waiting_for_safe_moment' && result\.requiresConfirmation/,
         'manual settings updates must confirm playback discovered after the initial metadata check');
-    assert.match(source, /media\.currentSrc \|\| media\.src/,
-        'empty media elements must not block an update');
-    assert.match(source, /media\.srcObject/,
-        'MediaStream-backed players must block an update');
-    assert.match(source, /HAVE_METADATA/,
-        'media playback detection must require loaded media metadata');
-    assert.match(source, /allFrames: true/,
-        'embedded frame playback must be included in the safety check');
+    assert.doesNotMatch(source, /executeScript/,
+        'the updater must not inspect ordinary tabs for playback');
+    assert.match(movieDetailsSource, /HAVE_METADATA/,
+        'the player page must require loaded media metadata before it reports playback');
+    assert.match(movieDetailsSource, /getRuntimeState\?\.\(\)\.isPlaying/,
+        'the player page must report provider-frame playback through its runtime state');
     assert.match(source, /target: 'offscreen-radio'/,
         'radio state queries must reach the offscreen audio document');
     assert.match(source, /UPDATE_QUERY_PLAYBACK/,

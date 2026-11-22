@@ -597,7 +597,11 @@ checklist; `npm run test:visual-design` enforces much of it.
   named locks, and older Setup binaries cannot downgrade it. `MovieListUpdater.csproj` `<Version>`
   is the only updater version source, and signed feeds keep the 1.1.4 `minUpdaterVersion` floor.
 - `UpdateService` owns update state in the extension. Manual updates ask for confirmation when
-  playback is detected, and automatic ones wait for a safe moment. Diagnostics exclude metadata
+  playback is detected, and automatic ones wait for a safe moment. Only extension-owned playback
+  counts (extension pages via `UPDATE_QUERY_PLAYBACK`, the offscreen radio); never scan ordinary
+  tabs. Keep `checkUpdates` alive across worker restarts (create it only when missing), treat
+  only an unexpired `deferredUntil` as a deferral, and let the six-hour `nextCheckAt` throttle the
+  metadata download, not the install of a release already found. Diagnostics exclude metadata
   bodies, signatures and signed URL query parameters. Component checks use the separately signed
   `components.json`; a component's `recovery_required` never blocks extension updates, and an
   absent Suite is installed only on an explicit request.

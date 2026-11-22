@@ -461,6 +461,15 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Fixes
+
+- Automatic updates through MovieList Hub install on their own again, without the user opening Settings and pressing «Проверить». Three faults stacked up. Closing the update banner in the popup postpones the update for 24 hours, but an expired postponement stayed in storage and kept blocking the automatic install until an alarm cleared it. That alarm, the six-hour update check, was re-created on every service-worker start, which restarted its countdown, so with regular use it never fired. And a release already found waited for the next six-hour download before another install attempt. Now only an unexpired postponement counts and an expired one is cleared at the next check, the check alarm is created only when it is missing, and a release already found is installed at the next service-worker start. The update also no longer waits for a video in an ordinary tab such as YouTube or a music site: an update reloads only the extension and its pages, so only the extension's own playback (its player pages, which also answer for provider frames and torrents, and the radio) holds it back; the same applies to MediaPlayer Suite updates. Checked by `tests/updateService.test.js` (an expired and an active postponement, a release found before a restart, the alarm kept across restarts; the expired-postponement case fails on the old code), `tests/updateServicePlayback.test.js` and `tests/componentUpdates.test.cjs` (an ordinary tab no longer blocks, the extension's player still does); not yet observed with a real Hub install in Chrome.
+
+</details>
+
 <details>
 <summary><strong>1.5.9</strong> — Random page modes, an announce stamp scene and square icon buttons</summary>
 

@@ -185,6 +185,28 @@
         return OPERATION_STATUSES.has(state?.status);
     }
 
+    // A popup dismissal postpones automatic installation for 24 hours. Only an
+    // unexpired deferral counts: an expired one left in storage used to block
+    // automatic updates until an alarm happened to clear it.
+    function isDeferred(state) {
+        return Number(state?.deferredUntil) > now();
+    }
+
+    // The periodic check alarm survives service-worker restarts. Re-creating it
+    // on every start replaced it and restarted its six-hour countdown, so with
+    // regular use it never fired.
+    async function ensureCheckAlarm() {
+        try {
+            if (typeof chrome.alarms.get === 'function') {
+                const existing = await chrome.alarms.get(CHECK_ALARM);
+                if (existing?.periodInMinutes === CHECK_INTERVAL_MINUTES) return;
+            }
+        } catch {
+            // Fall through and create the alarm.
+        }
+        chrome.alarms.create(CHECK_ALARM, { periodInMinutes: CHECK_INTERVAL_MINUTES });
+    }
+
     function isComponentOperationPending(state) {
         return Object.values(state?.components || {}).some(item =>
             ['queued', 'downloading', 'replacing', 'installing', 'verifying'].includes(item?.status));
@@ -460,7 +482,20 @@
                 const { settings } = snapshot;
                 if (isOperationPending(state) || state.status === 'awaiting_confirmation') return state;
                 const currentVersion = chrome.runtime.getManifest().version;
-                if (!options.force && state.nextCheckAt > now()) return state;
+                if (state.deferredUntil && !isDeferred(state)) await writeState({ deferredUntil: 0 });
+                if (!options.force && state.nextCheckAt > now()) {
+                    // The six-hour limit throttles the metadata download, not the
+                    // install: a release already found and no longer deferred is
+                    // tried on every service-worker start instead of waiting for
+                    // the next download.
+                    if (options.interactive !== true && settings.autoUpdateEnabled && !isDeferred(state)
+                        && ['available', 'deferred'].includes(state.status)
+                        && state.availableVersion && state.metadata && state.signature
+                        && !isComponentOperationPending(state)) {
+                        return applyUpdate({ automatic: true });
+                    }
+                    return state;
+                }
 
                 activeCheckDidFetch = true;
                 // Independent inventory/catalog reconciliation must run even when
@@ -521,7 +556,7 @@
                     });
                 }
 
-                if (settings.autoUpdateEnabled && !nextState.deferredUntil && options.interactive !== true) {
+                if (settings.autoUpdateEnabled && !isDeferred(nextState) && options.interactive !== true) {
                     if (isComponentOperationPending((await readState()).state)) return (await readState()).state;
                     return applyUpdate({ automatic: options.interactive !== true });
                 }
@@ -601,59 +636,24 @@
                 if (radioState?.isPlaying === true) playbackReasons.push('radio_playing');
             }
 
-            const tabs = await chrome.tabs.query({});
-            if (!chrome.scripting?.executeScript) {
+            // Only the extension's own playback matters: an update reloads the
+            // extension and closes its pages, but never touches ordinary tabs, so a
+            // YouTube or music tab must not hold the update back. The player page
+            // answers for its provider frames through its own playback state.
+            if (typeof chrome.tabs?.query !== 'function' || typeof chrome.tabs?.sendMessage !== 'function') {
                 return { safe: playbackReasons.length === 0, playbackReasons };
             }
-
+            const extensionOrigin = `chrome-extension://${chrome.runtime.id}/`;
+            const tabs = await chrome.tabs.query({});
             await Promise.all(tabs
-                .filter(tab => Number.isInteger(tab.id))
+                .filter(tab => Number.isInteger(tab.id) && String(tab.url || '').startsWith(extensionOrigin))
                 .map(async (tab) => {
-                    try {
-                        if (String(tab.url || '').startsWith(`chrome-extension://${chrome.runtime.id}/`)
-                            && typeof chrome.tabs.sendMessage === 'function') {
-                            const response = await new Promise((resolve) => {
-                                chrome.tabs.sendMessage(tab.id, { type: 'UPDATE_QUERY_PLAYBACK' }, (result) => {
-                                    resolve(chrome.runtime.lastError ? null : result);
-                                });
-                            });
-                            if (response?.isPlaying === true) playbackReasons.push('extension_page_media');
-                            return;
-                        }
-                        const inspectMedia = () => Array.from(document.querySelectorAll('audio,video'))
-                            .some(media => {
-                                // Pages often keep an empty media element mounted while
-                                // their player is closed. It is playback only when the
-                                // element has a source, metadata, and is actively running.
-                                const source = media.currentSrc || media.src || media.srcObject
-                                    || media.querySelector('source[src]')?.src;
-                                return Boolean(source)
-                                    && media.readyState >= HTMLMediaElement.HAVE_METADATA
-                                    && !media.paused
-                                    && !media.ended
-                                    && !media.error;
-                            });
-                        let result;
-                        try {
-                            result = await chrome.scripting.executeScript({
-                                target: { tabId: tab.id, allFrames: true },
-                                func: inspectMedia
-                            });
-                        } catch {
-                            // A cross-origin frame without host permission can make
-                            // an all-frames injection fail as a whole. Recheck the
-                            // top frame so an accessible player still blocks updates.
-                            result = await chrome.scripting.executeScript({
-                                target: { tabId: tab.id },
-                                func: inspectMedia
-                            });
-                        }
-                        if (result?.some(frame => frame?.result === true)) playbackReasons.push('tab_media');
-                    } catch {
-                        // A missing host permission means that the tab cannot be
-                        // inspected, not that it is playing media. Only a positive
-                        // media signal should block a manual update.
-                    }
+                    const response = await new Promise((resolve) => {
+                        chrome.tabs.sendMessage(tab.id, { type: 'UPDATE_QUERY_PLAYBACK' }, (result) => {
+                            resolve(chrome.runtime.lastError ? null : result);
+                        });
+                    });
+                    if (response?.isPlaying === true) playbackReasons.push('extension_page_media');
                 }));
             return { safe: playbackReasons.length === 0, playbackReasons };
         } catch (error) {
@@ -910,7 +910,7 @@
     async function setAutoUpdateEnabled(enabled) {
         const settings = await updateSettings(current => ({ ...current, autoUpdateEnabled: enabled === true }));
         const { state } = await readState();
-        if (settings.autoUpdateEnabled && state.availableVersion && !state.deferredUntil) {
+        if (settings.autoUpdateEnabled && state.availableVersion && !isDeferred(state)) {
             return applyUpdate({ automatic: true });
         }
         return state;
@@ -1146,8 +1146,8 @@
     function setupBackground() {
         if (alarmRegistered) return;
         alarmRegistered = true;
-        chrome.alarms.create(CHECK_ALARM, { periodInMinutes: CHECK_INTERVAL_MINUTES });
         (async () => {
+            await ensureCheckAlarm();
             await confirmInstalled();
             await syncNativeOperation().catch(() => {});
             const afterSync = await readState();

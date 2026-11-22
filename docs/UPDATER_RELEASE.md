@@ -6,7 +6,8 @@ extension release, validates its signature, size, SHA-256, archive paths and man
 key, installs it and registers the Native Messaging host; Chrome still needs one manual
 **Load unpacked** action because it does not let programs add unpacked extensions.
 Later versions are found by the extension and installed by the hub after a safe
-playback check. The hub window (`--setup`, Start-menu shortcut) uses WebView2 and the
+playback check, which waits only for the extension's own playback (its pages and the
+radio): ordinary tabs are untouched by an update and never hold it back. The hub window (`--setup`, Start-menu shortcut) uses WebView2 and the
 extension's `src/shared/styles/theme.css` and `tokens.css`, embedded at build time;
 without the WebView2 runtime the plain WinForms connection form opens.
 Settings also expose a manual action that uses the same signed production path as

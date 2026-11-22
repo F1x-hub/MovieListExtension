@@ -48,8 +48,13 @@ function harness(options = {}) {
             async set(values) { Object.assign(storage, values); }, async remove(keys) { keys.forEach(key => delete storage[key]); }
         } },
         alarms: { create(name) { alarms.push(['create', name]); }, clear: async (name) => { alarms.push(['clear', name]); return true; } },
-        tabs: { query: async () => [{ id: 5, url: 'https://example.com' }] },
-        scripting: { executeScript: async () => [{ result: options.playing === true }] }
+        // Torrent playback runs in the extension's own player page; an ordinary tab
+        // (options.ordinaryTabPlaying) is untouched by an update and never blocks it.
+        tabs: {
+            query: async () => [{ id: 5, url: 'https://example.com' }, { id: 6, url: 'chrome-extension://ext/src/pages/movie-details/movie-details.html' }],
+            sendMessage: (tabId, message, callback) => callback({ isPlaying: tabId === 6 ? options.playing === true : options.ordinaryTabPlaying === true })
+        },
+        scripting: { executeScript: async () => [{ result: options.ordinaryTabPlaying === true }] }
     };
     const context = { chrome, console, URL, AbortController, setTimeout, clearTimeout,
         navigator: { locks: options.locks || lockManager() },
@@ -124,6 +129,9 @@ function harness(options = {}) {
     const playing = harness({ playing: true }); await playing.service.checkComponentUpdates({ force: true });
     assert.equal((await playing.service.applyComponent('mediaPlayerSuite')).components.mediaPlayerSuite.status, 'waiting_for_safe_moment');
     assert.equal(playing.calls.filter(call => call.action === 'apply_component').length, 0);
+    const ordinaryTab = harness({ ordinaryTabPlaying: true }); await ordinaryTab.service.checkComponentUpdates({ force: true });
+    assert.equal((await ordinaryTab.service.applyComponent('mediaPlayerSuite')).components.mediaPlayerSuite.status, 'queued',
+        'a video in an ordinary tab does not hold back a Suite update');
     const minimum = harness(); minimum.catalog.components.updater.minUpdaterVersion = '1.2.0';
     assert.equal((await minimum.service.checkComponentUpdates({ force: true })).components.updater.errorCode, 'UPDATER_UPGRADE_REQUIRED');
     assert.equal((await minimum.service.applyComponent('updater')).components.updater.status, 'setup_required');
