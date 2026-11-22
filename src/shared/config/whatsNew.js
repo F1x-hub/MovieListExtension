@@ -1,5 +1,14 @@
 export const whatsNew = [
     {
+        id: '1.5.10', version: '1.5.10', date: '2026-11-22',
+        highlights: [
+            { id: 'auto-updates', title: { ru: 'Обновления ставятся сами', en: 'Updates install on their own' }, text: { ru: 'Больше не нужно заходить в настройки и нажимать «Проверить». Видео на YouTube в другой вкладке установку не задерживает, её откладывает только просмотр в самом расширении.', en: 'No more opening Settings and pressing «Check». A video on YouTube in another tab does not hold the update back; only watching inside the extension does.' } },
+            { id: 'translated-pages', title: { ru: 'Каталог, Загрузки и Календарь на вашем языке', en: 'Catalog, Downloads and Calendar in your language' }, text: { ru: 'С английским интерфейсом эти страницы больше не остаются русскими.', en: 'With the English interface these pages no longer stay in Russian.' } },
+            { id: 'one-rating-dialog', title: { ru: 'Одно окно оценки', en: 'One rating dialog' }, text: { ru: 'В «Оценённых» оценка открывается в том же окне, что и на странице фильма: со звёздами, рецензией и франшизными иконками.', en: 'On Rated, a rating opens in the same dialog as on the film page, with stars, a review and franchise icons.' } },
+            { id: 'collections-bookmarks', title: { ru: 'Коллекции в Закладках', en: 'Collections in Bookmarks' }, text: { ru: 'Свои коллекции теперь открываются только в «Закладках», а старые ссылки ведут туда же.', en: 'Your collections now open in Bookmarks only, and old links lead there too.' } }
+        ]
+    },
+    {
         id: '1.5.9', version: '1.5.9', date: '2026-11-22',
         highlights: [
             { id: 'random-modes', title: { ru: 'Три режима «Случайного»', en: 'Three Random modes' }, text: { ru: 'Подбор, Пул и Марафон теперь вкладки вверху страницы, а не всплывающие окна. Страница открывается в том режиме, где вы были в прошлый раз.', en: 'Pick, Pool and Marathon are now tabs at the top of the page instead of pop-up windows. The page opens in the mode you used last time.' } },
