@@ -1,8 +1,4 @@
-const DEFAULT_CATALOG_SORT_OPTIONS = Object.freeze([
-    Object.freeze({ value: 'popularity.desc', label: 'Популярные' }),
-    Object.freeze({ value: 'vote_average.desc', label: 'По рейтингу' }),
-    Object.freeze({ value: 'primary_release_date.desc', label: 'Новые фильмы' })
-]);
+const DEFAULT_CATALOG_SORT_VALUES = Object.freeze(['popularity.desc', 'vote_average.desc', 'primary_release_date.desc']);
 
 const KEYWORD_COPY = Object.freeze({ 207317: 'home.season.newyear' });
 
@@ -35,9 +31,7 @@ class CatalogPage {
             sort: window.SortControl?.enhance(this.elements.sort),
             genre: window.SortControl?.enhance(this.elements.genre)
         };
-        this.yearRangeControl = RangeControl.enhance(this.elements.yearFrom, this.elements.yearTo, {
-            fromLabel: 'Год от', toLabel: 'Год до'
-        });
+        this.yearRangeControl = RangeControl.enhance(this.elements.yearFrom, this.elements.yearTo, this.getYearRangeLabels());
 
         this.state = this.readStateFromUrl();
         this.catalogService = new CatalogService();
@@ -62,16 +56,64 @@ class CatalogPage {
         this.autoLoadCount = 0;
         this.maxAutoLoads = 2;
         this.observer = null;
+        this.statusKey = '';
+        this.errorKey = '';
+        this.renderedLocale = null;
+    }
+
+    /* Catalogue text lives in the `catalog` locale group; I18n shows the key itself if one is missing. */
+    t(key) {
+        return window.i18n?.get?.(`catalog.${key}`) ?? key;
+    }
+
+    getLocale() {
+        return window.i18n?.currentLocale || 'ru';
+    }
+
+    getYearRangeLabels() {
+        return { fromLabel: this.t('year_from'), toLabel: this.t('year_to') };
     }
 
     async init() {
         await window.i18n?.init?.();
+        this.applyLocale();
         this.initNavigation();
         this.bindEvents();
+        this.bindLocaleChanges();
         this.renderHeader();
         this.syncControlsFromState();
         this.setupObserver();
         await this.loadFirstPage();
+    }
+
+    /* Static markup carries data-i18n; text set from code is rendered again from the saved keys. */
+    applyLocale() {
+        this.renderedLocale = this.getLocale();
+        window.i18n?.translatePage?.();
+        this.yearRangeControl?.updateOptions?.(this.getYearRangeLabels());
+        this.setLoadingState(this.isLoading);
+        this.setStatus(this.statusKey);
+        if (this.errorKey) this.elements.errorMessage.textContent = this.t(this.errorKey);
+        if (this.totalResults > 0) this.elements.count.textContent = this.formatCount(this.totalResults);
+    }
+
+    bindLocaleChanges() {
+        const refresh = () => {
+            if (this.getLocale() === this.renderedLocale) return;
+            this.applyLocale();
+            this.renderHeader();
+        };
+        window.i18n?.onLocaleChange?.(refresh);
+        // Settings saves the language from its own page and announces it to every open page.
+        if (typeof chrome === 'undefined') return;
+        chrome.runtime?.onMessage?.addListener?.(message => {
+            if (message?.type !== 'SETTINGS_UPDATED' || !message.settings?.language) return;
+            if (message.settings.language === this.renderedLocale) return;
+            const localeId = this.localeRefreshId = (this.localeRefreshId || 0) + 1;
+            Promise.resolve(window.i18n?.init?.()).then(() => {
+                if (localeId === this.localeRefreshId) refresh();
+            });
+        });
     }
 
     initNavigation() {
@@ -104,7 +146,28 @@ class CatalogPage {
     }
 
     getSortOptions() {
-        return this.getCategoryConfig().sortOptions || DEFAULT_CATALOG_SORT_OPTIONS;
+        const configured = this.getCategoryConfig()?.sortOptions;
+        const values = configured ? configured.map(option => option.value) : DEFAULT_CATALOG_SORT_VALUES;
+        return values.map(value => {
+            const labelKey = `catalog.sort.${this.getSortLabelKey(value)}`;
+            return { value, labelKey, label: window.i18n?.get?.(labelKey) ?? value };
+        });
+    }
+
+    /* The release-date sort is named after the category: newest films, series, cartoons or anime. */
+    getSortLabelKey(value) {
+        if (value === 'popularity.desc') return 'popular';
+        if (value === 'vote_average.desc') return 'rating';
+        return `newest_${this.getCategoryConfig()?.key || 'films'}`;
+    }
+
+    getCategoryCopy() {
+        const key = this.getCategoryConfig()?.key || 'films';
+        return {
+            key,
+            title: this.t(`categories.${key}.title`),
+            description: this.t(`categories.${key}.description`)
+        };
     }
 
     /* A keyword link names its own selection; without a known name the category's stays. */
@@ -144,13 +207,19 @@ class CatalogPage {
     }
 
     renderHeader() {
-        const config = this.getCategoryConfig();
         const sortOptions = this.getSortOptions();
         if (!sortOptions.some(option => option.value === this.state.sort)) {
             this.state.sort = sortOptions[0]?.value || 'popularity.desc';
         }
         this.selectControls?.sort?.setOptions(sortOptions);
-        const copy = this.getKeywordCopy() || config;
+        const categoryCopy = this.getCategoryCopy();
+        const keywordCopy = this.getKeywordCopy();
+        const copy = keywordCopy || categoryCopy;
+        // translatePage must not put the films heading back over another category or a keyword.
+        [[this.elements.title, 'title'], [this.elements.description, 'description']].forEach(([element, field]) => {
+            if (keywordCopy) delete element.dataset.i18n;
+            else element.dataset.i18n = `catalog.categories.${categoryCopy.key}.${field}`;
+        });
         this.elements.title.textContent = copy.title;
         this.elements.description.textContent = copy.description;
         document.title = `${copy.title} | Movie Rating Extension`;
@@ -252,6 +321,7 @@ class CatalogPage {
         this.elements.grid.innerHTML = this.renderSkeletons();
         this.elements.empty.hidden = true;
         this.elements.error.hidden = true;
+        this.errorKey = '';
         this.elements.loadMore.hidden = true;
         this.elements.count.textContent = '—';
         await this.loadPage(1, { replace: true, forceRefresh });
@@ -294,7 +364,7 @@ class CatalogPage {
             this.elements.empty.hidden = this.seenCatalogKeys.size > 0;
             this.elements.error.hidden = true;
             this.elements.loadMore.hidden = !this.hasMorePages();
-            this.setStatus(result.isStale ? 'Показана сохранённая версия. Обновление источника временно недоступно.' : '');
+            this.setStatus(result.isStale ? 'stale' : '');
         } catch (error) {
             if (generation !== this.requestGeneration) return;
             console.error('[CatalogPage] Failed to load catalogue page:', error);
@@ -302,9 +372,10 @@ class CatalogPage {
                 this.elements.grid.innerHTML = '';
                 this.elements.empty.hidden = true;
                 this.elements.error.hidden = false;
-                this.elements.errorMessage.textContent = this.getErrorMessage(error);
+                this.errorKey = this.getErrorKey(error);
+                this.elements.errorMessage.textContent = this.t(this.errorKey);
             } else {
-                this.setStatus(this.getErrorMessage(error));
+                this.setStatus(this.getErrorKey(error));
                 this.elements.loadMore.hidden = false;
             }
         } finally {
@@ -345,21 +416,23 @@ class CatalogPage {
     setLoadingState(isLoading) {
         this.elements.progress.hidden = !isLoading;
         this.elements.loadMoreButton.disabled = isLoading;
-        this.elements.loadMoreButton.textContent = isLoading ? 'Загрузка…' : 'Загрузить ещё';
+        this.elements.loadMoreButton.textContent = this.t(isLoading ? 'loading' : 'load_more');
     }
 
-    setStatus(message) {
-        this.elements.status.textContent = message || '';
+    /* Takes a `catalog` locale key, so a language change can render the same status again. */
+    setStatus(key) {
+        this.statusKey = key || '';
+        this.elements.status.textContent = this.statusKey ? this.t(this.statusKey) : '';
     }
 
     formatCount(value) {
-        return value > 0 ? new Intl.NumberFormat('ru-RU').format(value) : '—';
+        return value > 0 ? new Intl.NumberFormat(this.getLocale() === 'ru' ? 'ru-RU' : 'en-US').format(value) : '—';
     }
 
-    getErrorMessage(error) {
-        if (error?.name === 'AbortError') return 'Загрузка была отменена.';
-        if (String(error?.message || '').includes('not configured')) return 'TMDB не настроен для каталога.';
-        return 'Не удалось загрузить каталог. Попробуйте ещё раз.';
+    getErrorKey(error) {
+        if (error?.name === 'AbortError') return 'error_aborted';
+        if (String(error?.message || '').includes('not configured')) return 'error_not_configured';
+        return 'error_generic';
     }
 }
 

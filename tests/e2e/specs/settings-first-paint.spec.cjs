@@ -60,7 +60,7 @@ async function chooseLanguage(page, nativeName) {
     await page.locator('#languageDropdown .dropdown-trigger').click();
     await page.locator('#languageDropdown .dropdown-option', { hasText: nativeName }).click();
     await page.locator('#saveBtn').click();
-    await expect(page.locator('.toast')).toBeVisible();
+    await expect(page.locator('.utils-toast')).toBeVisible();
 }
 
 test.beforeEach(async ({ page }) => {

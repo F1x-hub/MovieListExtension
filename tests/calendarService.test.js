@@ -213,9 +213,15 @@ assert.equal(movieEvent.isMovie, true);
     delete globalThis.chrome;
 }
 
-// 9. Countdown wording and local dates.
+// 9. Countdown wording, month and weekday names follow the page language.
 {
-    const { formatCountdown, parseLocalDate } = await import('../src/pages/calendar/CalendarView.js');
+    const { i18n } = await import('../src/shared/i18n/I18n.js');
+    const { formatCountdown, formatMonthTitle, parseLocalDate, renderMonth, renderSignedOutState, renderEmptyState } =
+        await import('../src/pages/calendar/CalendarView.js');
+    const previous = i18n.currentLocale;
+    const premiere = { '2027-01-03': [{ isMovie: true, showName: 'X' }] };
+
+    i18n.currentLocale = 'ru';
     assert.equal(formatCountdown(0).text, 'Сегодня');
     assert.equal(formatCountdown(1).text, 'Завтра');
     assert.equal(formatCountdown(3).text, 'через 3 дня');
@@ -223,7 +229,101 @@ assert.equal(movieEvent.isMovie, true);
     assert.equal(formatCountdown(21).text, 'через 21 день');
     assert.equal(formatCountdown(22).text, 'через 22 дня');
     assert.equal(formatCountdown(25).text, 'через 25 дней');
+    assert.equal(formatMonthTitle('2027-01'), 'Январь 2027');
+    const ruMonth = renderMonth('2027-01', premiere, true, new Date(2027, 0, 1));
+    assert.match(ruMonth, /Премьера фильма/);
+    assert.match(ruMonth, /через 2 дня/);
+    assert.match(ruMonth, />вс</);
+    assert.match(renderSignedOutState(), /Войдите в аккаунт/);
+
+    i18n.currentLocale = 'en';
+    assert.equal(formatCountdown(0).text, 'Today');
+    assert.equal(formatCountdown(1).text, 'Tomorrow');
+    assert.equal(formatCountdown(2).text, 'in 2 days');
+    assert.equal(formatCountdown(21).text, 'in 21 days');
+    assert.equal(formatMonthTitle('2027-01'), 'January 2027');
+    const enMonth = renderMonth('2027-01', premiere, true, new Date(2027, 0, 1));
+    assert.match(enMonth, /Movie premiere/);
+    assert.match(enMonth, /in 2 days/);
+    assert.match(enMonth, />Sun</, 'weekday names come from the page language');
+    assert.match(renderSignedOutState(), /Sign in/);
+    assert.doesNotMatch(renderEmptyState() + renderSignedOutState() + enMonth, /[А-Яа-яЁё]/, 'no Russian text in the English calendar');
+
+    i18n.currentLocale = previous;
     assert.equal(parseLocalDate('2026-03-01').getDate(), 1, 'YYYY-MM-DD is a local date, not UTC midnight');
+}
+
+// 10. Months are grouped by "YYYY-MM", not by a Russian month name.
+{
+    const keys = Object.keys(result.grouped);
+    assert.ok(keys.every(key => /^\d{4}-\d{2}$/.test(key)), `month keys are YYYY-MM: ${keys.join(', ')}`);
+}
+
+// 11. A signed-out guest never sees the previous account's lists. Firebase has already
+//     answered "no user" while the stored `user` copy still names the old account.
+{
+    const store = {
+        user: { uid: 'old-account' },
+        'bookmarks_cache_old-account': { bookmarks: [{ movieId: 7, movieTitle: 'Old Show', status: 'watching', isSeries: true }] },
+        calendar_snapshot_v1: { userId: 'old-account', at: Date.now(), events: [{ airDate: '2999-01-01', showName: 'Old Show' }] }
+    };
+    let backgroundAsked = false;
+    globalThis.chrome = {
+        storage: { local: {
+            get: async keys => Object.fromEntries([].concat(keys).filter(key => key in store).map(key => [key, structuredClone(store[key])])),
+            set: async values => { Object.assign(store, structuredClone(values)); }
+        } },
+        runtime: { sendMessage: (message, reply) => { backgroundAsked = true; reply({ success: true, items: [{ movieId: 7 }] }); } }
+    };
+    globalThis.window = { firebaseManager: { isAuthReady: true, waitForAuthReady: async () => null, getCurrentUser: () => null } };
+    const { resolveCalendarUserId, readCalendarSnapshot } = await import('../src/shared/services/CalendarService.js');
+
+    assert.equal(await resolveCalendarUserId(), null, 'a resolved guest is a guest, whatever the stored copy says');
+    assert.deepEqual(await getTrackedItems(), [], 'no lists of the previous account for a guest');
+    assert.equal(backgroundAsked, false, 'the background fallback (which reads the stored copy) is not asked for a guest');
+    const guestResult = await fetchCalendarEpisodes({ tmdbService: new MockTMDBServiceProxy() });
+    assert.equal(guestResult.total, 0);
+    assert.equal(store.calendar_snapshot_v1.userId, 'old-account', 'a guest load writes no snapshot');
+    assert.equal(await readCalendarSnapshot({ userId: null }), null, 'no snapshot paint for a guest');
+
+    // While Firebase has not answered yet, the stored copy is the best guess for the signed-in account.
+    globalThis.window = { firebaseManager: { isAuthReady: false, waitForAuthReady: async () => null, getCurrentUser: () => null } };
+    assert.equal(await resolveCalendarUserId(), 'old-account');
+    assert.equal((await getTrackedItems()).length, 1);
+
+    // A signed-in account reads its own cache.
+    globalThis.window = { firebaseManager: { isAuthReady: true, waitForAuthReady: async () => null, getCurrentUser: () => ({ uid: 'old-account' }) } };
+    assert.equal((await getTrackedItems()).length, 1);
+
+    delete globalThis.window;
+    delete globalThis.chrome;
+}
+
+// 12. The page is translated and follows auth: static strings carry data-i18n, the page
+//     waits for auth before a guest or personal state and listens for sign-in elsewhere.
+{
+    const { readFileSync } = await import('node:fs');
+    const { locales } = await import('../src/shared/i18n/locales.js');
+    const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+    const html = read('../src/pages/calendar/calendar.html');
+    const page = read('../src/pages/calendar/calendar.js');
+    const view = read('../src/pages/calendar/CalendarView.js');
+    for (const key of ['title', 'subtitle', 'loading_label', 'news_title', 'page_title']) {
+        assert.ok(html.includes(`calendar.${key}`), `calendar.html translates calendar.${key}`);
+    }
+    const usedKeys = new Set([...(html + page + view).matchAll(/calendar\.([a-z_]+)/g)]
+        .map(match => match[1])
+        .filter(key => !['html', 'js', 'css', 'in_days_'].includes(key)));
+    for (const key of usedKeys) {
+        assert.ok(locales.en.calendar[key], `en calendar.${key} exists`);
+        assert.ok(locales.ru.calendar[key], `ru calendar.${key} exists`);
+    }
+    for (const key of Object.keys(locales.en.calendar)) assert.ok(locales.ru.calendar[key], `ru calendar.${key} exists`);
+    assert.doesNotMatch(page + view, /[А-Яа-яЁё]/, 'calendar scripts hold no hardcoded Russian text');
+    assert.match(page, /waitForAuthReady/);
+    assert.match(page, /isAuthReady/, 'an unresolved auth state is not treated as a guest');
+    assert.match(page, /authStateChanged/);
+    assert.match(page, /SETTINGS_UPDATED/);
 }
 
 console.log('✅ ALL CalendarService Tests Passed Successfully!');

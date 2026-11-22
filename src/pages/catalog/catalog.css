@@ -121,7 +121,7 @@
     letter-spacing: 0.08em;
     line-height: 1;
     text-transform: uppercase;
-    content: 'результатов';
+    content: attr(data-count-label);
 }
 
 .catalog-tabs {

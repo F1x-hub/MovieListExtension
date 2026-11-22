@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Каталог | Movie Rating Extension</title>
+    <title data-i18n="catalog.page_title">Каталог | Movie Rating Extension</title>
     <link rel="stylesheet" href="../../shared/styles/common.css">
     <script defer src="../../shared/components/NumberStepper.js"></script>
     <link rel="stylesheet" href="../../shared/styles/theme.css">
@@ -22,88 +22,88 @@
     <main class="catalog-page" id="catalogPage">
         <div class="catalog-shell">
             <header class="catalog-hero">
-                <div class="catalog-hero__eyebrow">КАТАЛОГ / DISCOVERY</div>
+                <div class="catalog-hero__eyebrow" data-i18n="catalog.eyebrow">КАТАЛОГ / DISCOVERY</div>
                 <div class="catalog-hero__row">
                     <div>
-                        <h1 id="catalogTitle">Все фильмы</h1>
-                        <p id="catalogDescription">Игровые фильмы без анимации</p>
+                        <h1 id="catalogTitle" data-i18n="catalog.categories.films.title">Все фильмы</h1>
+                        <p id="catalogDescription" data-i18n="catalog.categories.films.description">Игровые фильмы без анимации</p>
                     </div>
-                    <div class="catalog-hero__count" id="catalogCount" aria-live="polite">—</div>
+                    <div class="catalog-hero__count" id="catalogCount" aria-live="polite" data-count-label="результатов" data-i18n="[data-count-label]catalog.count_label">—</div>
                 </div>
             </header>
 
-            <nav class="catalog-tabs" aria-label="Направление каталога">
-                <a href="catalog.html?category=films" data-catalog-category="films">Фильмы</a>
-                <a href="catalog.html?category=series" data-catalog-category="series">Сериалы</a>
-                <a href="catalog.html?category=cartoons" data-catalog-category="cartoons">Мультфильмы</a>
-                <a href="catalog.html?category=anime" data-catalog-category="anime">Аниме</a>
+            <nav class="catalog-tabs" aria-label="Направление каталога" data-i18n="[aria-label]catalog.tabs_label">
+                <a href="catalog.html?category=films" data-catalog-category="films" data-i18n="catalog.tabs.films">Фильмы</a>
+                <a href="catalog.html?category=series" data-catalog-category="series" data-i18n="catalog.tabs.series">Сериалы</a>
+                <a href="catalog.html?category=cartoons" data-catalog-category="cartoons" data-i18n="catalog.tabs.cartoons">Мультфильмы</a>
+                <a href="catalog.html?category=anime" data-catalog-category="anime" data-i18n="catalog.tabs.anime">Аниме</a>
             </nav>
 
-            <section class="catalog-controls filter-panel" aria-label="Фильтры каталога">
+            <section class="catalog-controls filter-panel" aria-label="Фильтры каталога" data-i18n="[aria-label]catalog.filters_label">
                 <div class="catalog-control catalog-control--wide">
-                    <label for="catalogSort">Сортировка</label>
+                    <label for="catalogSort" data-i18n="catalog.sort_label">Сортировка</label>
                     <select id="catalogSort" data-sort-control>
-                        <option value="popularity.desc">Популярные</option>
-                        <option value="vote_average.desc">По рейтингу</option>
-                        <option value="primary_release_date.desc">Новые фильмы</option>
+                        <option value="popularity.desc" data-i18n="catalog.sort.popular">Популярные</option>
+                        <option value="vote_average.desc" data-i18n="catalog.sort.rating">По рейтингу</option>
+                        <option value="primary_release_date.desc" data-i18n="catalog.sort.newest_films">Новые фильмы</option>
                     </select>
                 </div>
                 <div class="catalog-control">
-                    <label for="catalogYearFrom">Год от</label>
-                    <input id="catalogYearFrom" type="number" min="1870" max="2100" inputmode="numeric" placeholder="—" aria-label="Год от">
+                    <label for="catalogYearFrom" data-i18n="catalog.year_from">Год от</label>
+                    <input id="catalogYearFrom" type="number" min="1870" max="2100" inputmode="numeric" placeholder="—" aria-label="Год от" data-i18n="[aria-label]catalog.year_from">
                 </div>
                 <div class="catalog-control">
-                    <label for="catalogYearTo">Год до</label>
-                    <input id="catalogYearTo" type="number" min="1870" max="2100" inputmode="numeric" placeholder="—" aria-label="Год до">
+                    <label for="catalogYearTo" data-i18n="catalog.year_to">Год до</label>
+                    <input id="catalogYearTo" type="number" min="1870" max="2100" inputmode="numeric" placeholder="—" aria-label="Год до" data-i18n="[aria-label]catalog.year_to">
                 </div>
                 <div class="catalog-control catalog-control--wide">
-                    <label for="catalogGenre">Жанр</label>
+                    <label for="catalogGenre" data-i18n="catalog.genre_label">Жанр</label>
                     <select id="catalogGenre" data-filter-control>
-                        <option value="">Все жанры</option>
-                        <option value="28">Боевик</option>
-                        <option value="12">Приключения</option>
-                        <option value="35">Комедия</option>
-                        <option value="80">Криминал</option>
-                        <option value="18">Драма</option>
-                        <option value="14">Фэнтези</option>
-                        <option value="27">Ужасы</option>
-                        <option value="9648">Детектив</option>
-                        <option value="10749">Мелодрама</option>
-                        <option value="878">Фантастика</option>
-                        <option value="53">Триллер</option>
+                        <option value="" data-i18n="catalog.genres.all">Все жанры</option>
+                        <option value="28" data-i18n="catalog.genres.action">Боевик</option>
+                        <option value="12" data-i18n="catalog.genres.adventure">Приключения</option>
+                        <option value="35" data-i18n="catalog.genres.comedy">Комедия</option>
+                        <option value="80" data-i18n="catalog.genres.crime">Криминал</option>
+                        <option value="18" data-i18n="catalog.genres.drama">Драма</option>
+                        <option value="14" data-i18n="catalog.genres.fantasy">Фэнтези</option>
+                        <option value="27" data-i18n="catalog.genres.horror">Ужасы</option>
+                        <option value="9648" data-i18n="catalog.genres.mystery">Детектив</option>
+                        <option value="10749" data-i18n="catalog.genres.romance">Мелодрама</option>
+                        <option value="878" data-i18n="catalog.genres.science_fiction">Фантастика</option>
+                        <option value="53" data-i18n="catalog.genres.thriller">Триллер</option>
                     </select>
                 </div>
                 <div class="catalog-control catalog-control--country">
-                    <label for="catalogCountry">Страна</label>
-                    <input id="catalogCountry" class="filter-field" type="text" maxlength="2" pattern="[A-Za-z]{2}" placeholder="RU" aria-label="Код страны, например RU">
+                    <label for="catalogCountry" data-i18n="catalog.country_label">Страна</label>
+                    <input id="catalogCountry" class="filter-field" type="text" maxlength="2" pattern="[A-Za-z]{2}" placeholder="RU" aria-label="Код страны, например RU" data-i18n="[aria-label]catalog.country_aria">
                 </div>
-                <button class="catalog-reset" id="catalogReset" type="button">Сбросить</button>
+                <button class="catalog-reset" id="catalogReset" type="button" data-i18n="catalog.reset">Сбросить</button>
             </section>
 
             <div class="catalog-status" id="catalogStatus" role="status" aria-live="polite"></div>
 
-            <section class="catalog-results" aria-label="Фильмы каталога">
+            <section class="catalog-results" aria-label="Фильмы каталога" data-i18n="[aria-label]catalog.results_label">
                 <div class="catalog-grid" id="catalogGrid"></div>
                 <div class="catalog-empty" id="catalogEmpty" hidden>
                     <div class="catalog-empty__mark">∅</div>
-                    <h2>Ничего не найдено</h2>
-                    <p>Измени фильтры или попробуй другое направление.</p>
-                    <button class="catalog-action" id="catalogEmptyReset" type="button">Сбросить фильтры</button>
+                    <h2 data-i18n="catalog.empty_title">Ничего не найдено</h2>
+                    <p data-i18n="catalog.empty_text">Измени фильтры или попробуй другое направление.</p>
+                    <button class="catalog-action" id="catalogEmptyReset" type="button" data-i18n="catalog.empty_reset">Сбросить фильтры</button>
                 </div>
                 <div class="catalog-error" id="catalogError" hidden>
-                    <h2>Каталог временно недоступен</h2>
-                    <p id="catalogErrorMessage">Не удалось загрузить эту страницу.</p>
-                    <button class="catalog-action" id="catalogRetry" type="button">Повторить</button>
+                    <h2 data-i18n="catalog.error_title">Каталог временно недоступен</h2>
+                    <p id="catalogErrorMessage" data-i18n="catalog.error_text">Не удалось загрузить эту страницу.</p>
+                    <button class="catalog-action" id="catalogRetry" type="button" data-i18n="catalog.retry">Повторить</button>
                 </div>
             </section>
 
             <div class="catalog-load-more" id="catalogLoadMore" hidden>
-                <button class="catalog-action catalog-action--primary" id="catalogLoadMoreButton" type="button">Загрузить ещё</button>
+                <button class="catalog-action catalog-action--primary" id="catalogLoadMoreButton" type="button" data-i18n="catalog.load_more">Загрузить ещё</button>
             </div>
             <div class="catalog-sentinel" id="catalogSentinel" aria-hidden="true"></div>
             <div class="catalog-progress" id="catalogProgress" hidden>
                 <span class="catalog-progress__dot"></span>
-                <span>Загружаем следующую страницу</span>
+                <span data-i18n="catalog.loading_next">Загружаем следующую страницу</span>
             </div>
         </div>
     </main>

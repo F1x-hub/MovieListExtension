@@ -1550,22 +1550,6 @@
     filter: brightness(0.9);
 }
 
-/* Toast for save confirmation */
-.toast {
-    position: fixed;
-    bottom: 32px;
-    right: 32px;
-    background: #22c55e;
-    color: white;
-    padding: 14px 28px;
-    border-radius: var(--radius-lg);
-    box-shadow: var(--elevation-3);
-    z-index: var(--z-dropdown);
-    font-weight: 600;
-    font-family: var(--font-family);
-    font-size: var(--font-size-md);
-}
-
 @media (max-width: 768px) {
     .settings-layout {
         flex-direction: column;

@@ -22,7 +22,7 @@ export const locales = {
             size: 'Size', text_color: 'Text color', position: 'Position', edge_offset: 'Edge offset', text_background: 'Text background', text_shadow: 'Text shadow',
             subtitle_note: 'Changes apply immediately and are saved for future videos.', reset_settings: 'Reset settings', off: 'Off', track: 'Track {number}',
             auto: 'Auto', automatic: 'Automatic', quality: 'Quality', voiceover: 'Audio', main_track: 'Main', fullscreen: 'Fullscreen',
-            player_settings: 'Player settings', toggle_subtitles: 'Toggle subtitles', skip_opening: 'Skip opening', forward: 'Next: {title}', quality_unavailable: 'Auto (not detected)'
+            player_settings: 'Player settings', toggle_subtitles: 'Toggle subtitles', skip_opening: 'Skip opening', forward: 'Next: {title}'
         },
         filter_controls: { more: 'More ({count})', less: 'Show less', any: 'Any', included_count: 'Included: {count}', excluded_count: 'Excluded: {count}', increase: 'Increase', decrease: 'Decrease' },
         hub_prompt: {
@@ -1169,8 +1169,7 @@ export const locales = {
                 watched: "Watched",
                 plan_to_watch: "Plan to Watch",
                 favorites: "Favorites",
-                collections: "COLLECTIONS",
-                create_collection: "Create Collection"
+                collections: "COLLECTIONS"
             },
             header: {
                 all_bookmarks: "All Bookmarks"
@@ -1395,6 +1394,145 @@ export const locales = {
                 automatic: "Automatic checks run in the background.",
                 enabled: "New versions will install after a safe playback check.",
                 disabled: "Automatic installation is off. Available versions can be started manually."
+            }
+        },
+        downloads: {
+            page_title: "Downloads - Movie Ratings",
+            sidebar: { label: "Downloads", title: "Downloads", filters_label: "Filter downloads" },
+            filters: { all: "All", active: "Downloading", ready: "Ready", paused: "Paused", error: "Errors" },
+            titles: { all: "All downloads", active: "Downloading", ready: "Ready to watch", paused: "Paused", error: "Errors" },
+            storage: {
+                title: "Storage",
+                used: "Downloads take up",
+                settings_link: "Folder and retention",
+                retention_forever: "Finished downloads are kept until you delete them.",
+                retention_days: "Finished downloads are kept for {count} {days}; watching one extends it."
+            },
+            controls: {
+                search_placeholder: "Search downloads...",
+                search_label: "Search downloads",
+                sort_label: "Sort",
+                sort_activity: "Active first",
+                sort_created: "Recently added",
+                sort_title: "Title (A–Z)",
+                sort_size: "Size",
+                select_all: "Select all",
+                loading: "Loading the list"
+            },
+            plural: {
+                download_one: "download", download_few: "downloads", download_many: "downloads",
+                download_acc_one: "download", download_acc_few: "downloads", download_acc_many: "downloads",
+                episode_one: "episode", episode_few: "episodes", episode_many: "episodes",
+                day_one: "day", day_few: "days", day_many: "days"
+            },
+            units: { b: "B", kb: "KB", mb: "MB", gb: "GB", tb: "TB", rate: "{size}/s" },
+            eta: { less_than_minute: "less than a minute", minutes: "{minutes} min", hours: "{hours} h {minutes} min", days: "{days} d" },
+            ago: { today: "today", yesterday: "yesterday", days: "{count} {days} ago" },
+            status: { starting: "Preparing", downloading: "Downloading", paused: "Paused", error: "Error", complete: "Done", unknown: "Unknown state" },
+            untitled: "Untitled",
+            errors: {
+                unavailable: "MediaPlayer is not responding. Make sure MediaPlayer Suite is running.",
+                action_failed: "MediaPlayer could not complete the action."
+            },
+            summary: { on_disk: "on disk", active: "downloading now", speed: "total speed" },
+            banner: {
+                unavailable_title: "MediaPlayer is not responding.",
+                stale_text: "Showing the list as of {time}. Pause, delete and watch will be back once the service responds. Checking again in {seconds} s.",
+                offline_text: "Make sure MediaPlayer Suite is running on this computer. Checking again in {seconds} s.",
+                failed_title: "Could not load downloads.",
+                retry: "Check now"
+            },
+            empty: {
+                off_title: "MediaPlayer is not connected",
+                off_text: "MediaPlayer Suite downloads and keeps torrents on this computer. Connect it in settings and all your downloads will show up here.",
+                off_action: "Open MediaPlayer settings",
+                none_title: "No downloads yet",
+                none_text: "Open a film, choose the \"Torrent\" source and a release, and the download will appear here.",
+                filter_title: "Nothing here",
+                filter_text: "There are no downloads in this section.",
+                filter_action: "Show all",
+                search_title: "Nothing found",
+                search_text: "Try another title.",
+                search_action: "Clear search"
+            },
+            bulk: {
+                label: "Actions with selected",
+                selected: "Selected: {count} · {size}",
+                pause: "Pause",
+                pause_count: "Pause ({count})",
+                resume: "Resume",
+                resume_count: "Resume ({count})",
+                delete: "Delete",
+                delete_count: "Delete ({count})",
+                clear: "Clear selection",
+                no_pausable: "None of the selected downloads is downloading",
+                no_resumable: "None of the selected downloads is paused or failed",
+                paused: "Paused: {done}.",
+                paused_partial: "Paused: {done} of {total}. {error}",
+                resumed: "Resumed: {done}.",
+                resumed_partial: "Resumed: {done} of {total}. {error}"
+            },
+            confirm: {
+                title_one: "Delete download?",
+                title_many: "Delete {count} {downloads}?",
+                message: "This will be deleted from disk: {what} ({size}).",
+                unfinished: " Unfinished downloads will stop.",
+                keep: " Everything stays in the catalog, and you can download it again.",
+                confirm: "Delete",
+                what_title: "\"{title}\"",
+                what_episode: "\"{title}\", {code}",
+                what_episodes: "{count} {episodes} of \"{title}\"",
+                what_downloads: "{count} {downloads}"
+            },
+            toast: {
+                play_blocked: "This download is not linked to a film in the catalog, so the player cannot be opened from here.",
+                deleted_one: "Deleted. Freed {size}.",
+                deleted_many: "Deleted: {count}. Freed {size}.",
+                deleted_partial: "Deleted {done} of {total}. {error}"
+            },
+            card: {
+                select: "Select: {title}",
+                select_series: "Select all shown episodes: {title}",
+                kind_movie: "film",
+                kind_series: "series",
+                unlinked: "not linked to the catalog",
+                quality_unknown: "Quality not specified",
+                unlinked_note: "MediaPlayer does not know which film this is, so its page and player cannot be opened from here.",
+                episodes: "{count} {episodes}",
+                ready: "{ready} of {total} ready",
+                downloading: "{count} downloading",
+                show_episodes: "Show episodes ({count})",
+                hide_episodes: "Hide episodes",
+                series_page: "Series page",
+                movie_page: "Film page",
+                page_label: "{label}: {title}",
+                delete_series: "Delete all episodes: {title}",
+                file: "File",
+                disabled_reason: "{label} — {reason}"
+            },
+            actions: {
+                offline: "MediaPlayer is not responding",
+                busy: "Working…",
+                watch: "Watch",
+                watch_title: "Watch: {title}",
+                watch_blocked: "Watch: {title} — {reason}",
+                not_linked: "Not linked to a film in the catalog",
+                episode_unknown: "Episode not identified",
+                pause_title: "Pause: {title}",
+                retry: "Retry",
+                resume: "Resume",
+                action_title: "{label}: {title}",
+                delete_title: "Delete: {title}"
+            },
+            live: {
+                downloaded_ago: "downloaded {ago}",
+                progress: "{have} of {total}",
+                peers: "peers: {count}",
+                remaining: "{eta} left",
+                stale: "data is out of date",
+                error_default: "The download stopped. Press \"Retry\".",
+                progress_label: "Downloaded {percent}%",
+                playable: "You can watch while it downloads"
             }
         },
         navbar: {
@@ -2047,14 +2185,12 @@ export const locales = {
             edit_rating: "Edit Rating",
             add_collection: "Add to Collection",
             remove: "Remove",
-            remove_bookmarks: "Remove from Bookmarks",
             kinopoisk: "Kinopoisk",
             imdb: "IMDb",
             tmdb: "TMDB",
             avg_rating: "Avg Rating",
             my_rating: "My Rating",
-            unknown_movie: "Unknown Movie",
-            not_available: "N/A"
+            unknown_movie: "Unknown Movie"
         },
         random: {
             page_title: "Random movie - Movie Rating Extension",
@@ -2084,17 +2220,12 @@ export const locales = {
                 round_empty: "Nobody has added a movie yet.",
                 open_movie: "Open movie {title}",
                 state_adding: "adding…",
-                state_queued: "queued",
-                state_selected: "picked",
-                state_watched: "watched",
-                state_removed: "removed",
                 open_poster_of: "Open the poster of «{title}»",
                 open_poster_plain: "Open the movie poster",
                 zoom_poster: "Enlarge poster",
                 added_by: "Added by:",
                 remove_from_marathon: "Remove from marathon",
                 remove_title_from_marathon: "Remove {title} from the marathon",
-                current_movie: "Picked now: ",
                 start_marathon: "Start marathon",
                 pick_last: "Pick the last movie",
                 spin_wheel: "Spin the wheel",
@@ -2316,6 +2447,24 @@ export const locales = {
                 austria: "Austria"
             }
         },
+        calendar: {
+            page_title: "Calendar - Movie Rating Extension",
+            title: "Calendar",
+            subtitle: "Upcoming episodes and premieres from your Watching and Plan to Watch lists",
+            loading_label: "Loading the calendar",
+            news_title: "News",
+            today: "Today",
+            tomorrow: "Tomorrow",
+            in_days_one: "in {n} day",
+            in_days_other: "in {n} days",
+            movie_premiere: "Movie premiere",
+            empty_title: "No upcoming dates",
+            empty_message: "Add movies or series to your Watching or Plan to Watch lists and they will appear here automatically.",
+            signed_out_title: "Sign in to see the calendar",
+            signed_out_message: "Sign in to your account to see upcoming episodes and premieres from your lists.",
+            error_title: "Could not load the calendar",
+            error_fallback: "Could not get the data. Try again later."
+        },
         rating_dialog: {
             title: "Rate",
             close: "Close",
@@ -2359,7 +2508,6 @@ export const locales = {
             next_episode: "Next episode",
             episode_runtime: "{minutes} min",
             wait: "Please wait",
-            back_to_search: "Back to Search",
             rate_title: "Rate",
             personal_rating: "Your rating: {rating}/10",
             series_rating_disabled_hint: "This series needs a Kinopoisk link before it can be rated.",
@@ -2381,7 +2529,6 @@ export const locales = {
             refresh_data: "Refresh Data",
             data_refreshed: "Movie data refreshed",
             source: "Source:",
-            select_source: "Select a source",
             loading_player: "Loading player...",
             error_title: "Error",
             error_loading_movie: "Failed to load movie",
@@ -2515,6 +2662,63 @@ export const locales = {
             error_not_found: "Nothing found for your query. Try other keywords.",
             error_forbidden: "API access problem. Check settings.",
             error_network: "Internet connection problem. Check connection."
+        },
+        catalog: {
+            page_title: "Catalog",
+            eyebrow: "CATALOG / DISCOVERY",
+            tabs_label: "Catalog section",
+            tabs: { films: "Films", series: "Series", cartoons: "Cartoons", anime: "Anime" },
+            categories: {
+                films: { title: "All films", description: "Live-action films, no animation" },
+                series: { title: "All series", description: "Live-action series, no animation" },
+                cartoons: { title: "All cartoons", description: "Animation from around the world, except Japanese anime" },
+                anime: { title: "All anime", description: "Japanese animation: films and series" }
+            },
+            filters_label: "Catalog filters",
+            sort_label: "Sort by",
+            sort: {
+                popular: "Popular",
+                rating: "Top rated",
+                newest_films: "Newest films",
+                newest_series: "Newest series",
+                newest_cartoons: "Newest cartoons",
+                newest_anime: "Newest anime"
+            },
+            year_from: "Year from",
+            year_to: "Year to",
+            genre_label: "Genre",
+            genres: {
+                all: "All genres",
+                action: "Action",
+                adventure: "Adventure",
+                comedy: "Comedy",
+                crime: "Crime",
+                drama: "Drama",
+                fantasy: "Fantasy",
+                horror: "Horror",
+                mystery: "Mystery",
+                romance: "Romance",
+                science_fiction: "Science fiction",
+                thriller: "Thriller"
+            },
+            country_label: "Country",
+            country_aria: "Country code, for example US",
+            reset: "Reset",
+            results_label: "Catalog titles",
+            count_label: "results",
+            empty_title: "Nothing found",
+            empty_text: "Change the filters or try another section.",
+            empty_reset: "Reset filters",
+            error_title: "The catalog is temporarily unavailable",
+            error_text: "This page could not be loaded.",
+            retry: "Retry",
+            load_more: "Load more",
+            loading: "Loading…",
+            loading_next: "Loading the next page",
+            stale: "Showing a saved version. The source can't be refreshed right now.",
+            error_aborted: "Loading was cancelled.",
+            error_not_configured: "TMDB is not set up for the catalog.",
+            error_generic: "The catalog could not be loaded. Please try again."
         },
         popup: {
             update: {
@@ -2759,7 +2963,7 @@ export const locales = {
             size: 'Размер', text_color: 'Цвет текста', position: 'Расположение', edge_offset: 'Отступ от края', text_background: 'Фон под текстом', text_shadow: 'Тень текста',
             subtitle_note: 'Изменения применяются сразу и сохраняются для следующих видео.', reset_settings: 'Сбросить настройки', off: 'Откл', track: 'Дорожка {number}',
             auto: 'Авто', automatic: 'Автоматически', quality: 'Качество', voiceover: 'Озвучка', main_track: 'Основная', fullscreen: 'Полный экран',
-            player_settings: 'Настройки плеера', toggle_subtitles: 'Включить или выключить субтитры', skip_opening: 'Пропустить опенинг', forward: 'Вперёд: {title}', quality_unavailable: 'Авто (не определено)'
+            player_settings: 'Настройки плеера', toggle_subtitles: 'Включить или выключить субтитры', skip_opening: 'Пропустить опенинг', forward: 'Вперёд: {title}'
         },
         filter_controls: { more: 'Ещё ({count})', less: 'Свернуть', any: 'Любые', included_count: 'Включено: {count}', excluded_count: 'Исключено: {count}', increase: 'Увеличить', decrease: 'Уменьшить' },
         hub_prompt: {
@@ -3906,8 +4110,7 @@ export const locales = {
                 watched: "Просмотрено",
                 plan_to_watch: "Буду смотреть",
                 favorites: "Избранное",
-                collections: "КОЛЛЕКЦИИ",
-                create_collection: "Создать коллекцию"
+                collections: "КОЛЛЕКЦИИ"
             },
             header: {
                 all_bookmarks: "Все закладки"
@@ -4132,6 +4335,145 @@ export const locales = {
                 automatic: "Проверка обновлений выполняется автоматически.",
                 enabled: "Новые версии будут устанавливаться после безопасной проверки.",
                 disabled: "Автоматическая установка отключена. Доступные версии можно запустить вручную."
+            }
+        },
+        downloads: {
+            page_title: "Загрузки - Movie Ratings",
+            sidebar: { label: "Загрузки", title: "Загрузки", filters_label: "Фильтр загрузок" },
+            filters: { all: "Все", active: "Качаются", ready: "Готовы", paused: "На паузе", error: "Ошибки" },
+            titles: { all: "Все загрузки", active: "Качаются", ready: "Готовы к просмотру", paused: "На паузе", error: "Ошибки" },
+            storage: {
+                title: "Хранилище",
+                used: "Загрузки занимают",
+                settings_link: "Папка и срок хранения",
+                retention_forever: "Готовые хранятся, пока вы их не удалите.",
+                retention_days: "Готовые хранятся {count} {days}, просмотр продлевает срок."
+            },
+            controls: {
+                search_placeholder: "Поиск в загрузках...",
+                search_label: "Поиск в загрузках",
+                sort_label: "Сортировка",
+                sort_activity: "Сначала активные",
+                sort_created: "Недавно добавленные",
+                sort_title: "Название (А–Я)",
+                sort_size: "Размер",
+                select_all: "Выбрать все",
+                loading: "Загружаем список"
+            },
+            plural: {
+                download_one: "загрузка", download_few: "загрузки", download_many: "загрузок",
+                download_acc_one: "загрузку", download_acc_few: "загрузки", download_acc_many: "загрузок",
+                episode_one: "серия", episode_few: "серии", episode_many: "серий",
+                day_one: "день", day_few: "дня", day_many: "дней"
+            },
+            units: { b: "Б", kb: "КБ", mb: "МБ", gb: "ГБ", tb: "ТБ", rate: "{size}/с" },
+            eta: { less_than_minute: "меньше минуты", minutes: "{minutes} мин", hours: "{hours} ч {minutes} мин", days: "{days} дн." },
+            ago: { today: "сегодня", yesterday: "вчера", days: "{count} {days} назад" },
+            status: { starting: "Подготавливается", downloading: "Качается", paused: "На паузе", error: "Ошибка", complete: "Готово", unknown: "Состояние неизвестно" },
+            untitled: "Без названия",
+            errors: {
+                unavailable: "MediaPlayer не отвечает. Проверьте, что MediaPlayer Suite запущен.",
+                action_failed: "MediaPlayer не смог выполнить действие."
+            },
+            summary: { on_disk: "на диске", active: "качается сейчас", speed: "общая скорость" },
+            banner: {
+                unavailable_title: "MediaPlayer не отвечает.",
+                stale_text: "Показан список на {time}. Пауза, удаление и просмотр вернутся, когда служба ответит. Повторим проверку через {seconds} с.",
+                offline_text: "Проверьте, что MediaPlayer Suite запущен на этом компьютере. Повторим проверку через {seconds} с.",
+                failed_title: "Не удалось получить загрузки.",
+                retry: "Проверить сейчас"
+            },
+            empty: {
+                off_title: "MediaPlayer не подключён",
+                off_text: "Торренты скачивает и хранит MediaPlayer Suite на этом компьютере. Подключите его в настройках, и здесь появятся все загрузки.",
+                off_action: "Открыть настройки MediaPlayer",
+                none_title: "Загрузок пока нет",
+                none_text: "Откройте фильм, выберите источник «Торрент» и раздачу — загрузка появится здесь.",
+                filter_title: "Здесь пусто",
+                filter_text: "В этом разделе нет загрузок.",
+                filter_action: "Показать все",
+                search_title: "Ничего не найдено",
+                search_text: "Попробуйте другое название.",
+                search_action: "Сбросить поиск"
+            },
+            bulk: {
+                label: "Действия с выбранными",
+                selected: "Выбрано: {count} · {size}",
+                pause: "Пауза",
+                pause_count: "Пауза ({count})",
+                resume: "Продолжить",
+                resume_count: "Продолжить ({count})",
+                delete: "Удалить",
+                delete_count: "Удалить ({count})",
+                clear: "Снять выделение",
+                no_pausable: "Среди выбранных нет загрузок, которые качаются",
+                no_resumable: "Среди выбранных нет загрузок на паузе или с ошибкой",
+                paused: "Поставлено на паузу: {done}.",
+                paused_partial: "Поставлено на паузу: {done} из {total}. {error}",
+                resumed: "Возобновлено: {done}.",
+                resumed_partial: "Возобновлено: {done} из {total}. {error}"
+            },
+            confirm: {
+                title_one: "Удалить загрузку?",
+                title_many: "Удалить {count} {downloads}?",
+                message: "С диска будет удалено: {what} ({size}).",
+                unfinished: " Незавершённые загрузки остановятся.",
+                keep: " В каталоге всё останется, скачать можно заново.",
+                confirm: "Удалить",
+                what_title: "«{title}»",
+                what_episode: "«{title}», {code}",
+                what_episodes: "{count} {episodes} «{title}»",
+                what_downloads: "{count} {downloads}"
+            },
+            toast: {
+                play_blocked: "Эта загрузка не связана с фильмом из каталога, поэтому открыть плеер отсюда нельзя.",
+                deleted_one: "Удалено. Освободилось {size}.",
+                deleted_many: "Удалено: {count}. Освободилось {size}.",
+                deleted_partial: "Удалено {done} из {total}. {error}"
+            },
+            card: {
+                select: "Выбрать: {title}",
+                select_series: "Выбрать все показанные серии: {title}",
+                kind_movie: "фильм",
+                kind_series: "сериал",
+                unlinked: "не связано с каталогом",
+                quality_unknown: "Качество не указано",
+                unlinked_note: "MediaPlayer не знает, какой это фильм, поэтому открыть его страницу и плеер отсюда нельзя.",
+                episodes: "{count} {episodes}",
+                ready: "готово {ready} из {total}",
+                downloading: "качается {count}",
+                show_episodes: "Показать серии ({count})",
+                hide_episodes: "Скрыть серии",
+                series_page: "Страница сериала",
+                movie_page: "Страница фильма",
+                page_label: "{label}: {title}",
+                delete_series: "Удалить все серии: {title}",
+                file: "Файл",
+                disabled_reason: "{label} — {reason}"
+            },
+            actions: {
+                offline: "MediaPlayer не отвечает",
+                busy: "Выполняется…",
+                watch: "Смотреть",
+                watch_title: "Смотреть: {title}",
+                watch_blocked: "Смотреть: {title} — {reason}",
+                not_linked: "Не связано с фильмом из каталога",
+                episode_unknown: "Серия не определена",
+                pause_title: "Пауза: {title}",
+                retry: "Повторить",
+                resume: "Продолжить",
+                action_title: "{label}: {title}",
+                delete_title: "Удалить: {title}"
+            },
+            live: {
+                downloaded_ago: "скачано {ago}",
+                progress: "{have} из {total}",
+                peers: "пиры: {count}",
+                remaining: "осталось {eta}",
+                stale: "данные устарели",
+                error_default: "Загрузка остановилась. Нажмите «Повторить».",
+                progress_label: "Скачано {percent}%",
+                playable: "Можно смотреть, пока качается"
             }
         },
         navbar: {
@@ -4786,14 +5128,12 @@ export const locales = {
             edit_rating: "Изменить оценку",
             add_collection: "В коллекцию",
             remove: "Удалить",
-            remove_bookmarks: "Из закладок",
             kinopoisk: "Кинопоиск",
             imdb: "IMDb",
             tmdb: "TMDB",
             avg_rating: "Средний",
             my_rating: "Моя оценка",
-            unknown_movie: "Неизвестный фильм",
-            not_available: "—"
+            unknown_movie: "Неизвестный фильм"
         },
         random: {
             page_title: "Случайный фильм - Movie Rating Extension",
@@ -4823,17 +5163,12 @@ export const locales = {
                 round_empty: "Пока никто не добавил фильм.",
                 open_movie: "Открыть фильм {title}",
                 state_adding: "добавляется…",
-                state_queued: "в очереди",
-                state_selected: "выпал",
-                state_watched: "просмотрен",
-                state_removed: "удалён",
                 open_poster_of: "Открыть постер фильма «{title}»",
                 open_poster_plain: "Открыть постер фильма",
                 zoom_poster: "Увеличить постер",
                 added_by: "Добавил:",
                 remove_from_marathon: "Удалить из марафона",
                 remove_title_from_marathon: "Удалить {title} из марафона",
-                current_movie: "Сейчас выпал фильм: ",
                 start_marathon: "Начать марафон",
                 pick_last: "Выбрать последний фильм",
                 spin_wheel: "Крутить рулетку",
@@ -5055,6 +5390,26 @@ export const locales = {
                 austria: "Австрия"
             }
         },
+        calendar: {
+            page_title: "Календарь - Movie Rating Extension",
+            title: "Календарь",
+            subtitle: "Ближайшие серии и премьеры из списков «Смотрю» и «Буду смотреть»",
+            loading_label: "Загрузка календаря",
+            news_title: "Новости",
+            today: "Сегодня",
+            tomorrow: "Завтра",
+            in_days_one: "через {n} день",
+            in_days_few: "через {n} дня",
+            in_days_many: "через {n} дней",
+            in_days_other: "через {n} дня",
+            movie_premiere: "Премьера фильма",
+            empty_title: "Нет предстоящих дат",
+            empty_message: "Добавьте фильмы или сериалы в списки «Смотрю» или «Буду смотреть», и они появятся здесь автоматически.",
+            signed_out_title: "Войдите в аккаунт",
+            signed_out_message: "Войдите в аккаунт, чтобы видеть ближайшие серии и премьеры из своих списков.",
+            error_title: "Ошибка загрузки календаря",
+            error_fallback: "Не удалось получить данные. Попробуйте позже."
+        },
         rating_dialog: {
             title: "Оценить",
             close: "Закрыть",
@@ -5098,7 +5453,6 @@ export const locales = {
             next_episode: "Следующая серия",
             episode_runtime: "{minutes} мин",
             wait: "Пожалуйста, подождите",
-            back_to_search: "Вернуться к поиску",
             rate_title: "Оценить",
             personal_rating: "Ваша оценка: {rating}/10",
             series_rating_disabled_hint: "Чтобы оценить сериал, сначала нужна его привязка к Кинопоиску.",
@@ -5120,7 +5474,6 @@ export const locales = {
             refresh_data: "Обновить данные",
             data_refreshed: "Данные фильма обновлены",
             source: "Источник:",
-            select_source: "Выберите источник",
             loading_player: "Загрузка плеера...",
             error_title: "Ошибка",
             error_loading_movie: "Ошибка загрузки фильма",
@@ -5254,6 +5607,63 @@ export const locales = {
             error_not_found: "По вашему запросу ничего не найдено. Попробуйте другие ключевые слова.",
             error_forbidden: "Проблема с доступом к API. Проверьте настройки.",
             error_network: "Проблема с подключением к интернету. Проверьте соединение."
+        },
+        catalog: {
+            page_title: "Каталог",
+            eyebrow: "КАТАЛОГ / DISCOVERY",
+            tabs_label: "Направление каталога",
+            tabs: { films: "Фильмы", series: "Сериалы", cartoons: "Мультфильмы", anime: "Аниме" },
+            categories: {
+                films: { title: "Все фильмы", description: "Игровые фильмы без анимации" },
+                series: { title: "Все сериалы", description: "Игровые сериалы без анимации" },
+                cartoons: { title: "Все мультфильмы", description: "Анимация со всего мира, кроме японского аниме" },
+                anime: { title: "Всё аниме", description: "Японская анимация: фильмы и сериалы" }
+            },
+            filters_label: "Фильтры каталога",
+            sort_label: "Сортировка",
+            sort: {
+                popular: "Популярные",
+                rating: "По рейтингу",
+                newest_films: "Новые фильмы",
+                newest_series: "Новые сериалы",
+                newest_cartoons: "Новые мультфильмы",
+                newest_anime: "Новое аниме"
+            },
+            year_from: "Год от",
+            year_to: "Год до",
+            genre_label: "Жанр",
+            genres: {
+                all: "Все жанры",
+                action: "Боевик",
+                adventure: "Приключения",
+                comedy: "Комедия",
+                crime: "Криминал",
+                drama: "Драма",
+                fantasy: "Фэнтези",
+                horror: "Ужасы",
+                mystery: "Детектив",
+                romance: "Мелодрама",
+                science_fiction: "Фантастика",
+                thriller: "Триллер"
+            },
+            country_label: "Страна",
+            country_aria: "Код страны, например RU",
+            reset: "Сбросить",
+            results_label: "Фильмы каталога",
+            count_label: "результатов",
+            empty_title: "Ничего не найдено",
+            empty_text: "Измени фильтры или попробуй другое направление.",
+            empty_reset: "Сбросить фильтры",
+            error_title: "Каталог временно недоступен",
+            error_text: "Не удалось загрузить эту страницу.",
+            retry: "Повторить",
+            load_more: "Загрузить ещё",
+            loading: "Загрузка…",
+            loading_next: "Загружаем следующую страницу",
+            stale: "Показана сохранённая версия. Обновление источника временно недоступно.",
+            error_aborted: "Загрузка была отменена.",
+            error_not_configured: "TMDB не настроен для каталога.",
+            error_generic: "Не удалось загрузить каталог. Попробуйте ещё раз."
         },
         popup: {
             update: {

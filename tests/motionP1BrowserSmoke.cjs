@@ -81,45 +81,24 @@ async function main() {
                 assert(await page.evaluate(() => window.notes.root?.isConnected), 'old exit/ack cannot remove new notes');
                 await page.evaluate(() => window.notes.close(false));
 
-                // Real Settings toast function, with timers controlled independently of motion.
-                const settings = read('src/pages/settings/settings.js');
-                const toast = settings.slice(settings.indexOf('    function showToast('), settings.indexOf('    // Input Event Listeners for tracking dirty state'));
-                await page.evaluate(code => {
+                // The shared toast Settings and Admin use, with timers controlled independently of motion.
+                await page.evaluate(() => {
                     window.motionTimers = [];
                     window.setTimeout = (callback, ms) => { motionTimers.push({ callback, ms }); return motionTimers.length; };
-                    window.eval(`${code}\nwindow.motionShowToast = showToast;`);
-                    motionShowToast('Old');
-                    motionShowToast('New');
+                    Utils.showToast('Old', 'success');
+                    Utils.showToast('New', 'success');
                     motionTimers.shift().callback();
-                }, toast);
-                assert.equal(await page.locator('.toast').textContent(), 'New', 'old dwell timer does not close replacement');
-                assert.equal(await page.locator('.toast').getAttribute('aria-live'), 'polite');
+                });
+                const toast = page.locator('.utils-toast');
+                assert.equal(await toast.textContent(), 'New', 'old dwell timer does not close replacement');
+                assert.equal(await toast.getAttribute('aria-live'), 'polite');
                 await page.evaluate(() => motionTimers.shift().callback());
-                if (reducedMotion === 'reduce') assert.equal(await page.locator('.toast').count(), 0);
+                if (reducedMotion === 'reduce') assert.equal(await toast.count(), 0);
                 else {
                     assert.equal(await page.evaluate(() => motionTimers[0].ms), 120);
-                    await page.evaluate(() => { motionShowToast('Newest'); motionTimers.shift().callback(); });
-                    assert.equal(await page.locator('.toast').textContent(), 'Newest', 'old exit timer only removes its own node');
-                }
-                // Shared and Admin timers obey the same concrete-node contract.
-                const admin = read('src/pages/admin/admin.js');
-                const success = admin.slice(admin.indexOf('    showSuccessMessage('), admin.indexOf('    async loadMovies(', admin.indexOf('    showSuccessMessage(')));
-                await page.evaluate(code => { window.adminMotion = window.eval(`({${code}})`); }, success);
-                for (const kind of ['utils', 'admin']) {
-                    await page.evaluate(kind => {
-                        window.motionTimers = [];
-                        const show = kind === 'utils' ? message => Utils.showToast(message) : message => adminMotion.showSuccessMessage(message);
-                        show('Old'); show('New'); motionTimers.shift().callback();
-                    }, kind);
-                    const selector = kind === 'utils' ? '.utils-toast' : '.admin-success';
-                    assert.equal(await page.locator(selector).textContent(), 'New', `${kind} replacement survives old timer`);
-                    await page.evaluate(() => motionTimers.shift().callback());
-                    if (reducedMotion === 'reduce') assert.equal(await page.locator(selector).count(), 0);
-                    else {
-                        assert.equal(await page.evaluate(() => motionTimers[0].ms), 120);
-                        await page.evaluate(() => motionTimers.shift().callback());
-                        assert.equal(await page.locator(selector).count(), 0);
-                    }
+                    await page.evaluate(() => { Utils.showToast('Newest', 'error'); motionTimers.shift().callback(); });
+                    assert.equal(await toast.textContent(), 'Newest', 'old exit timer only removes its own node');
+                    assert.equal(await toast.getAttribute('role'), 'alert', 'an error toast is announced as an alert');
                 }
                 await page.close();
               }

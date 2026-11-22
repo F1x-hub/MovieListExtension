@@ -55,11 +55,15 @@ function createAdminPanel(window) {
         providerKeyActionRequest: false,
         errors: [],
         successes: [],
-        showError(message) { this.errors.push(message); },
-        showSuccessMessage(message) { this.successes.push(message); },
         loadUsers: async () => {},
         updateSelectionUI() {}
     });
+    // Admin reports results through the shared toast; record them by type.
+    window.Utils.showToast = (message, type) => {
+        if (type === 'error') panel.errors.push(message);
+        else if (type === 'success') panel.successes.push(message);
+        else throw new Error(`unexpected toast type ${type}: ${message}`);
+    };
     return panel;
 }
 
@@ -259,8 +263,32 @@ function testMarkupContract() {
     assert.match(settingsJs, /function showJackettIndexerConfigDialog\(/);
 }
 
+// Both pages report results through the shared Utils.showToast with a real type.
+function testToastContract() {
+    const settingsHtml = read('src/pages/settings/settings.html');
+    const settingsCss = read('src/pages/settings/settings.css');
+    for (const [name, html] of [['admin.html', adminHtml], ['settings.html', settingsHtml]]) {
+        assert.match(html, /<script[^>]+src="[^"]*shared\/utils\/Utils\.js"/, `${name} loads Utils.js`);
+    }
+    assert.doesNotMatch(settingsJs, /function showToast\(|className = 'toast|--filter-exclude-border/,
+        'Settings must not build its own toast');
+    assert.doesNotMatch(settingsCss, /^\.toast\s*\{/m, 'settings.css must not keep the old toast style');
+    assert.doesNotMatch(adminJs, /showSuccessMessage|admin-success|this\.showError\(/,
+        'Admin must not keep its own success/error banners');
+    for (const source of [settingsJs, adminJs]) {
+        for (const call of source.matchAll(/Utils\.showToast\((?:[^;]|\n)*?\);/g)) {
+            assert.match(call[0], /, '(success|error|warning|info)'\);$/, `toast without a type: ${call[0]}`);
+        }
+    }
+    assert.match(settingsJs, /Utils\.showToast\(i18n\.get\('settings\.save_failed'\), 'error'\)/,
+        'a failed save is painted as an error');
+    // Only states that replace the panel keep the page-level block.
+    assert.equal([...adminJs.matchAll(/this\.showAccessError\(/g)].length, 4);
+}
+
 (async () => {
     testMarkupContract();
+    testToastContract();
     await testAdminUserDelete();
     await testAdminBulkDelete();
     await testAdminProviderKeyRevoke();

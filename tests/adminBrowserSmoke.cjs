@@ -18,7 +18,7 @@ const { chromium } = require('playwright');
     await page.waitForFunction(() => Boolean(window.adminPanel), { timeout: 5_000 });
     await page.evaluate(() => {
       const panel = window.adminPanel;
-      panel.showError = () => {};
+      panel.showAccessError = () => {};
       panel.providerKeys = [{
         id: 'key-demo',
         provider: 'kinopoisk',

@@ -1,7 +1,9 @@
+import { i18n } from '../../shared/i18n/I18n.js';
 import { fetchCalendarEpisodes, readCalendarSnapshot } from '../../shared/services/CalendarService.js';
-import { renderMonths, renderEmptyState, renderErrorState } from './CalendarView.js';
+import { escapeHtml, renderMonths, renderEmptyState, renderSignedOutState, renderErrorState } from './CalendarView.js';
 
 const PROGRESS_RENDER_INTERVAL_MS = 400;
+const AUTH_READY_TIMEOUT_MS = 10000;
 
 function ensureNavigationState() {
     if (window.navigation && typeof window.navigation.updateActivePage === 'function') {
@@ -14,9 +16,16 @@ function ensureNavigationState() {
     }
 }
 
+function translateStaticPage() {
+    i18n.translatePage();
+    document.title = i18n.get('calendar.page_title');
+}
+
 function createCalendarView(content, totalBadge) {
     let rendered = false;
     let openMonths = null;
+    // What is on screen, so a language change can paint it again.
+    let lastPaint = null;
 
     // Toggle months through one delegated listener so re-renders need no re-binding.
     content.addEventListener('click', (event) => {
@@ -36,25 +45,58 @@ function createCalendarView(content, totalBadge) {
             .filter(Boolean));
     };
 
+    const paint = (state) => {
+        lastPaint = state;
+        if (state.kind === 'signed-out') {
+            content.innerHTML = renderSignedOutState();
+            totalBadge.textContent = '';
+            content.setAttribute('aria-busy', 'false');
+        } else if (state.kind === 'error') {
+            content.innerHTML = renderErrorState();
+            content.setAttribute('aria-busy', 'false');
+        } else if (!state.data.total) {
+            content.innerHTML = renderEmptyState();
+            totalBadge.textContent = '';
+            content.setAttribute('aria-busy', 'false');
+        } else {
+            rememberOpenMonths();
+            content.innerHTML = renderMonths(state.data.grouped, { openMonths });
+            totalBadge.textContent = state.data.total;
+            content.setAttribute('aria-busy', String(!state.final));
+        }
+        rendered = true;
+    };
+
     return {
         get hasContent() { return rendered; },
-        render({ grouped, total }, { final = false } = {}) {
-            if (!total) {
-                if (!final) return;
-                content.innerHTML = renderEmptyState();
-                totalBadge.textContent = '';
-                rendered = true;
-                return;
-            }
-            rememberOpenMonths();
-            content.innerHTML = renderMonths(grouped, { openMonths });
-            totalBadge.textContent = total;
-            content.setAttribute('aria-busy', String(!final));
-            rendered = true;
+        render(data, { final = false } = {}) {
+            if (!data.total && !final) return;
+            paint({ kind: 'data', data, final });
         },
-        error(message) {
+        signedOut() {
+            openMonths = null;
+            paint({ kind: 'signed-out' });
+        },
+        error() {
             if (rendered) return; // keep what is already shown
-            content.innerHTML = renderErrorState(message);
+            paint({ kind: 'error' });
+        },
+        /** Back to the loading skeleton, for another account's data. */
+        reset() {
+            rendered = false;
+            openMonths = null;
+            lastPaint = null;
+            totalBadge.textContent = '';
+            content.setAttribute('aria-busy', 'true');
+            content.innerHTML = `
+                <div class="calendar-loading" role="status" aria-label="${escapeHtml(i18n.get('calendar.loading_label'))}">
+                    <div class="skeleton-month"></div>
+                    <div class="skeleton-month"></div>
+                    <div class="skeleton-month"></div>
+                </div>`;
+        },
+        repaint() {
+            if (lastPaint) paint(lastPaint);
         }
     };
 }
@@ -62,30 +104,87 @@ function createCalendarView(content, totalBadge) {
 async function init() {
     ensureNavigationState();
 
+    // The language is known before anything is painted.
+    await i18n.init();
+    translateStaticPage();
+
     const content = document.getElementById('calendarContent');
     const totalBadge = document.getElementById('calendarTotal');
     const view = createCalendarView(content, totalBadge);
+    const manager = window.firebaseManager || null;
 
-    // 1. Instant paint from the last result while fresh data loads.
-    const snapshot = await readCalendarSnapshot().catch(() => null);
-    if (snapshot?.total) view.render(snapshot);
+    // Each load belongs to one account; a load that an auth change overtook paints nothing.
+    let generation = 0;
+    let shownUserId;
 
-    // 2. Fresh data, painted progressively as titles resolve.
-    let lastPaint = 0;
-    try {
-        const result = await fetchCalendarEpisodes({
-            onProgress: (partial) => {
-                if (snapshot?.total) return; // the snapshot already fills the page; avoid flicker
-                const now = Date.now();
-                if (now - lastPaint < PROGRESS_RENDER_INTERVAL_MS) return;
-                lastPaint = now;
-                view.render(partial);
-            }
+    const load = async (userId) => {
+        const current = ++generation;
+        shownUserId = userId;
+        if (!userId) {
+            view.signedOut();
+            return;
+        }
+        const isCurrent = () => current === generation;
+
+        // 1. Instant paint from the last result while fresh data loads.
+        const snapshot = await readCalendarSnapshot({ userId }).catch(() => null);
+        if (!isCurrent()) return;
+        if (snapshot?.total) view.render(snapshot);
+
+        // 2. Fresh data, painted progressively as titles resolve.
+        let lastProgressPaint = 0;
+        try {
+            const result = await fetchCalendarEpisodes({
+                userId,
+                onProgress: (partial) => {
+                    if (!isCurrent() || snapshot?.total) return; // the snapshot already fills the page; avoid flicker
+                    const now = Date.now();
+                    if (now - lastProgressPaint < PROGRESS_RENDER_INTERVAL_MS) return;
+                    lastProgressPaint = now;
+                    view.render(partial);
+                }
+            });
+            if (isCurrent()) view.render(result, { final: true });
+        } catch (error) {
+            console.error('[Calendar]', error);
+            if (isCurrent()) view.error();
+        }
+    };
+
+    // Signing in or out in another tab reaches this page as authStateChanged.
+    window.addEventListener('authStateChanged', (event) => {
+        const userId = event.detail?.user?.uid || null;
+        if (userId === shownUserId) return;
+        view.reset();
+        load(userId);
+    });
+
+    chrome.runtime?.onMessage?.addListener?.((message) => {
+        if (message?.type !== 'SETTINGS_UPDATED' || !message.settings?.language) return;
+        i18n.init().then(() => {
+            translateStaticPage();
+            view.repaint();
         });
-        view.render(result, { final: true });
-    } catch (error) {
-        console.error('[Calendar]', error);
-        view.error(error.message || 'Не удалось получить данные');
+    });
+
+    // An unresolved auth state is not a guest session: keep the skeleton until Firebase answers.
+    if (manager) {
+        await manager.waitForAuthReady?.(AUTH_READY_TIMEOUT_MS);
+        const userId = manager.getCurrentUser?.()?.uid || null;
+        if (!userId && !manager.isAuthReady) return; // authStateChanged will start the load
+        if (shownUserId === undefined) load(userId);
+        return;
+    }
+    // A page without Firebase cannot tell who is signed in; the service falls back to the stored account.
+    load(await readStoredUserId());
+}
+
+async function readStoredUserId() {
+    try {
+        const result = await chrome.storage.local.get(['user']);
+        return result.user?.uid || null;
+    } catch {
+        return null;
     }
 }
 

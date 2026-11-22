@@ -406,7 +406,9 @@ What's New enters once per opening and closes through an inert, aria-hidden
 visual copy. History and locale rerenders do not replay entry. Resolve, callbacks,
 acknowledgement and focus restoration never wait for decorative motion.
 
-Settings, shared and Admin toasts share the `motion-toast` lifecycle: entry
+Pages report results through the shared `Utils.showToast(message, type)` (success,
+error, warning or info; Settings and Admin included, no page-owned toasts). It uses
+the `motion-toast` lifecycle: entry
 opacity/translate in 180ms, exit in 120ms, with display dwell independent of motion.
 Timers own a concrete node, so replacing a toast cannot remove its successor.
 Notifications expose status/alert semantics and polite/assertive live regions.

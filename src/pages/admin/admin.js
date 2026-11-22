@@ -93,7 +93,7 @@ class AdminPanelManager {
             this.setAdminAccessState(isAdmin);
             
             if (!isAdmin) {
-                this.showError('Доступ запрещён. Для просмотра этой страницы требуются права администратора.');
+                this.showAccessError('Доступ запрещён. Для просмотра этой страницы требуются права администратора.');
                 if (window.adminNav && typeof window.adminNav.showAuthModal === 'function') {
                     window.adminNav.showAuthModal('login');
                 }
@@ -131,7 +131,7 @@ class AdminPanelManager {
             console.log(`[Admin Performance] Init fully complete. Data size - Users: ${this.users.length}, Movies: ${this.movies.length}`);
         } catch (error) {
             console.error('Error initializing admin panel:', error);
-            this.showError('Не удалось открыть админ-панель. Повторите попытку.');
+            this.showAccessError('Не удалось открыть админ-панель. Повторите попытку.');
             console.timeEnd('[Admin Perf] Total Init');
         }
     }
@@ -254,7 +254,7 @@ class AdminPanelManager {
         } catch (error) {
             console.error('Error loading users:', error);
             this.renderUsersError();
-            this.showError('Не удалось загрузить пользователей. Повторите попытку.');
+            Utils.showToast('Не удалось загрузить пользователей. Повторите попытку.', 'error');
         }
         console.timeEnd('[Admin Perf] loadUsers total');
     }
@@ -321,7 +321,7 @@ class AdminPanelManager {
             console.error('Error fetching users from DB:', error);
             if (!isBackground) {
                 this.renderUsersError();
-                this.showError('Не удалось загрузить пользователей. Повторите попытку.');
+                Utils.showToast('Не удалось загрузить пользователей. Повторите попытку.', 'error');
             }
         }
         console.timeEnd(fetchLabel);
@@ -570,11 +570,11 @@ class AdminPanelManager {
                 this.applyUserFilters();
                 await this.loadApprovals();
                 const statusLabels = { approved: 'одобрен', rejected: 'заблокирован / отклонён', pending: 'переведён в ожидание' };
-                this.showSuccessMessage(`Пользователь ${targetUser?.displayName || userId} ${statusLabels[targetStatus] || targetStatus}`);
+                Utils.showToast(`Пользователь ${targetUser?.displayName || userId} ${statusLabels[targetStatus] || targetStatus}`, 'success');
             }
         } catch (err) {
             console.error('Error updating user approval status:', err);
-            this.showError(`Ошибка обновления статуса: ${err.message}`);
+            Utils.showToast(`Ошибка обновления статуса: ${err.message}`, 'error');
             if (btn) btn.disabled = false;
         }
     }
@@ -612,7 +612,7 @@ class AdminPanelManager {
             }
             if (headerBadge) headerBadge.textContent = '—';
             this.renderApprovalsError();
-            this.showError('Не удалось загрузить заявки. Повторите попытку.');
+            Utils.showToast('Не удалось загрузить заявки. Повторите попытку.', 'error');
         }
     }
 
@@ -1177,7 +1177,7 @@ class AdminPanelManager {
             );
             this.commentReactionConfig = config;
             this.renderCommentReactionConfig(config);
-            this.showSuccessMessage(successMessage);
+            Utils.showToast(successMessage, 'success');
             return true;
         } catch (error) {
             console.error('Error saving comment reaction config:', error);
@@ -1328,7 +1328,7 @@ class AdminPanelManager {
                 await this.adminService.setProviderKeyStatus(keyId, action === 'enable' ? 'active' : 'disabled');
             } else return;
             await this.loadProviderKeys(true);
-            this.showSuccessMessage(action === 'quota' ? 'Квота обновлена' : 'Состояние ключа обновлено');
+            Utils.showToast(action === 'quota' ? 'Квота обновлена' : 'Состояние ключа обновлено', 'success');
         } catch (error) {
             console.error('Provider key action failed:', error?.code || 'unknown error');
             this.renderProviderKeysError(error);
@@ -1401,7 +1401,7 @@ class AdminPanelManager {
             await this.adminService.addProviderKey({ provider, label, purpose, secret });
             this.closeAddProviderKeyModal();
             await this.loadProviderKeys(true);
-            this.showSuccessMessage('API-ключ добавлен и проверен');
+            Utils.showToast('API-ключ добавлен и проверен', 'success');
         } catch (error) {
             console.error('Provider key add failed:', error?.code || 'unknown error');
             this.setProviderKeyFormError(this.getProviderKeyErrorMessage(error));
@@ -1440,7 +1440,7 @@ class AdminPanelManager {
             this.setProviderKeyRowBusy(keyId, true);
             await this.adminService.revokeProviderKey(keyId);
             await this.loadProviderKeys(true);
-            this.showSuccessMessage('API-ключ отозван');
+            Utils.showToast('API-ключ отозван', 'success');
         } catch (error) {
             console.error('Provider key revoke failed:', error?.code || 'unknown error');
             this.renderProviderKeysError(error);
@@ -1641,13 +1641,13 @@ class AdminPanelManager {
 
             const success = await this.adminService.batchApproveUsers(userIds, this.currentUser.uid);
             if (success) {
-                this.showSuccessMessage(`Одобрено заявок: ${userIds.length}`);
+                Utils.showToast(`Одобрено заявок: ${userIds.length}`, 'success');
                 await this.loadApprovals();
                 await this.fetchUsersFromDb();
             }
         } catch (error) {
             console.error('Error in batch approve:', error);
-            this.showError(`Ошибка пакетного одобрения: ${error.message}`);
+            Utils.showToast(`Ошибка пакетного одобрения: ${error.message}`, 'error');
         } finally {
             this.updateBatchApproveButton();
         }
@@ -1712,7 +1712,7 @@ class AdminPanelManager {
                 preview = await this.adminService.getUserDeletionPreview(user.id);
             } catch (error) {
                 console.error('Error getting deletion preview:', error);
-                this.showError('Не удалось получить данные пользователя. Повторите попытку.');
+                Utils.showToast('Не удалось получить данные пользователя. Повторите попытку.', 'error');
                 return;
             }
 
@@ -1740,10 +1740,10 @@ class AdminPanelManager {
                 await this.adminService.deleteUser(user.id, this.currentUser.uid);
             } catch (error) {
                 console.error('Error deleting user:', error);
-                this.showError('Не удалось удалить пользователя. Повторите попытку.');
+                Utils.showToast('Не удалось удалить пользователя. Повторите попытку.', 'error');
                 return;
             }
-            this.showSuccessMessage(`Пользователь «${user.displayName || 'без имени'}» удалён`);
+            Utils.showToast(`Пользователь «${user.displayName || 'без имени'}» удалён`, 'success');
             await this.loadUsers();
         } finally {
             this.setDeleteButtonBusy(triggerButton, false);
@@ -1771,7 +1771,7 @@ class AdminPanelManager {
             if (!user) {
                 this.currentUser = null;
                 this.setAdminAccessState(false);
-                this.showError('Сессия завершена. Для доступа к панели администратора необходимо войти в систему.');
+                this.showAccessError('Сессия завершена. Для доступа к панели администратора необходимо войти в систему.');
                 if (window.adminNav && typeof window.adminNav.showAuthModal === 'function') {
                     window.adminNav.showAuthModal('login');
                 }
@@ -1787,7 +1787,7 @@ class AdminPanelManager {
                     await this.loadMovies();
                     await this.loadApprovals();
                 } else {
-                    this.showError('Доступ запрещен. У текущего аккаунта нет прав администратора.');
+                    this.showAccessError('Доступ запрещен. У текущего аккаунта нет прав администратора.');
                 }
             }
         });
@@ -2103,7 +2103,9 @@ class AdminPanelManager {
         this.setAdminAccessState(this.isAdmin);
     }
 
-    showError(message) {
+    // The page-level block for states that replace the panel (no access, failed start).
+    // Action results go through the shared Utils.showToast.
+    showAccessError(message) {
         const errorDiv = document.getElementById('adminError');
         const errorText = document.getElementById('errorText');
         
@@ -2125,40 +2127,6 @@ class AdminPanelManager {
             errorDiv.setAttribute('aria-hidden', 'true');
         }
         if (errorText) errorText.textContent = '';
-    }
-
-    showSuccessMessage(message) {
-        // Create temporary success message
-        const successDiv = document.createElement('div');
-        document.querySelectorAll('.admin-success').forEach(toast => toast.remove());
-        successDiv.className = 'admin-success motion-toast';
-        successDiv.setAttribute('role', 'status');
-        successDiv.setAttribute('aria-live', 'polite');
-        successDiv.style.cssText = `
-            position: fixed;
-            top: 80px;
-            right: 20px;
-            background: #22c55e;
-            color: white;
-            padding: var(--space-md) var(--space-lg);
-            border-radius: var(--radius-lg);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            z-index: 10000;
-        `;
-        successDiv.textContent = message;
-        
-        document.body.appendChild(successDiv);
-        
-        setTimeout(() => {
-            if (!successDiv.isConnected) return;
-            if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-                successDiv.remove();
-                return;
-            }
-            successDiv.classList.add('is-leaving');
-            const duration = parseFloat(getComputedStyle(successDiv).getPropertyValue('--motion-duration-fast')) || 120;
-            setTimeout(() => successDiv.remove(), duration);
-        }, 3000);
     }
 
     async loadMovies() {
@@ -2239,7 +2207,7 @@ class AdminPanelManager {
         } catch (error) {
             console.error('Error loading movies:', error);
             this.renderMoviesError();
-            this.showError('Не удалось загрузить фильмы. Повторите попытку.');
+            Utils.showToast('Не удалось загрузить фильмы. Повторите попытку.', 'error');
         }
         console.timeEnd('[Admin Perf] loadMovies total');
     }
@@ -2624,7 +2592,7 @@ class AdminPanelManager {
     // Force refresh
     async forceRefresh() {
         if (!this.isOnline) {
-            this.showError('Нет подключения к интернету');
+            Utils.showToast('Нет подключения к интернету', 'warning');
             return;
         }
 
@@ -2651,10 +2619,10 @@ class AdminPanelManager {
             // Load fresh data
             await this.loadMovies();
             
-            this.showSuccessMessage('Данные обновлены');
+            Utils.showToast('Данные обновлены', 'success');
         } catch (error) {
             console.error('Error refreshing data:', error);
-            this.showError(`Ошибка обновления: ${error.message}`);
+            Utils.showToast(`Ошибка обновления: ${error.message}`, 'error');
         } finally {
             if (refreshBtn) {
                 refreshBtn.classList.remove('loading');
@@ -2685,7 +2653,7 @@ class AdminPanelManager {
             // Update local cache only
             this.cacheService.removeMoviesFromCache(movieIds);
             
-            this.showSuccessMessage(`Кэш очищен для ${movieIds.length} фильмов`);
+            Utils.showToast(`Кэш очищен для ${movieIds.length} фильмов`, 'success');
             this.selectedMovies.clear();
             this.updateSelectionUI();
             
@@ -2694,7 +2662,7 @@ class AdminPanelManager {
             // Let's just update UI.
         } catch (error) {
             console.error('Bulk clear cache error:', error);
-            this.showError(`Ошибка: ${error.message}`);
+            Utils.showToast(`Ошибка: ${error.message}`, 'error');
         } finally {
             if (btn) {
                 btn.disabled = false;
@@ -2707,7 +2675,7 @@ class AdminPanelManager {
     async bulkUpdateInfo() {
         const check = this.cacheService.checkWriteAccess();
         if (!check.canWrite) {
-            this.showError(check.reason);
+            Utils.showToast(check.reason, 'warning');
             return;
         }
 
@@ -2730,13 +2698,13 @@ class AdminPanelManager {
                 }
             );
 
-            this.showSuccessMessage(`Обновлено ${result.updated} фильмов`);
+            Utils.showToast(`Обновлено ${result.updated} фильмов`, 'success');
             
             // Refresh to show updated data
             await this.forceRefresh();
         } catch (error) {
             console.error('Bulk update error:', error);
-            this.showError(`Ошибка: ${error.message}`);
+            Utils.showToast(`Ошибка: ${error.message}`, 'error');
         } finally {
             if (btn) {
                 btn.disabled = false;
@@ -2775,7 +2743,7 @@ class AdminPanelManager {
     async confirmBulkDelete() {
         const check = this.cacheService.checkWriteAccess();
         if (!check.canWrite) {
-            this.showError(check.reason);
+            Utils.showToast(check.reason, 'warning');
             return;
         }
 
@@ -2798,10 +2766,10 @@ class AdminPanelManager {
             this.selectedMovies.clear();
             this.applyMoviesFilters();
 
-            this.showSuccessMessage(`Удалено ${result.moviesDeleted} фильмов и ${result.ratingsDeleted} оценок`);
+            Utils.showToast(`Удалено ${result.moviesDeleted} фильмов и ${result.ratingsDeleted} оценок`, 'success');
         } catch (error) {
             console.error('Bulk delete error:', error);
-            this.showError(`Ошибка удаления: ${error.message}`);
+            Utils.showToast(`Ошибка удаления: ${error.message}`, 'error');
         } finally {
             this.setDeleteButtonBusy(deleteBtn, false);
             this.updateSelectionUI();
@@ -2828,7 +2796,7 @@ class AdminPanelManager {
             await this.adminService.clearMovieCacheAsAdmin(movieId, this.currentUser.uid);
 
             // Show success message
-            this.showSuccessMessage(`Кэш очищен: «${movieTitle}»`);
+            Utils.showToast(`Кэш очищен: «${movieTitle}»`, 'success');
 
             // Reset button state
             buttons.forEach(btn => {
@@ -2845,7 +2813,7 @@ class AdminPanelManager {
                 btn.textContent = 'Очистить кэш';
             });
 
-            this.showError('Не удалось очистить кэш. Повторите попытку.');
+            Utils.showToast('Не удалось очистить кэш. Повторите попытку.', 'error');
         }
     }
 
@@ -3033,7 +3001,7 @@ class AdminPanelManager {
                         await new Promise(res => chrome.storage.local.remove([this.idMappingService.UNMAPPED_QUEUE_KEY], res));
                     }
                     await this.loadTmdbFallbacks();
-                    this.showSuccessMessage('Очередь TMDB очищена');
+                    Utils.showToast('Очередь TMDB очищена', 'success');
                 }
             });
         }
@@ -3044,7 +3012,7 @@ class AdminPanelManager {
             autoMapQueueBtn.addEventListener('click', async () => {
                 const unmappedItems = this.unmappedQueueData || [];
                 if (unmappedItems.length === 0) {
-                    this.showSuccessMessage('Очередь пуста — нет тайтлов для сопоставления.');
+                    Utils.showToast('Очередь пуста — нет тайтлов для сопоставления.', 'info');
                     return;
                 }
 
@@ -3081,11 +3049,11 @@ class AdminPanelManager {
                         }
                     }
 
-                    this.showSuccessMessage(`Авто-сопоставление завершено! Найдено и привязано: ${resolvedCount}, отложено (нет на КП): ${notFoundCount}`);
+                    Utils.showToast(`Авто-сопоставление завершено! Найдено и привязано: ${resolvedCount}, отложено (нет на КП): ${notFoundCount}`, 'success');
                     await this.loadTmdbFallbacks();
                 } catch (err) {
                     console.error('Error during auto-mapping queue:', err);
-                    this.showError(`Ошибка авто-сопоставления: ${err.message}`);
+                    Utils.showToast(`Ошибка авто-сопоставления: ${err.message}`, 'error');
                 } finally {
                     autoMapQueueBtn.disabled = false;
                     autoMapQueueBtn.innerHTML = `
@@ -3102,7 +3070,7 @@ class AdminPanelManager {
             autoMapKpToImdbBtn.addEventListener('click', async () => {
                 const pendingItems = this.pendingImdbItems || [];
                 if (pendingItems.length === 0) {
-                    this.showSuccessMessage('Очередь пуста — нет фильмов Кинопоиска без IMDb ID.');
+                    Utils.showToast('Очередь пуста — нет фильмов Кинопоиска без IMDb ID.', 'info');
                     return;
                 }
 
@@ -3146,11 +3114,11 @@ class AdminPanelManager {
                         }
                     }
 
-                    this.showSuccessMessage(`Авто-поиск IMDb завершен! Найдено и сохранено: ${foundCount} из ${pendingItems.length}`);
+                    Utils.showToast(`Авто-поиск IMDb завершен! Найдено и сохранено: ${foundCount} из ${pendingItems.length}`, 'success');
                     await this.loadTmdbFallbacks();
                 } catch (err) {
                     console.error('Error during auto-mapping IMDb queue:', err);
-                    this.showError(`Ошибка авто-поиска IMDb: ${err.message}`);
+                    Utils.showToast(`Ошибка авто-поиска IMDb: ${err.message}`, 'error');
                 } finally {
                     autoMapKpToImdbBtn.disabled = false;
                     autoMapKpToImdbBtn.innerHTML = `
@@ -3175,10 +3143,10 @@ class AdminPanelManager {
                     a.download = `tmdb-kp-mappings-${new Date().toISOString().slice(0, 10)}.json`;
                     a.click();
                     URL.revokeObjectURL(url);
-                    this.showSuccessMessage('Файл экспорта успешно скачан');
+                    Utils.showToast('Файл экспорта успешно скачан', 'success');
                 } catch (err) {
                     console.error('Export error:', err);
-                    this.showError(`Ошибка экспорта: ${err.message}`);
+                    Utils.showToast(`Ошибка экспорта: ${err.message}`, 'error');
                 }
             });
         }
@@ -3192,11 +3160,11 @@ class AdminPanelManager {
                     preview = await this.idMappingService.getLocalManualMappingPublicationPreview();
                 } catch (error) {
                     console.error('Error preparing local mapping publication:', error);
-                    this.showError(`Не удалось подготовить публикацию: ${error.message}`);
+                    Utils.showToast(`Не удалось подготовить публикацию: ${error.message}`, 'error');
                     return;
                 }
                 if (preview.total === 0) {
-                    this.showSuccessMessage('Локальных связей для публикации нет.');
+                    Utils.showToast('Локальных связей для публикации нет.', 'info');
                     return;
                 }
                 const invalidHint = preview.invalid > 0 ? ` Некорректных записей: ${preview.invalid}.` : '';
@@ -3208,11 +3176,11 @@ class AdminPanelManager {
                     const result = await this.idMappingService.publishLocalManualMappings();
                     const conflictText = result.conflicts.length > 0 ? ` Конфликтов: ${result.conflicts.length}.` : '';
                     const invalidText = result.invalid.length > 0 ? ` Некорректных: ${result.invalid.length}.` : '';
-                    this.showSuccessMessage(`Проверено: ${result.total}; опубликовано: ${result.published}; уже общие: ${result.alreadyShared}.${conflictText}${invalidText}`);
+                    Utils.showToast(`Проверено: ${result.total}; опубликовано: ${result.published}; уже общие: ${result.alreadyShared}.${conflictText}${invalidText}`, 'success');
                     await this.loadTmdbFallbacks();
                 } catch (error) {
                     console.error('Error publishing local manual mappings:', error);
-                    this.showError(`Не удалось опубликовать связи: ${error.message}`);
+                    Utils.showToast(`Не удалось опубликовать связи: ${error.message}`, 'error');
                 } finally {
                     publishManualMappingsBtn.disabled = false;
                     publishManualMappingsBtn.textContent = 'Опубликовать локальные связи';
@@ -3233,16 +3201,16 @@ class AdminPanelManager {
                     const text = await file.text();
                     const res = await this.idMappingService.importManualMappingsJson(text);
                     if (res.errors && res.errors.length > 0) {
-                        this.showSuccessMessage(`Импортировано: ${res.imported}. Ошибок: ${res.errors.length}`);
+                        Utils.showToast(`Импортировано: ${res.imported}. Ошибок: ${res.errors.length}`, 'warning');
                         console.warn('Import warnings/errors:', res.errors);
                     } else {
-                        this.showSuccessMessage(`Успешно импортировано привязок: ${res.imported}`);
+                        Utils.showToast(`Успешно импортировано привязок: ${res.imported}`, 'success');
                     }
                     importFile.value = '';
                     await this.loadTmdbFallbacks();
                 } catch (err) {
                     console.error('Import error:', err);
-                    this.showError(`Ошибка импорта: ${err.message}`);
+                    Utils.showToast(`Ошибка импорта: ${err.message}`, 'error');
                     importFile.value = '';
                 }
             });
@@ -3263,11 +3231,11 @@ class AdminPanelManager {
                 const kpId = this.extractNumericId(kpInput);
 
                 if (!tmdbId) {
-                    this.showError('Пожалуйста, укажите корректный числовой TMDB ID или ссылку');
+                    Utils.showToast('Пожалуйста, укажите корректный числовой TMDB ID или ссылку', 'warning');
                     return;
                 }
                 if (!kpId) {
-                    this.showError('Пожалуйста, укажите корректный числовой Kinopoisk ID или ссылку');
+                    Utils.showToast('Пожалуйста, укажите корректный числовой Kinopoisk ID или ссылку', 'warning');
                     return;
                 }
 
@@ -3439,13 +3407,13 @@ class AdminPanelManager {
                             year: kpYear,
                             kpType
                         });
-                        this.showSuccessMessage(`Связь сохранена: TMDB ${mediaType}:${tmdbId} → Кинопоиск ${resolvedKpId}`);
+                        Utils.showToast(`Связь сохранена: TMDB ${mediaType}:${tmdbId} → Кинопоиск ${resolvedKpId}`, 'success');
                         form.reset();
                         preview.innerHTML = '';
                         await this.loadTmdbFallbacks();
                     } catch (error) {
                         console.error('Error saving verified manual mapping:', error);
-                        this.showError(`Ошибка сохранения связи: ${error.message}`);
+                        Utils.showToast(`Ошибка сохранения связи: ${error.message}`, 'error');
                         confirmBtn.disabled = false;
                         confirmBtn.textContent = 'Подтвердить связь';
                     }
@@ -3769,7 +3737,7 @@ class AdminPanelManager {
                 const previewBox = curCard.querySelector('.tmdb-preview-container');
 
                 if (!kpId) {
-                    this.showError('Пожалуйста, введите корректный числовой Kinopoisk ID или ссылку');
+                    Utils.showToast('Пожалуйста, введите корректный числовой Kinopoisk ID или ссылку', 'warning');
                     return;
                 }
 
@@ -3869,7 +3837,7 @@ class AdminPanelManager {
                                 const cKpType = confirmBtn.dataset.kpType;
 
                                 if (!cKpId) {
-                                    this.showError('Сначала нажмите "Проверить" для верификации тайтла на Кинопоиске');
+                                    Utils.showToast('Сначала нажмите "Проверить" для верификации тайтла на Кинопоиске', 'warning');
                                     return;
                                 }
 
@@ -3882,11 +3850,11 @@ class AdminPanelManager {
                                         kpType: cKpType
                                     });
 
-                                    this.showSuccessMessage(`Привязка сохранена: "${cTitle || cTmdbId}" → КП: ${cKpId}`);
+                                    Utils.showToast(`Привязка сохранена: "${cTitle || cTmdbId}" → КП: ${cKpId}`, 'success');
                                     await this.loadTmdbFallbacks();
                                 } catch (err) {
                                     console.error('Error confirming manual mapping:', err);
-                                    this.showError(`Ошибка: ${err.message}`);
+                                    Utils.showToast(`Ошибка: ${err.message}`, 'error');
                                     confirmBtn.disabled = false;
                                     confirmBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><polyline points="20 6 9 17 4 12"></polyline></svg> Подтвердить привязку`;
                                 }
@@ -3916,11 +3884,11 @@ class AdminPanelManager {
                 try {
                     btn.disabled = true;
                     await this.idMappingService.snoozeUnmappedQueueItem(key, 7, 'no-kp-page');
-                    this.showSuccessMessage(`Тайтл "${title}" отложен на 7 дней (страница на КП ещё отсутствует)`);
+                    Utils.showToast(`Тайтл "${title}" отложен на 7 дней (страница на КП ещё отсутствует)`, 'success');
                     await this.loadTmdbFallbacks();
                 } catch (err) {
                     console.error('Error snoozing unmapped item:', err);
-                    this.showError(`Ошибка: ${err.message}`);
+                    Utils.showToast(`Ошибка: ${err.message}`, 'error');
                     btn.disabled = false;
                 }
             });
@@ -3995,11 +3963,11 @@ class AdminPanelManager {
                 const tmdbId = btn.dataset.tmdbId;
                 try {
                     await this.idMappingService.removeManualMapping(mediaType, tmdbId);
-                    this.showSuccessMessage('Привязка удалена');
+                    Utils.showToast('Привязка удалена', 'success');
                     await this.loadTmdbFallbacks();
                 } catch (err) {
                     console.error('Error deleting mapping:', err);
-                    this.showError(`Ошибка: ${err.message}`);
+                    Utils.showToast(`Ошибка: ${err.message}`, 'error');
                 }
             });
         });
@@ -4061,7 +4029,7 @@ class AdminPanelManager {
                 const imdbId = input?.value?.trim();
 
                 if (!imdbId || !TmdbFallbackQueueService.isValidImdbId(imdbId)) {
-                    this.showError('Пожалуйста, укажите валидный IMDb ID в формате tt1234567');
+                    Utils.showToast('Пожалуйста, укажите валидный IMDb ID в формате tt1234567', 'warning');
                     return;
                 }
 
@@ -4071,11 +4039,11 @@ class AdminPanelManager {
                     const item = pendingItems.find(p => String(p.kinopoiskId) === String(kpId));
                     await this.tmdbFallbackService.saveManualMapping(item, imdbId, this.currentUser?.uid || 'admin');
 
-                    this.showSuccessMessage(`IMDb ID ${imdbId} успешно сохранён для фильма [KP: ${kpId}]`);
+                    Utils.showToast(`IMDb ID ${imdbId} успешно сохранён для фильма [KP: ${kpId}]`, 'success');
                     await this.loadTmdbFallbacks();
                 } catch (err) {
                     console.error('Error saving IMDb mapping:', err);
-                    this.showError(`Ошибка: ${err.message}`);
+                    Utils.showToast(`Ошибка: ${err.message}`, 'error');
                     btn.disabled = false;
                     btn.textContent = 'Сохранить';
                 }

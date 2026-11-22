@@ -1,8 +1,4 @@
 const DAYS_AHEAD = 730; // Show everything within the next 2 years
-const MONTHS_RU = [
-    'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
-];
 const SERIES_TYPE_HINTS = ['tv', 'series', 'anime', 'animated'];
 const PLACEHOLDER_TITLES = new Set(['unknown title', 'неизвестное название']);
 const FINISHED_SERIES_STATUSES = new Set(['Ended', 'Canceled']);
@@ -51,6 +47,22 @@ async function getStoredUserId() {
     return user?.uid || null;
 }
 
+/**
+ * The account whose lists the calendar shows. Once Firebase has answered, its answer
+ * wins, a signed-out guest included: the stored `user` copy is written after that
+ * answer, so reading it first could show the previous account. The copy is used
+ * only while auth is unresolved or on a page without Firebase.
+ */
+export async function resolveCalendarUserId() {
+    const manager = typeof window !== 'undefined' ? window.firebaseManager : null;
+    if (manager) {
+        await manager.waitForAuthReady?.();
+        const uid = manager.getCurrentUser?.()?.uid || null;
+        if (uid || manager.isAuthReady) return uid;
+    }
+    return getStoredUserId();
+}
+
 function itemKey(item) {
     return String(item.movieId || item.kinopoiskId || item.id || '');
 }
@@ -78,7 +90,8 @@ function groupEvents(events) {
     const grouped = {};
     sorted.forEach((event) => {
         const [year, month] = String(event.airDate).split('-').map(Number);
-        const monthKey = `${MONTHS_RU[month - 1]}__${year}`;
+        // "YYYY-MM": the page names the month in the reader's language.
+        const monthKey = `${year}-${String(month).padStart(2, '0')}`;
         grouped[monthKey] = grouped[monthKey] || {};
         grouped[monthKey][event.airDate] = grouped[monthKey][event.airDate] || [];
         grouped[monthKey][event.airDate].push(event);
@@ -97,8 +110,11 @@ function isUpcoming(airDate, now = new Date()) {
 }
 
 /** Last calendar result for the signed-in user, for an instant first paint. */
-export async function readCalendarSnapshot() {
-    const [snapshot, userId] = await Promise.all([readStorage(SNAPSHOT_KEY), getStoredUserId()]);
+export async function readCalendarSnapshot({ userId: knownUserId } = {}) {
+    const [snapshot, userId] = await Promise.all([
+        readStorage(SNAPSHOT_KEY),
+        knownUserId !== undefined ? knownUserId : getStoredUserId()
+    ]);
     if (!snapshot || !userId || snapshot.userId !== userId || !Array.isArray(snapshot.events)) return null;
     // Drop dates that have passed since the snapshot was taken.
     return groupEvents(snapshot.events.filter(event => isUpcoming(event.airDate)));
@@ -341,7 +357,7 @@ async function fetchTmdbJson(url, tmdbService = resolveTMDBService()) {
     throw new Error('TMDBService is not available to execute TMDB request');
 }
 
-async function getTrackedItems() {
+async function getTrackedItems(knownUserId) {
     const allItems = [];
     const seen = new Set();
 
@@ -353,49 +369,42 @@ async function getTrackedItems() {
         allItems.push(item);
     };
 
+    const userId = knownUserId !== undefined ? knownUserId : await resolveCalendarUserId().catch(() => null);
+    // A guest has no lists. The background fallback reads the stored `user` copy,
+    // which can still name the previous account for a moment after sign-out.
+    if (!userId) return allItems;
+
     // 1. Try reading from FavoriteService / local bookmarks cache
     try {
-        let userId = null;
-        if (typeof window !== 'undefined' && window.firebaseManager) {
-            await window.firebaseManager.waitForAuthReady?.();
-            userId = window.firebaseManager.getCurrentUser?.()?.uid;
-        }
-        if (!userId && typeof chrome !== 'undefined' && chrome.storage?.local) {
-            const userRes = await chrome.storage.local.get(['user']);
-            userId = userRes.user?.uid;
-        }
-
-        if (userId) {
-            // Check local cache first for instant resolution
-            if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-                const cacheKey = `bookmarks_cache_${userId}`;
-                const cached = await chrome.storage.local.get([cacheKey]);
-                const bookmarkList = cached[cacheKey]?.bookmarks || cached[cacheKey];
-                if (Array.isArray(bookmarkList) && bookmarkList.length > 0) {
-                    for (const item of bookmarkList) {
-                        if (item && (item.status === 'watching' || item.status === 'plan_to_watch')) {
-                            addItem(item);
-                        }
+        // Check local cache first for instant resolution
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+            const cacheKey = `bookmarks_cache_${userId}`;
+            const cached = await chrome.storage.local.get([cacheKey]);
+            const bookmarkList = cached[cacheKey]?.bookmarks || cached[cacheKey];
+            if (Array.isArray(bookmarkList) && bookmarkList.length > 0) {
+                for (const item of bookmarkList) {
+                    if (item && (item.status === 'watching' || item.status === 'plan_to_watch')) {
+                        addItem(item);
                     }
-                    if (allItems.length > 0) return allItems;
-                }
-            }
-
-            // Direct Firestore query if available
-            const favService = typeof window !== 'undefined' && window.firebaseManager?.getFavoriteService
-                ? window.firebaseManager.getFavoriteService()
-                : (typeof FavoriteService !== 'undefined' && window.firebaseManager ? new FavoriteService(window.firebaseManager) : null);
-
-            if (favService && typeof favService.getFavorites === 'function') {
-                const [watching, planToWatch] = await Promise.all([
-                    favService.getFavorites(userId, 'watching').catch(() => []),
-                    favService.getFavorites(userId, 'plan_to_watch').catch(() => [])
-                ]);
-                for (const item of [...watching, ...planToWatch]) {
-                    addItem(item);
                 }
                 if (allItems.length > 0) return allItems;
             }
+        }
+
+        // Direct Firestore query if available
+        const favService = typeof window !== 'undefined' && window.firebaseManager?.getFavoriteService
+            ? window.firebaseManager.getFavoriteService()
+            : (typeof FavoriteService !== 'undefined' && window.firebaseManager ? new FavoriteService(window.firebaseManager) : null);
+
+        if (favService && typeof favService.getFavorites === 'function') {
+            const [watching, planToWatch] = await Promise.all([
+                favService.getFavorites(userId, 'watching').catch(() => []),
+                favService.getFavorites(userId, 'plan_to_watch').catch(() => [])
+            ]);
+            for (const item of [...watching, ...planToWatch]) {
+                addItem(item);
+            }
+            if (allItems.length > 0) return allItems;
         }
     } catch (error) {
         console.warn('[Calendar] FavoriteService item resolution encountered warning:', error);
@@ -626,9 +635,12 @@ export async function fetchCalendarEpisodes(options = {}) {
 
     const useCache = options.useCache !== false && hasChromeStorage();
     const now = options.now || new Date();
-    const items = options.items || await getTrackedItems();
+    const userId = options.userId !== undefined
+        ? options.userId
+        : (options.items ? await getStoredUserId() : await resolveCalendarUserId().catch(() => null));
+    const items = options.items || await getTrackedItems(userId);
     if (!items.length) {
-        if (useCache) await writeStorage(SNAPSHOT_KEY, { userId: await getStoredUserId(), at: Date.now(), events: [] });
+        if (useCache && userId) await writeStorage(SNAPSHOT_KEY, { userId, at: Date.now(), events: [] });
         return { grouped: {}, total: 0 };
     }
 
@@ -679,7 +691,7 @@ export async function fetchCalendarEpisodes(options = {}) {
 
     if (useCache) {
         await writeStorage(CACHE_KEY, { ids: pruneEntries(cache.ids), events: pruneEntries(cache.events) });
-        await writeStorage(SNAPSHOT_KEY, { userId: await getStoredUserId(), at: Date.now(), events: allEvents });
+        if (userId) await writeStorage(SNAPSHOT_KEY, { userId, at: Date.now(), events: allEvents });
     }
 
     return groupEvents(allEvents);

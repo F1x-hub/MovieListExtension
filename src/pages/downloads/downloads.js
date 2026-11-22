@@ -1,14 +1,18 @@
 /**
  * Downloads page: every torrent the local MediaPlayer keeps for this browser,
  * in one place. Films and series can be filtered, searched, selected, paused,
- * resumed and deleted here; «Смотреть» opens the film's page, whose player
+ * resumed and deleted here; Watch opens the film's page, whose player
  * starts that exact copy (`?torrentDownload=`), so playback keeps the one
  * player with its timeline, tracks and saved position.
  *
  * MediaPlayer owns the records. The page polls them while it is visible and
  * backs off while the service does not answer. Rules that need no DOM live in
- * DownloadsLibraryModel.js.
+ * DownloadsLibraryModel.js. Every text the page writes comes from the
+ * `downloads` locale group; texts MediaPlayer sends (error messages, file
+ * names) are shown as they come.
  */
+import { i18n } from '../../shared/i18n/I18n.js';
+
 (function () {
     'use strict';
 
@@ -23,21 +27,7 @@
     const META_LIMIT = 300;
     const META_CONCURRENCY = 4;
 
-    const FILTER_TITLES = Object.freeze({
-        all: 'Все загрузки',
-        active: 'Качаются',
-        ready: 'Готовы к просмотру',
-        paused: 'На паузе',
-        error: 'Ошибки'
-    });
-
-    const STATUS_LABELS = Object.freeze({
-        starting: 'Подготавливается',
-        downloading: 'Качается',
-        paused: 'На паузе',
-        error: 'Ошибка',
-        complete: 'Готово'
-    });
+    const STATUSES = Object.freeze(['starting', 'downloading', 'paused', 'error', 'complete']);
 
     const ICONS = Object.freeze({
         play: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"></path></svg>',
@@ -74,38 +64,61 @@
         return node;
     }
 
+    // ---------- Texts ----------
+
+    /** The text under `downloads.<key>`, with `{name}` placeholders filled in. */
+    function t(key, params = null) {
+        const text = String(i18n.get(`downloads.${key}`));
+        if (!params) return text;
+        return text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match));
+    }
+
+    function locale() {
+        return i18n.currentLocale === 'ru' ? 'ru-RU' : 'en-US';
+    }
+
+    /** The noun form for `count` from `downloads.plural.<noun>_one|_few|_many`. */
+    function plural(count, noun) {
+        let category = 'many';
+        try {
+            category = new Intl.PluralRules(i18n.currentLocale).select(Number(count));
+        } catch { /* falls back to the general form */ }
+        const form = category === 'one' || category === 'few' ? category : 'many';
+        return t(`plural.${noun}_${form}`);
+    }
+
     function number(value, digits = 1) {
-        return Number(value).toLocaleString('ru-RU', { maximumFractionDigits: digits, minimumFractionDigits: 0 });
+        return Number(value).toLocaleString(locale(), { maximumFractionDigits: digits, minimumFractionDigits: 0 });
     }
 
     function formatBytes(value) {
         const bytes = Number(value);
-        if (!Number.isFinite(bytes) || bytes <= 0) return '0 Б';
-        if (bytes < 1024) return `${Math.round(bytes)} Б`;
-        const units = ['КБ', 'МБ', 'ГБ', 'ТБ'];
+        if (!Number.isFinite(bytes) || bytes <= 0) return `0 ${t('units.b')}`;
+        if (bytes < 1024) return `${Math.round(bytes)} ${t('units.b')}`;
+        const units = ['kb', 'mb', 'gb', 'tb'];
         let amount = bytes;
         let unit = -1;
         do {
             amount /= 1024;
             unit += 1;
         } while (amount >= 1024 && unit < units.length - 1);
-        return `${number(amount, amount >= 100 ? 0 : 1)} ${units[unit]}`;
+        return `${number(amount, amount >= 100 ? 0 : 1)} ${t(`units.${units[unit]}`)}`;
     }
 
     function formatRate(value) {
         const rate = Number(value);
-        return Number.isFinite(rate) && rate > 0 ? `${formatBytes(rate)}/с` : '0 Б/с';
+        return t('units.rate', { size: formatBytes(Number.isFinite(rate) && rate > 0 ? rate : 0) });
     }
 
     function formatEta(value) {
         const seconds = Number(value);
         if (!Number.isFinite(seconds) || seconds <= 0) return '';
-        if (seconds < 60) return 'меньше минуты';
+        if (seconds < 60) return t('eta.less_than_minute');
         const minutes = Math.round(seconds / 60);
-        if (minutes < 60) return `${minutes} мин`;
+        if (minutes < 60) return t('eta.minutes', { minutes });
         const hours = Math.floor(minutes / 60);
-        if (hours < 48) return `${hours} ч ${minutes % 60} мин`;
-        return `${Math.round(hours / 24)} дн.`;
+        if (hours < 48) return t('eta.hours', { hours, minutes: minutes % 60 });
+        return t('eta.days', { days: Math.round(hours / 24) });
     }
 
     function formatAgo(value) {
@@ -114,18 +127,14 @@
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const startOfToday = today.getTime();
-        if (time >= startOfToday) return 'сегодня';
-        if (time >= startOfToday - 86400000) return 'вчера';
+        if (time >= startOfToday) return t('ago.today');
+        if (time >= startOfToday - 86400000) return t('ago.yesterday');
         const days = Math.ceil((startOfToday - time) / 86400000);
-        return `${days} ${plural(days, 'день', 'дня', 'дней')} назад`;
+        return t('ago.days', { count: days, days: plural(days, 'day') });
     }
 
     function formatClock(time) {
-        return new Date(time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    }
-
-    function plural(count, one, few, many) {
-        return Utils.selectRussianPlural(count, [one, few, many]);
+        return new Date(time).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
     }
 
     function toast(message, type = 'info') {
@@ -217,6 +226,12 @@
         }
 
         async start() {
+            // Paint in the last known language at once; init() confirms it from storage.
+            i18n.restoreLanguage();
+            this.translateStatic();
+            await i18n.init();
+            this.renderedLocale = i18n.currentLocale;
+            this.translateStatic();
             this.bindEvents();
             try { this.sortControl = window.SortControl?.enhance(this.elements.sort); } catch { /* the native select stays */ }
             if (this.elements.settingsLink) {
@@ -227,6 +242,28 @@
             chrome.storage?.onChanged?.addListener((changes, area) => {
                 if (area === 'local' && (changes.mediaPlayerEnabled || changes[SETUP_KEY])) void this.applyGate();
             });
+        }
+
+        /** Markup texts (`data-i18n`) plus the few attributes one `data-i18n` cannot carry. */
+        translateStatic() {
+            i18n.translatePage();
+            document.title = t('page_title');
+            this.elements.search?.setAttribute('aria-label', t('controls.search_label'));
+        }
+
+        /**
+         * Settings changed the language: repaint every text on the page. Cards are
+         * rebuilt because their signature holds the locale.
+         */
+        async handleSettingsUpdate(settings) {
+            if (!settings?.language || settings.language === this.renderedLocale) return;
+            const refreshId = this.localeRefreshId = (this.localeRefreshId || 0) + 1;
+            await i18n.init();
+            if (refreshId !== this.localeRefreshId || i18n.currentLocale === this.renderedLocale) return;
+            this.renderedLocale = i18n.currentLocale;
+            this.translateStatic();
+            if (this.elements.empty) delete this.elements.empty.dataset.kind;
+            this.render();
         }
 
         settingsUrl() {
@@ -349,7 +386,7 @@
         }
 
         displayTitle(item) {
-            return this.metaFor(item)?.name || item.title || 'Без названия';
+            return this.metaFor(item)?.name || item.title || t('untitled');
         }
 
         async loadMetaCache() {
@@ -557,6 +594,9 @@
                 this.waitingForVisible = false;
                 void this.poll();
             });
+            chrome.runtime?.onMessage?.addListener?.((message) => {
+                if (message?.type === 'SETTINGS_UPDATED') void this.handleSettingsUpdate(message.settings);
+            });
             window.addEventListener('pagehide', () => this.stopPolling());
             window.addEventListener('pageshow', (event) => {
                 // Back from a film page restores this page from the cache with polling stopped.
@@ -595,8 +635,8 @@
         }
 
         errorText(error) {
-            if (this.service?.isServiceUnavailableError?.(error)) return 'MediaPlayer не отвечает. Проверьте, что MediaPlayer Suite запущен.';
-            return error?.message || 'MediaPlayer не смог выполнить действие.';
+            if (this.service?.isServiceUnavailableError?.(error)) return t('errors.unavailable');
+            return error?.message || t('errors.action_failed');
         }
 
         async handleAction(action, id, key) {
@@ -607,7 +647,7 @@
                 return;
             }
             if (action === 'play-blocked') {
-                toast('Эта загрузка не связана с фильмом из каталога, поэтому открыть плеер отсюда нельзя.', 'info');
+                toast(t('toast.play_blocked'), 'info');
                 return;
             }
             if (action === 'delete-series') {
@@ -649,10 +689,11 @@
                 const found = this.findRecord(records[0].id);
                 const title = found ? this.displayTitle(found.item) : records[0].title;
                 const code = Model.episodeCode(records[0]);
-                return `«${title}»${code ? `, ${code}` : ''}`;
+                return code ? t('confirm.what_episode', { title, code }) : t('confirm.what_title', { title });
             }
-            if (seriesTitle) return `${records.length} ${plural(records.length, 'серия', 'серии', 'серий')} «${seriesTitle}»`;
-            return `${records.length} ${plural(records.length, 'загрузка', 'загрузки', 'загрузок')}`;
+            const count = records.length;
+            if (seriesTitle) return t('confirm.what_episodes', { count, episodes: plural(count, 'episode'), title: seriesTitle });
+            return t('confirm.what_downloads', { count, downloads: plural(count, 'download') });
         }
 
         async deleteRecords(records, { seriesTitle = '' } = {}) {
@@ -660,12 +701,14 @@
             const bytes = records.reduce((sum, record) => sum + Model.downloadedBytes(record), 0);
             const unfinished = records.some(record => record.status !== 'complete');
             const what = this.describeRecords(records, seriesTitle);
-            const message = `С диска будет удалено: ${what} (${formatBytes(bytes)}).`
-                + `${unfinished ? ' Незавершённые загрузки остановятся.' : ''} В каталоге всё останется, скачать можно заново.`;
+            const message = t('confirm.message', { what, size: formatBytes(bytes) })
+                + (unfinished ? t('confirm.unfinished') : '') + t('confirm.keep');
             const confirmed = await window.ConfirmDialog?.confirm({
-                title: records.length === 1 ? 'Удалить загрузку?' : `Удалить ${records.length} ${plural(records.length, 'загрузку', 'загрузки', 'загрузок')}?`,
+                title: records.length === 1
+                    ? t('confirm.title_one')
+                    : t('confirm.title_many', { count: records.length, downloads: plural(records.length, 'download_acc') }),
                 message,
-                confirmLabel: 'Удалить',
+                confirmLabel: t('confirm.confirm'),
                 danger: true
             });
             if (!confirmed) return false;
@@ -691,9 +734,11 @@
 
             const freed = deleted.reduce((sum, record) => sum + Model.downloadedBytes(record), 0);
             if (!failure) {
-                toast(`Удалено${deleted.length > 1 ? `: ${deleted.length}` : ''}. Освободилось ${formatBytes(freed)}.`, 'success');
+                toast(deleted.length > 1
+                    ? t('toast.deleted_many', { count: deleted.length, size: formatBytes(freed) })
+                    : t('toast.deleted_one', { size: formatBytes(freed) }), 'success');
             } else if (deleted.length) {
-                toast(`Удалено ${deleted.length} из ${records.length}. ${this.errorText(failure)}`, 'error');
+                toast(t('toast.deleted_partial', { done: deleted.length, total: records.length, error: this.errorText(failure) }), 'error');
             } else {
                 toast(this.errorText(failure), 'error');
             }
@@ -734,10 +779,11 @@
             targets.forEach(record => this.pending.delete(record.id));
             this.bulkBusy = false;
             this.render();
+            const verb = action === 'pause' ? 'paused' : 'resumed';
             if (failure) {
-                toast(`${action === 'pause' ? 'Поставлено на паузу' : 'Возобновлено'}: ${done} из ${targets.length}. ${this.errorText(failure)}`, 'error');
+                toast(t(`bulk.${verb}_partial`, { done, total: targets.length, error: this.errorText(failure) }), 'error');
             } else {
-                toast(`${action === 'pause' ? 'Поставлено на паузу' : 'Возобновлено'}: ${done}.`, 'success');
+                toast(t(`bulk.${verb}`, { done }), 'success');
             }
             void this.refreshNow();
         }
@@ -762,7 +808,7 @@
             elements.filters?.querySelectorAll('[data-count]').forEach((node) => {
                 node.textContent = String(counts[node.dataset.count] || 0);
             });
-            if (elements.title) elements.title.textContent = FILTER_TITLES[this.view.filter];
+            if (elements.title) elements.title.textContent = t(`titles.${this.view.filter}`);
 
             const waiting = this.gate === 'checking' || (open && !this.loaded);
             const hasAny = this.items.length > 0;
@@ -812,10 +858,10 @@
             const summary = Model.summarize(this.items);
             const stale = this.health !== 'healthy';
             const cells = [
-                [String(summary.cards), plural(summary.cards, 'загрузка', 'загрузки', 'загрузок')],
-                [formatBytes(summary.onDiskBytes), 'на диске'],
-                [String(summary.activeCount), 'качается сейчас'],
-                [stale ? '—' : formatRate(summary.downloadSpeed), 'общая скорость']
+                [String(summary.cards), plural(summary.cards, 'download')],
+                [formatBytes(summary.onDiskBytes), t('summary.on_disk')],
+                [String(summary.activeCount), t('summary.active')],
+                [stale ? '—' : formatRate(summary.downloadSpeed), t('summary.speed')]
             ];
             node.replaceChildren(...cells.map(([value, label]) => {
                 const cell = el('div', 'downloads-summary__item');
@@ -832,12 +878,12 @@
             if (!show) return;
             const seconds = Math.max(1, Math.round(this.pollDelay / 1000));
             if (this.health === 'unavailable') {
-                bannerTitle.textContent = 'MediaPlayer не отвечает.';
+                bannerTitle.textContent = t('banner.unavailable_title');
                 bannerText.textContent = this.lastSuccessAt
-                    ? `Показан список на ${formatClock(this.lastSuccessAt)}. Пауза, удаление и просмотр вернутся, когда служба ответит. Повторим проверку через ${seconds} с.`
-                    : `Проверьте, что MediaPlayer Suite запущен на этом компьютере. Повторим проверку через ${seconds} с.`;
+                    ? t('banner.stale_text', { time: formatClock(this.lastSuccessAt), seconds })
+                    : t('banner.offline_text', { seconds });
             } else {
-                bannerTitle.textContent = 'Не удалось получить загрузки.';
+                bannerTitle.textContent = t('banner.failed_title');
                 bannerText.textContent = this.errorText(this.lastError);
             }
         }
@@ -859,8 +905,8 @@
                 const days = Number(info?.retentionDays);
                 retention.hidden = !info || !Number.isFinite(days);
                 retention.textContent = days === 0
-                    ? 'Готовые хранятся, пока вы их не удалите.'
-                    : `Готовые хранятся ${days} ${plural(days, 'день', 'дня', 'дней')}, просмотр продлевает срок.`;
+                    ? t('storage.retention_forever')
+                    : t('storage.retention_days', { count: days, days: plural(days, 'day') });
             }
         }
 
@@ -875,25 +921,25 @@
             const content = {
                 off: {
                     icon: ICONS.plug,
-                    title: 'MediaPlayer не подключён',
-                    text: 'Торренты скачивает и хранит MediaPlayer Suite на этом компьютере. Подключите его в настройках, и здесь появятся все загрузки.',
+                    title: t('empty.off_title'),
+                    text: t('empty.off_text'),
                     action: () => {
-                        const link = el('a', 'btn btn-primary', 'Открыть настройки MediaPlayer');
+                        const link = el('a', 'btn btn-primary', t('empty.off_action'));
                         link.href = this.settingsUrl();
                         return link;
                     }
                 },
                 none: {
                     icon: ICONS.film,
-                    title: 'Загрузок пока нет',
-                    text: 'Откройте фильм, выберите источник «Торрент» и раздачу — загрузка появится здесь.'
+                    title: t('empty.none_title'),
+                    text: t('empty.none_text')
                 },
                 filter: {
                     icon: ICONS.film,
-                    title: 'Здесь пусто',
-                    text: 'В этом разделе нет загрузок.',
+                    title: t('empty.filter_title'),
+                    text: t('empty.filter_text'),
                     action: () => {
-                        const button = el('button', 'btn btn-secondary', 'Показать все');
+                        const button = el('button', 'btn btn-secondary', t('empty.filter_action'));
                         button.type = 'button';
                         button.dataset.action = 'show-all';
                         return button;
@@ -901,10 +947,10 @@
                 },
                 search: {
                     icon: ICONS.film,
-                    title: 'Ничего не найдено',
-                    text: 'Попробуйте другое название.',
+                    title: t('empty.search_title'),
+                    text: t('empty.search_text'),
                     action: () => {
-                        const button = el('button', 'btn btn-secondary', 'Сбросить поиск');
+                        const button = el('button', 'btn btn-secondary', t('empty.search_action'));
                         button.type = 'button';
                         button.dataset.action = 'show-all';
                         return button;
@@ -938,15 +984,15 @@
             bulkBar.hidden = summary.count === 0;
             if (!summary.count) return;
             const offline = this.health !== 'healthy';
-            bulkCount.textContent = `Выбрано: ${summary.count} · ${formatBytes(summary.bytes)}`;
-            bulkPause.textContent = summary.pausable.length ? `Пауза (${summary.pausable.length})` : 'Пауза';
-            bulkResume.textContent = summary.resumable.length ? `Продолжить (${summary.resumable.length})` : 'Продолжить';
-            bulkDelete.textContent = `Удалить (${summary.count})`;
+            bulkCount.textContent = t('bulk.selected', { count: summary.count, size: formatBytes(summary.bytes) });
+            bulkPause.textContent = summary.pausable.length ? t('bulk.pause_count', { count: summary.pausable.length }) : t('bulk.pause');
+            bulkResume.textContent = summary.resumable.length ? t('bulk.resume_count', { count: summary.resumable.length }) : t('bulk.resume');
+            bulkDelete.textContent = t('bulk.delete_count', { count: summary.count });
             bulkPause.disabled = offline || this.bulkBusy || !summary.pausable.length;
             bulkResume.disabled = offline || this.bulkBusy || !summary.resumable.length;
             bulkDelete.disabled = offline || this.bulkBusy;
-            bulkPause.title = offline ? 'MediaPlayer не отвечает' : (summary.pausable.length ? '' : 'Среди выбранных нет загрузок, которые качаются');
-            bulkResume.title = offline ? 'MediaPlayer не отвечает' : (summary.resumable.length ? '' : 'Среди выбранных нет загрузок на паузе или с ошибкой');
+            bulkPause.title = offline ? t('actions.offline') : (summary.pausable.length ? '' : t('bulk.no_pausable'));
+            bulkResume.title = offline ? t('actions.offline') : (summary.resumable.length ? '' : t('bulk.no_resumable'));
         }
 
         renderList() {
@@ -985,6 +1031,7 @@
             const { item, records } = entry;
             const meta = this.metaFor(item);
             return JSON.stringify([
+                i18n.currentLocale,
                 item.kind,
                 this.displayTitle(item),
                 meta?.year || 0,
@@ -1063,19 +1110,20 @@
             card.dataset.key = item.key;
             card.dataset.selected = String(this.selected.has(record.id));
             card.append(
-                this.buildCheckbox([record.id], `Выбрать: ${title}`, this.selected.has(record.id) ? 'all' : 'none'),
+                this.buildCheckbox([record.id], t('card.select', { title }), this.selected.has(record.id) ? 'all' : 'none'),
                 this.buildPoster(item)
             );
 
             const body = el('div', 'dl-card__body');
-            body.append(this.buildTitle(item, item.linked ? (item.mediaType === 'tv' ? 'сериал' : 'фильм') : 'не связано с каталогом'));
-            const release = [record.quality || 'Качество не указано', record.provider].filter(Boolean).join(' · ');
+            const kind = item.linked ? t(item.mediaType === 'tv' ? 'card.kind_series' : 'card.kind_movie') : t('card.unlinked');
+            body.append(this.buildTitle(item, kind));
+            const release = [record.quality || t('card.quality_unknown'), record.provider].filter(Boolean).join(' · ');
             const releaseLine = el('div', 'dl-card__release', release);
             releaseLine.title = release;
             body.append(releaseLine, this.buildLive(record));
             if (!item.linked) {
                 const note = el('span', 'dl-note');
-                note.append(icon(ICONS.link), document.createTextNode('MediaPlayer не знает, какой это фильм, поэтому открыть его страницу и плеер отсюда нельзя.'));
+                note.append(icon(ICONS.link), document.createTextNode(t('card.unlinked_note')));
                 body.append(note);
             }
             card.append(body, this.buildActions(item, record, { compact: false, title }));
@@ -1091,7 +1139,7 @@
             card.dataset.key = item.key;
             card.dataset.selected = String(selection !== 'none');
             card.append(
-                this.buildCheckbox(records.map(record => record.id), `Выбрать все показанные серии: ${title}`, selection),
+                this.buildCheckbox(records.map(record => record.id), t('card.select_series', { title }), selection),
                 this.buildPoster(item)
             );
 
@@ -1100,14 +1148,14 @@
             const active = all.filter(Model.isActive).length;
             const size = all.reduce((sum, record) => sum + Model.totalBytes(record), 0);
             const parts = [
-                `${all.length} ${plural(all.length, 'серия', 'серии', 'серий')}`,
+                t('card.episodes', { count: all.length, episodes: plural(all.length, 'episode') }),
                 formatBytes(size),
-                `готово ${ready} из ${all.length}`
+                t('card.ready', { ready, total: all.length })
             ];
-            if (active) parts.push(`качается ${active}`);
+            if (active) parts.push(t('card.downloading', { count: active }));
 
             const body = el('div', 'dl-card__body');
-            body.append(this.buildTitle(item, 'сериал'), el('div', 'dl-card__release', parts.join(' · ')));
+            body.append(this.buildTitle(item, t('card.kind_series')), el('div', 'dl-card__release', parts.join(' · ')));
             const collapsed = this.collapsed.has(item.key);
             const toggle = el('button', 'dl-toggle');
             toggle.type = 'button';
@@ -1115,15 +1163,15 @@
             toggle.dataset.key = item.key;
             toggle.dataset.focusKey = `toggle:${item.key}`;
             toggle.setAttribute('aria-expanded', String(!collapsed));
-            toggle.append(icon(ICONS.chevron), document.createTextNode(collapsed ? `Показать серии (${records.length})` : 'Скрыть серии'));
+            toggle.append(icon(ICONS.chevron), document.createTextNode(collapsed ? t('card.show_episodes', { count: records.length }) : t('card.hide_episodes')));
             body.append(toggle);
 
             const actions = el('div', 'dl-actions');
-            actions.append(this.pageLink(item, 'Страница сериала'));
-            const removeAll = this.iconButton('delete-series', '', `Удалить все серии: ${title}`, ICONS.delete, {
+            actions.append(this.pageLink(item, t('card.series_page')));
+            const removeAll = this.iconButton('delete-series', '', t('card.delete_series', { title }), ICONS.delete, {
                 danger: true,
                 disabled: this.health !== 'healthy' || this.bulkBusy,
-                reason: 'MediaPlayer не отвечает',
+                reason: t('actions.offline'),
                 key: item.key
             });
             actions.append(removeAll);
@@ -1139,13 +1187,13 @@
                 row.dataset.id = record.id;
                 const label = code ? `${title}, ${code}` : title;
                 row.append(
-                    this.buildCheckbox([record.id], `Выбрать: ${label}`, this.selected.has(record.id) ? 'all' : 'none'),
-                    el('span', 'dl-episode__code', code || 'Файл')
+                    this.buildCheckbox([record.id], t('card.select', { title: label }), this.selected.has(record.id) ? 'all' : 'none'),
+                    el('span', 'dl-episode__code', code || t('card.file'))
                 );
                 const rowBody = el('div', 'dl-episode__body');
                 const name = [record.selectedFile?.name && !code ? record.selectedFile.name : '', record.quality, record.provider]
                     .filter(Boolean).join(' · ');
-                rowBody.append(el('div', 'dl-episode__name', name || 'Качество не указано'), this.buildLive(record));
+                rowBody.append(el('div', 'dl-episode__name', name || t('card.quality_unknown')), this.buildLive(record));
                 row.append(rowBody, this.buildActions(item, record, { compact: true, title: label }));
                 episodes.append(row);
             });
@@ -1159,7 +1207,7 @@
             link.dataset.action = 'page';
             link.dataset.focusKey = `page:${item.key}`;
             link.title = label;
-            link.setAttribute('aria-label', `${label}: ${this.displayTitle(item)}`);
+            link.setAttribute('aria-label', t('card.page_label', { label, title: this.displayTitle(item) }));
             link.append(icon(ICONS.page));
             return link;
         }
@@ -1171,7 +1219,7 @@
             if (id) button.dataset.id = id;
             if (key) button.dataset.key = key;
             button.dataset.focusKey = `${action}:${id || key}`;
-            const text = disabled && reason ? `${label} — ${reason}` : label;
+            const text = disabled && reason ? t('card.disabled_reason', { label, reason }) : label;
             button.title = text;
             button.setAttribute('aria-label', text);
             button.disabled = disabled;
@@ -1195,38 +1243,38 @@
             const actions = el('div', 'dl-actions');
             const offline = this.health !== 'healthy';
             const busy = this.pending.has(record.id) || this.bulkBusy;
-            const reason = offline ? 'MediaPlayer не отвечает' : (busy ? 'Выполняется…' : '');
+            const reason = offline ? t('actions.offline') : (busy ? t('actions.busy') : '');
             const blocked = offline || busy;
             const episodeKnown = item.mediaType !== 'tv' || Model.hasEpisode(record);
 
             if (Model.canPlay(record)) {
                 if (!item.linked || !episodeKnown) {
-                    const play = this.textButton('play-blocked', record.id, 'Смотреть', ICONS.play);
+                    const play = this.textButton('play-blocked', record.id, t('actions.watch'), ICONS.play);
                     play.setAttribute('aria-disabled', 'true');
-                    play.title = !item.linked ? 'Не связано с фильмом из каталога' : 'Серия не определена';
+                    play.title = !item.linked ? t('actions.not_linked') : t('actions.episode_unknown');
                     if (compact) {
                         play.className = 'dl-icon-btn';
                         play.replaceChildren(icon(ICONS.play));
-                        play.setAttribute('aria-label', `Смотреть: ${title} — ${play.title}`);
+                        play.setAttribute('aria-label', t('actions.watch_blocked', { title, reason: play.title }));
                     }
                     actions.append(play);
                 } else if (compact) {
-                    actions.append(this.iconButton('play', record.id, `Смотреть: ${title}`, ICONS.play, { disabled: offline, reason }));
+                    actions.append(this.iconButton('play', record.id, t('actions.watch_title', { title }), ICONS.play, { disabled: offline, reason }));
                 } else {
-                    actions.append(this.textButton('play', record.id, 'Смотреть', ICONS.play, { primary: true, disabled: offline, reason }));
+                    actions.append(this.textButton('play', record.id, t('actions.watch'), ICONS.play, { primary: true, disabled: offline, reason }));
                 }
             }
             if (Model.canPause(record)) {
-                actions.append(this.iconButton('pause', record.id, `Пауза: ${title}`, ICONS.pause, { disabled: blocked, reason }));
+                actions.append(this.iconButton('pause', record.id, t('actions.pause_title', { title }), ICONS.pause, { disabled: blocked, reason }));
             } else if (Model.canResume(record)) {
-                const label = record.status === 'error' ? 'Повторить' : 'Продолжить';
+                const label = record.status === 'error' ? t('actions.retry') : t('actions.resume');
                 const markup = record.status === 'error' ? ICONS.retry : ICONS.resume;
                 actions.append(compact
-                    ? this.iconButton('resume', record.id, `${label}: ${title}`, markup, { disabled: blocked, reason })
+                    ? this.iconButton('resume', record.id, t('actions.action_title', { label, title }), markup, { disabled: blocked, reason })
                     : this.textButton('resume', record.id, label, markup, { disabled: blocked, reason }));
             }
-            if (!compact && item.linked) actions.append(this.pageLink(item, item.mediaType === 'tv' ? 'Страница сериала' : 'Страница фильма'));
-            actions.append(this.iconButton('delete', record.id, `Удалить: ${title}`, ICONS.delete, { danger: true, disabled: blocked, reason }));
+            if (!compact && item.linked) actions.append(this.pageLink(item, t(item.mediaType === 'tv' ? 'card.series_page' : 'card.movie_page')));
+            actions.append(this.iconButton('delete', record.id, t('actions.delete_title', { title }), ICONS.delete, { danger: true, disabled: blocked, reason }));
             return actions;
         }
 
@@ -1251,7 +1299,7 @@
             const line = el('div', 'dl-status');
             const state = el('span', 'dl-status__state');
             state.append(icon(ICONS.state[status] || ICONS.state.error));
-            const label = STATUS_LABELS[status] || 'Состояние неизвестно';
+            const label = t(STATUSES.includes(status) ? `status.${status}` : 'status.unknown');
             state.append(document.createTextNode(status === 'complete' ? label : `${label} · ${percent}%`));
             line.append(state);
 
@@ -1259,20 +1307,20 @@
             if (status === 'complete') {
                 details.push(formatBytes(total));
                 const ago = formatAgo(record.completedAt);
-                if (ago) details.push(`скачано ${ago}`);
+                if (ago) details.push(t('live.downloaded_ago', { ago }));
             } else {
-                details.push(total ? `${formatBytes(have)} из ${formatBytes(total)}` : formatBytes(have));
+                details.push(total ? t('live.progress', { have: formatBytes(have), total: formatBytes(total) }) : formatBytes(have));
                 if (!stale && Model.isActive(record)) {
                     details.push(formatRate(record.downloadSpeedBytesPerSecond));
-                    details.push(`пиры: ${Math.max(0, Number(record.peers) || 0)}`);
+                    details.push(t('live.peers', { count: Math.max(0, Number(record.peers) || 0) }));
                     const eta = formatEta(record.timeRemainingSeconds);
-                    if (eta) details.push(`осталось ${eta}`);
+                    if (eta) details.push(t('live.remaining', { eta }));
                 }
             }
-            if (stale) details.push('данные устарели');
+            if (stale) details.push(t('live.stale'));
             line.append(el('span', '', details.join(' · ')));
             if (status === 'error') {
-                line.append(el('span', 'dl-status__error', record.errorMessage || 'Загрузка остановилась. Нажмите «Повторить».'));
+                line.append(el('span', 'dl-status__error', record.errorMessage || t('live.error_default')));
             }
 
             const parts = [line];
@@ -1282,7 +1330,7 @@
                 bar.setAttribute('aria-valuemin', '0');
                 bar.setAttribute('aria-valuemax', '100');
                 bar.setAttribute('aria-valuenow', String(percent));
-                bar.setAttribute('aria-label', `Скачано ${percent}%`);
+                bar.setAttribute('aria-label', t('live.progress_label', { percent }));
                 const fill = el('span');
                 fill.style.width = `${Model.percent(record).toFixed(2)}%`;
                 // Keep the old width for one frame so the bar slides instead of jumping.
@@ -1295,7 +1343,7 @@
                 parts.push(bar);
             }
             if (Model.isActive(record) && !stale && record.playable) {
-                parts.push(el('span', 'dl-note', 'Можно смотреть, пока качается'));
+                parts.push(el('span', 'dl-note', t('live.playable')));
             }
             live.replaceChildren(...parts);
         }

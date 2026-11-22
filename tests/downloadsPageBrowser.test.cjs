@@ -136,7 +136,9 @@ async function mount(browser, { theme = 'dark', width = 1280, height = 1000, ena
                 return Promise.resolve();
             }
         };
+        const messageListeners = [];
         window.__fixtureStorage = { values, set: local.set };
+        window.__fixtureMessage = message => messageListeners.forEach(listener => listener(message, {}, () => {}));
         window.chrome = {
             storage: { local, sync: local, onChanged: { addListener: listener => listeners.push(listener), removeListener() {} } },
             runtime: {
@@ -145,7 +147,7 @@ async function mount(browser, { theme = 'dark', width = 1280, height = 1000, ena
                 getURL: (value) => `${origin}/${String(value).replace(/^\//, '')}`,
                 getManifest: () => ({ version: '1.5.2' }),
                 sendMessage: (_message, callback) => callback?.({}),
-                onMessage: { addListener() {} },
+                onMessage: { addListener: listener => messageListeners.push(listener), removeListener() {} },
                 sendNativeMessage: (_host, _message, callback) => callback?.({ success: false })
             },
             i18n: { getUILanguage: () => 'ru' }
@@ -272,6 +274,48 @@ async function settle(page) {
         assert.equal(knownTarget.searchParams.get('movieId'), '258687', '«Смотреть» opens the known film by its Kinopoisk ID');
         assert.equal(knownTarget.searchParams.get('torrentDownload'), uuid(6), 'on that copy');
         assert.equal(knownTarget.searchParams.has('resolveTmdbId'), false);
+        await page.close();
+
+        // ---------- English interface, then Russian from Settings ----------
+        ({ page, state } = await mount(browser, { theme: 'dark', storage: { language: 'en' } }));
+        await settle(page);
+        assert.equal(await page.evaluate(() => document.documentElement.lang), 'en');
+        assert.equal(await page.title(), 'Downloads - Movie Ratings');
+        assert.equal(await page.locator('#downloadsTitle').textContent(), 'All downloads');
+        assert.equal(await page.locator('[data-filter="active"] .downloads-filter__label').textContent(), 'Downloading');
+        assert.equal(await page.locator('#downloadsSearch').getAttribute('placeholder'), 'Search downloads...');
+        assert.equal(await page.locator('#downloadsSearch').getAttribute('aria-label'), 'Search downloads');
+        assert.equal(await page.locator('#downloadsSort option[value="created"]').textContent(), 'Recently added');
+        assert.match(await page.locator('#downloadsSummary').textContent(), /6s*downloads/);
+        assert.match(await page.locator('#downloadsSummary').textContent(), /on disk/);
+        assert.match(await page.locator('#downloadsRetention').textContent(), /kept for 7 days/);
+        assert.match(await page.locator('.dl-card', { hasText: 'Planet.Earth' }).textContent(), /not linked to the catalog/);
+        assert.match(await page.locator('.dl-card--series').textContent(), /2 episodes/);
+        assert.match(await page.locator(`.dl-live[data-id="${uuid(1)}"]`).textContent(), /Downloading · 63%.*GB of .*GB/);
+        assert.equal(await page.locator(`[data-action="pause"][data-id="${uuid(1)}"]`).getAttribute('aria-label'), 'Pause: Дюна: Часть вторая');
+        await page.locator(`input[data-select="${uuid(4)}"]`).check();
+        assert.match(await page.locator('#downloadsBulkCount').textContent(), /^Selected: 1 · /);
+        assert.equal(await page.locator('#downloadsBulkResume').textContent(), 'Resume (1)');
+        await page.locator('#downloadsBulkDelete').click();
+        await page.locator('.confirm-dialog').waitFor();
+        assert.match(await page.locator('.confirm-dialog').textContent(), /Delete download?/);
+        assert.match(await page.locator('.confirm-dialog').textContent(), /deleted from disk: "Оппенгеймер"/);
+        await page.locator('[data-confirm-dialog="cancel"]').click();
+        await page.locator('.confirm-dialog').waitFor({ state: 'hidden' });
+        await page.screenshot({ path: path.join(shots, 'dark-english.png'), fullPage: true });
+        // Settings switches the language: the open page repaints without a reload.
+        await page.evaluate(() => {
+            window.__fixtureStorage.values.language = 'ru';
+            window.__fixtureMessage({ type: 'SETTINGS_UPDATED', settings: { language: 'ru' } });
+        });
+        await page.waitForFunction(() => document.getElementById('downloadsTitle').textContent === 'Все загрузки');
+        assert.equal(await page.evaluate(() => document.documentElement.lang), 'ru');
+        assert.equal(await page.title(), 'Загрузки - Movie Ratings');
+        assert.match(await page.locator('#downloadsSummary').textContent(), /6s*загрузок/);
+        assert.match(await page.locator('.dl-card', { hasText: 'Planet.Earth' }).textContent(), /не связано с каталогом/);
+        assert.match(await page.locator('#downloadsBulkCount').textContent(), /^Выбрано: 1 · /);
+        assert.equal(await page.locator(`[data-action="pause"][data-id="${uuid(1)}"]`).getAttribute('aria-label'), 'Пауза: Дюна: Часть вторая');
+        assert.deepEqual(state.errors, [], `no page errors: ${state.errors.join(' | ')}`);
         await page.close();
 
         // ---------- Light theme, narrow ----------

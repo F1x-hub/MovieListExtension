@@ -28,7 +28,7 @@ const fixture = '<div class="settings-main"><div class="settings-pane active"></
     '<div class="movie-details-page-container"><div class="movie-card-component fade-in"></div>' +
     '<div class="rating-card-entering rating-card-visible"></div></div>' +
     '<div class="main-container"></div><div class="app-loader__indicator"></div>' +
-    '<div class="report-widget-drawer"></div><div class="toast motion-toast"></div><button class="btn btn-primary">Focus</button>' +
+    '<div class="report-widget-drawer"></div><div class="utils-toast motion-toast"></div><button class="btn btn-primary">Focus</button>' +
     '<div class="games-modal-overlay"><div id="gameProbe" style="animation: probe-game 2s linear infinite"></div></div>';
 
 async function mount(page, css, theme, reducedMotion) {
@@ -66,7 +66,7 @@ async function main() {
                 assert.equal(normal.duration.trim(), '180ms');
                 await mount(page, css, theme, 'reduce');
                 const reduced = await page.evaluate(() => Object.fromEntries([
-                    '.movie-card-component', '.rating-card-entering', '.app-loader__indicator', '.toast', '.report-widget-drawer'
+                    '.movie-card-component', '.rating-card-entering', '.app-loader__indicator', '.utils-toast', '.report-widget-drawer'
                 ].map(selector => {
                     const style = getComputedStyle(document.querySelector(selector));
                     return [selector, { animation: style.animationName, transition: style.transitionDuration, scroll: style.scrollBehavior }];
@@ -86,7 +86,7 @@ async function main() {
         const settingsCss = pageStyles('src/pages/settings/settings.html');
         await mount(page, settingsCss, 'dark-theme', 'no-preference');
         assert.equal(await page.locator('.settings-pane').evaluate(node => getComputedStyle(node).animationName), 'paneFadeIn');
-        assert.equal(await page.locator('.toast').evaluate(node => getComputedStyle(node).animationName), 'ui-toast-enter');
+        assert.equal(await page.locator('.utils-toast').evaluate(node => getComputedStyle(node).animationName), 'ui-toast-enter');
         const drawer = page.locator('.report-widget-drawer');
         assert(await drawer.evaluate(node => parseFloat(getComputedStyle(node).transitionDuration) > 0), 'drawer transform transition exists');
         await drawer.evaluate(node => node.classList.add('open'));
@@ -100,21 +100,20 @@ async function main() {
         assert.equal(closing.pointerEvents, 'none', 'drawer interaction closes immediately');
         await page.waitForFunction(() => getComputedStyle(document.querySelector('.report-widget-drawer')).visibility === 'hidden');
 
-        const settingsJs = read('src/pages/settings/settings.js');
-        const toastFunction = settingsJs.slice(settingsJs.indexOf('    function showToast('), settingsJs.indexOf('    // Input Event Listeners for tracking dirty state'));
-        await page.evaluate(code => {
+        // Settings uses the shared toast (Utils.js is on the page).
+        await page.addScriptTag({ content: read('src/shared/utils/Utils.js') });
+        await page.evaluate(() => {
             window.toastTimers = [];
             window.setTimeout = (callback, ms) => { window.toastTimers.push({ callback, ms }); return window.toastTimers.length; };
-            window.eval(`${code}\nwindow.showMotionToast = showToast;`);
-            window.showMotionToast('Saved');
-        }, toastFunction);
+            Utils.showToast('Saved', 'success');
+        });
         await page.evaluate(() => window.toastTimers.shift().callback());
         assert.equal(await page.evaluate(() => window.toastTimers[0].ms), 120, 'toast removal matches its real transition duration');
-        assert(await page.locator('.toast').count() > 0, 'toast remains mounted for its visual exit');
+        assert(await page.locator('.utils-toast').count() > 0, 'toast remains mounted for its visual exit');
         await page.evaluate(() => window.toastTimers.shift().callback());
         await page.emulateMedia({ reducedMotion: 'reduce' });
-        await page.evaluate(() => { window.showMotionToast('Reduced'); window.toastTimers.shift().callback(); });
-        assert.equal(await page.locator('.toast').count(), 0, 'the reduced-motion toast is removed immediately');
+        await page.evaluate(() => { Utils.showToast('Reduced', 'success'); window.toastTimers.shift().callback(); });
+        assert.equal(await page.locator('.utils-toast').count(), 0, 'the reduced-motion toast is removed immediately');
         assert.equal(await page.evaluate(() => window.toastTimers.length), 0, 'reduce does not schedule a removal wait');
 
         for (const order of [0, 1]) {

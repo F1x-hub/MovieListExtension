@@ -216,7 +216,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         .then(module => module.showWhatsNew({ manual: true, preview: previewWhatsNew }))
         .catch(error => {
             console.error('[Settings] Release notes unavailable:', error);
-            showToast(i18n.get('whats_new.open_failed'), true);
+            Utils.showToast(i18n.get('whats_new.open_failed'), 'error');
         });
     bindWhatsNewSettings({ openDialog: openWhatsNew });
     if (previewWhatsNew) void openWhatsNew();
@@ -1950,11 +1950,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
             updateDirtyState();
 
-            showToast(i18n.get('settings.saved'));
+            Utils.showToast(i18n.get('settings.saved'), 'success');
             return true;
         } catch (error) {
             console.error('Failed to save settings:', error);
-            showToast(i18n.get('settings.save_failed'), true);
+            Utils.showToast(i18n.get('settings.save_failed'), 'error');
             return false;
         } finally {
             settingsSaveInFlight = false;
@@ -2005,7 +2005,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 });
 
-                showToast(i18n.get('settings.reset_done'));
+                Utils.showToast(i18n.get('settings.reset_done'), 'success');
             } catch (error) {
                 console.error('Failed to reset settings:', error);
             }
@@ -2015,44 +2015,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     function removeOverlayAfterMotion(overlay) {
         if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) overlay.remove();
         else setTimeout(() => overlay.remove(), 200);
-    }
-
-    /**
-     * Show a toast message
-     */
-    function showToast(message, isError = false) {
-        let toast = document.querySelector('.toast');
-        if (toast) {
-            toast.remove();
-        }
-
-        toast = document.createElement('div');
-        toast.className = 'toast motion-toast';
-        toast.setAttribute('role', isError ? 'alert' : 'status');
-        toast.setAttribute('aria-live', isError ? 'assertive' : 'polite');
-        toast.textContent = message;
-        if (isError) {
-            toast.style.backgroundColor = 'var(--filter-exclude-border)';
-        }
-        
-        document.body.appendChild(toast);
-        
-        setTimeout(() => {
-            if (!toast.isConnected) return;
-            toast.classList.add('is-leaving');
-            if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-                toast.remove();
-                return;
-            }
-            const transitionDuration = getComputedStyle(toast).transitionDuration;
-            const exitMs = Math.max(...transitionDuration.split(',').map(value =>
-                parseFloat(value) * (value.trim().endsWith('ms') ? 1 : 1000))) || 0;
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    document.body.removeChild(toast);
-                }
-            }, exitMs);
-        }, 3000);
     }
 
     // Input Event Listeners for tracking dirty state
