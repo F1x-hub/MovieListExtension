@@ -17,6 +17,8 @@
 .config-heading .btn-text-icon { min-height: 44px; }
 /* The disclosure chevron shares the reset button height: controls in one row line up. */
 .config-heading .btn-icon-only { width: 44px; height: 44px; }
+/* The taller chevron sits in the header row, so the header trims its padding and keeps its 68px height. */
+.config-card.filter-panel .config-header { padding-block: 12px; }
 .config-heading .config-title-wrapper { padding-inline-end: 180px; }
 .config-card.filter-panel .config-body { padding: 24px; }
 .config-card.filter-panel .config-body.collapsed { padding-block: 0; }
