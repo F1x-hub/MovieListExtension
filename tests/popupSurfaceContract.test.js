@@ -35,10 +35,7 @@ assert.match(sharedStyles, /\.popover-surface\s*\{/);
 
 assert.match(popupScript, /class="tooltip-surface average-score-tooltip"/);
 assert.match(popupStyles, /\.rating-menu-dropdown \.menu-item/);
-assert.match(searchStyles, /\.user-rating-menu-dropdown \.menu-item/);
 assert.match(popupScript, /class="popover-surface rating-menu-dropdown"/);
-assert.match(searchStyles, /--popover-surface-backdrop:\s*none/);
-assert.match(searchStyles, /\.user-rating-menu-dropdown\s*\{/);
 assert.match(popupHtml, /href="\.\.\/shared\/styles\/components\.css"/);
 assert.match(searchHtml, /href="\.\.\/\.\.\/shared\/styles\/components\.css"/);
 assert.doesNotMatch(popupStyles, /@import\s+url\([^)]*common\.css\)/);

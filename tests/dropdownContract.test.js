@@ -3,13 +3,11 @@ const fs = require('node:fs');
 
 const read = path => fs.readFileSync(path, 'utf8');
 const sharedStyles = read('src/shared/styles/components.css');
-const collectionStyles = read('src/shared/styles/collection.css');
 const ratingsStyles = read('src/shared/styles/ratings.css');
 const settingsStyles = read('src/pages/settings/settings.css');
 const navigationStyles = read('src/shared/styles/navigation.css');
 const profileStyles = read('src/shared/styles/profile.css');
 const themeStyles = read('src/shared/styles/theme.css');
-const collectionHtml = read('src/pages/collection/collection.html');
 const ratingsHtml = read('src/pages/ratings/ratings.html');
 const settingsHtml = read('src/pages/settings/settings.html');
 
@@ -32,7 +30,6 @@ assert.match(settingsHtml, /class="dropdown-option"/);
 
 // The list pages sort through a native select that SortControl enhances.
 for (const [name, html] of [
-    ['Collection', collectionHtml],
     ['Ratings', ratingsHtml]
 ]) {
     assert.match(
@@ -56,7 +53,6 @@ for (const id of ['genreFilter', 'yearFilter', 'userFilter', 'myRatingFilter']) 
 }
 
 for (const [name, styles] of [
-    ['Collection', collectionStyles],
     ['Ratings', ratingsStyles]
 ]) {
     for (const selector of ['custom-dropdown', 'dropdown-trigger', 'dropdown-list', 'dropdown-option', 'sort-control']) {
@@ -69,7 +65,6 @@ for (const [name, styles] of [
 }
 
 for (const [name, styles] of [
-    ['Collection', collectionStyles],
     ['Ratings', ratingsStyles]
 ]) {
     assert.doesNotMatch(

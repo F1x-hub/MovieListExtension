@@ -4,11 +4,16 @@ import fs from 'node:fs';
 const html = fs.readFileSync('src/pages/movie-details/movie-details.html', 'utf8');
 const js = fs.readFileSync('src/pages/movie-details/movie-details.js', 'utf8');
 
-for (const id of ['ratingModal', 'videoPlayerModal', 'trailerModal', 'announceModal']) {
+for (const id of ['videoPlayerModal', 'trailerModal', 'announceModal']) {
     const tag = html.match(new RegExp(`<div id="${id}"[^>]+>`))?.[0] || '';
     assert(tag.includes('role="dialog"'), `${id} has dialog role`);
     assert(tag.includes('aria-modal="true"'), `${id} is modal`);
 }
+// The rating dialog is the shared RatingDialog, which builds its own modal markup.
+const ratingDialog = fs.readFileSync('src/shared/components/RatingDialog.js', 'utf8');
+assert(html.includes('shared/components/RatingDialog.js'), 'the film page loads the shared rating dialog');
+assert(ratingDialog.includes("setAttribute('role', 'dialog')") && ratingDialog.includes("setAttribute('aria-modal', 'true')"), 'ratingModal has dialog role and is modal');
+assert(/register\('rating'[\s\S]*?isOpen: \(\) => this\.isRatingDialogOpen\(\)/.test(js), 'the page stack knows when the rating dialog is open');
 assert(html.includes('aria-controls="playerEpisodePickerPopover"'), 'episode picker button controls popover');
 assert(html.includes('aria-modal="false"'), 'episode picker remains non-modal');
 assert(js.includes('openAccessibleDialog('), 'shared focus entry helper exists');

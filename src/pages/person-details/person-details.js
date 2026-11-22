@@ -1693,33 +1693,6 @@ class PersonDetailsPageController {
         return Boolean(item?.hasNavigationTarget || Number(item?.kinopoiskId) > 0);
     }
 
-    removeMovieCardNavigation(card) {
-        if (!card) return card;
-
-        card.dataset.hasNavigationTarget = 'false';
-        card.querySelectorAll('a.mc-poster-container, a.mc-title').forEach(anchor => {
-            const replacement = document.createElement('div');
-            replacement.className = anchor.className;
-            replacement.innerHTML = anchor.innerHTML;
-            Array.from(anchor.attributes).forEach(attribute => {
-                if (attribute.name !== 'class' && attribute.name !== 'href') {
-                    replacement.setAttribute(attribute.name, attribute.value);
-                }
-            });
-            replacement.removeAttribute('data-action');
-            replacement.removeAttribute('data-movie-id');
-            anchor.replaceWith(replacement);
-        });
-
-        card.querySelectorAll('[data-action="view-details"]').forEach(element => {
-            element.removeAttribute('data-action');
-            element.removeAttribute('data-movie-id');
-            element.removeAttribute('href');
-        });
-
-        return card;
-    }
-
     /**
      * Switch media type filter in Filmography.
      * @param {string} filter - 'all' | 'movie' | 'tv'

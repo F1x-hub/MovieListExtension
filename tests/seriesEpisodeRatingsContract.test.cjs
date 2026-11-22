@@ -58,8 +58,9 @@ assert.match(details, /Home/);
 assert.match(details, /End/);
 assert.doesNotMatch(detailsHtml, /seriesAggregateRatingNotice|deleteSeriesRatingBtn|restoreSeriesAggregateBtn|enterManualSeriesRatingBtn/);
 assert.match(detailsCss, /:focus-visible/);
-assert.match(detailsCss, /#ratingModal \[hidden\]/);
-assert.match(read('src/shared/styles/ratings.css'), /#ratingModal \[hidden\]\s*\{\s*display: none !important/);
+assert.match(detailsCss, /\.seasons-container \[hidden\]/);
+// The shared rating dialog, on Movie Details and Ratings, hides its parts with [hidden].
+assert.match(read('src/shared/styles/rating-dialog.css'), /\.rating-dialog-overlay \[hidden\]\s*\{\s*display: none !important/);
 assert.match(detailsCss, /\.episode-play-btn\.is-resume,[\s\S]*?\.episode-play-btn\.is-playing\s*\{[^}]*color: var\(--ui-color-page\)/);
 assert.match(details, /role="radiogroup"/);
 assert.match(details, /role="radio"/);

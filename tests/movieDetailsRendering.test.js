@@ -213,13 +213,10 @@ manager.resolveAndRenderTrailer = MovieDetailsManager.prototype.resolveAndRender
 manager.renderTrailerBlock = MovieDetailsManager.prototype.renderTrailerBlock;
 manager.openVideoModal = MovieDetailsManager.prototype.openVideoModal;
 manager.loadYouTubeCommentTitle = MovieDetailsManager.prototype.loadYouTubeCommentTitle;
-manager.openTrailerModal = MovieDetailsManager.prototype.openTrailerModal;
-manager.openYouTubeModal = MovieDetailsManager.prototype.openYouTubeModal;
 manager.closeTrailerModal = MovieDetailsManager.prototype.closeTrailerModal;
 manager.loadTrailerFallback = MovieDetailsManager.prototype.loadTrailerFallback;
 manager.resolveAndRenderSeasons = MovieDetailsManager.prototype.resolveAndRenderSeasons;
 manager.loadSeasonsFallback = MovieDetailsManager.prototype.loadSeasonsFallback;
-manager.loadSeasons = MovieDetailsManager.prototype.loadSeasons;
 manager.getPluralEpisodes = MovieDetailsManager.prototype.getPluralEpisodes;
 manager.renderSeasonsTab = MovieDetailsManager.prototype.renderSeasonsTab;
 manager.formatDate = MovieDetailsManager.prototype.formatDate;
@@ -781,7 +778,7 @@ manager.elements = {
     trailerContainer: trailerContainerStub,
     trailerTitle: trailerTitleStub
 };
-manager.openYouTubeModal('dQw4w9WgXcQ', 'Official Trailer');
+manager.openVideoModal({ provider: 'YouTube', key: 'dQw4w9WgXcQ', name: 'Official Trailer' });
 assert.strictEqual(trailerModalStub.style.display, 'flex', 'Modal must be set to display: flex on open');
 assert(trailerContainerStub.innerHTML.includes('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1&amp;rel=0') ||
        trailerContainerStub.innerHTML.includes('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1&rel=0'),

@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="../../shared/styles/search.css">
     <link rel="stylesheet" href="../../shared/styles/movie-card.css">
     <link rel="stylesheet" href="../../shared/styles/ratings.css">
+    <link rel="stylesheet" href="../../shared/styles/rating-dialog.css">
     <link rel="stylesheet" href="../../shared/styles/filter-controls.css">
     
     <!-- Google Fonts -->
@@ -203,92 +204,6 @@
         </div>
     </main>
 
-    <!-- Rating Modal (Edit): a native modal dialog that covers the viewport and draws
-         the overlay itself; showModal() supplies the top layer, the inert page,
-         Escape, focus containment and focus return. -->
-    <dialog id="ratingModal" class="modal-overlay ratings-modal-overlay" aria-labelledby="ratingModalTitle">
-        <div class="modal rating-modal">
-            <div class="modal-header rating-header">
-                <div class="rating-header-content">
-                    <div class="rating-header-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #eab308;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></div>
-                    <h2 class="modal-title" id="ratingModalTitle" data-i18n="ratings.modal.rate_movie">Rate This Movie</h2>
-                </div>
-                <button type="button" class="modal-close" id="ratingModalClose" aria-label="Close" data-i18n="[aria-label]ratings.modal.close"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-            </div>
-            <div class="modal-body">
-                <div class="movie-rating-card" id="movieRatingInfo">
-                    <!-- Movie info for rating -->
-                </div>
-                
-                <div class="rating-section">
-                    <div class="current-rating-display" id="currentRatingInfo" style="display: none;">
-                        <div class="current-rating-header">
-                            <h4 data-i18n="ratings.modal.current_rating">Your Current Rating</h4>
-                        </div>
-                        <div class="current-rating-content">
-                            <div class="current-rating-score">
-                                <span class="current-score-label" data-i18n="ratings.modal.your_rating">Rating:</span>
-                                <span id="existingRatingValue" class="current-score-value"></span>
-                            </div>
-                            <div class="current-rating-comment" id="existingRatingComment"></div>
-                        </div>
-                    </div>
-                    
-                    <form id="ratingForm" class="rating-form-modern">
-                        <div class="rating-input-section">
-                            <div class="rating-score-container">
-                                <label class="rating-main-label" for="ratingSlider" data-i18n="ratings.modal.your_rating">Your Rating</label>
-                                <div class="rating-controls-modern">
-                                    <div class="rating-slider-container">
-                                        <input type="range" id="ratingSlider" class="rating-slider-modern" min="1" max="10" value="5" autofocus>
-                                        <div class="rating-scale">
-                                            <span>1</span>
-                                            <span>2</span>
-                                            <span>3</span>
-                                            <span>4</span>
-                                            <span>5</span>
-                                            <span>6</span>
-                                            <span>7</span>
-                                            <span>8</span>
-                                            <span>9</span>
-                                            <span>10</span>
-                                        </div>
-                                    </div>
-                                    <div class="rating-display">
-                                        <span id="ratingValue" class="rating-value-large">5</span>
-                                        <span class="rating-value-suffix">/10</span>
-                                    </div>
-                                    <span id="ratingWord" class="rating-word" aria-hidden="true"></span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="rating-comment-section">
-                            <label for="ratingComment" class="comment-label" data-i18n="ratings.modal.share_thoughts">Share Your Thoughts</label>
-                            <div class="comment-input-container">
-                                <textarea id="ratingComment" class="comment-textarea" rows="4" maxlength="500" data-i18n="ratings.modal.placeholder" placeholder="What did you think about this movie? (Optional)"></textarea>
-                                <div class="comment-footer">
-                                    <div class="char-counter">
-                                        <span id="charCount">0</span><span class="char-limit">/500</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </form>
-                    <!-- Series: episode scores live on Movie Details, which knows the released episodes -->
-                    <a class="episode-rating-link" id="episodeRatingLink" hidden data-i18n="ratings.modal.rate_episodes">Оценить серии на странице сериала</a>
-                </div>
-            </div>
-            <div class="modal-footer rating-footer">
-                <button type="button" id="cancelRatingBtn" class="btn btn-secondary btn-lg" data-i18n="ratings.modal.cancel">Cancel</button>
-                <button type="button" id="saveRatingBtn" class="btn btn-accent btn-lg rating-save-btn">
-                    <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg></span>
-                    <span data-i18n="ratings.modal.save">Save Rating</span>
-                </button>
-            </div>
-        </div>
-    </dialog>
-
     <!-- Main Script -->
     <!-- Firebase SDK (defer, loaded in order) -->
     <script defer src="../../../libs/firebase-app-compat.js"></script>
@@ -324,9 +239,11 @@
 
     <!-- Components -->
     <script defer src="../../shared/components/MovieCard.js"></script>
+    <script defer src="../../shared/components/MovieCardActions.js"></script>
     <script defer src="../../shared/services/ProviderRatingsBackfill.js"></script>
     <script defer src="../../shared/components/BackToTop.js"></script>
     <script defer src="../../shared/components/ConfirmDialog.js"></script>
+    <script defer src="../../shared/components/RatingDialog.js"></script>
     <script defer src="../../shared/components/Navigation.js"></script>
     <script defer src="../../shared/components/Router.js"></script>
 

@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const { JSDOM } = require('jsdom');
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>');
@@ -31,10 +30,10 @@ document.addEventListener = (type, listener, options) => {
 };
 
 const cardOne = MovieCard.create({ movie: { kinopoiskId: 101, name: 'First movie' } }, {
-    showRemoveFromCollection: true
+    showRemoveFromWatchlist: true
 });
 const cardTwo = MovieCard.create({ movie: { kinopoiskId: 102, name: 'Second movie' } }, {
-    showRemoveFromCollection: true
+    showRemoveFromWatchlist: true
 });
 document.body.append(cardOne, cardTwo);
 
@@ -47,7 +46,7 @@ for (const card of [cardOne, cardTwo]) {
     assert.equal(menuButton.getAttribute('aria-haspopup'), 'menu');
     assert.equal(menuButton.getAttribute('aria-expanded'), 'false');
     assert.equal(menu.getAttribute('role'), 'menu');
-    assert.ok(card.querySelector('[data-action="remove-from-collection"]'));
+    assert.ok(card.querySelector('[data-action="remove-from-watchlist"]'));
 }
 
 const menuButtonOne = cardOne.querySelector('.mc-menu-btn');
@@ -90,7 +89,7 @@ assert.equal(document.activeElement, menuButtonOne);
     carousel.style.overflowX = 'auto';
     carousel.style.overflowY = 'hidden';
     const card = MovieCard.create({ movie: { kinopoiskId: 103, name: 'Carousel movie' } }, {
-        showRemoveFromCollection: true
+        showRemoveFromWatchlist: true
     });
     carousel.append(card);
     document.body.append(carousel);
@@ -112,18 +111,9 @@ assert.equal(document.activeElement, menuButtonOne);
 assert.doesNotMatch(
     cardOne.innerHTML,
     /V4a2 2 0 0 1 2 2v2/,
-    'Collection removal icon must include the complete lid path'
+    'Removal icon must include the complete lid path'
 );
-assert.match(cardOne.innerHTML, /V4a2 2 0 0 1 2 2h4a2 2/);
-
-const collectionSource = fs.readFileSync(
-    require.resolve('../src/pages/collection/collection.js'),
-    'utf8'
-);
-assert.match(collectionSource, /grid\.addEventListener\('click'/);
-assert.match(collectionSource, /buttonElement\.setAttribute\('aria-busy', 'true'\)/);
-assert.doesNotMatch(collectionSource, /querySelectorAll\('\[data-action="remove-from-collection"\]\)/);
-assert.doesNotMatch(collectionSource, /data-collection-movie-id/);
+assert.match(cardOne.innerHTML, /V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2/);
 
 document.addEventListener = originalAddEventListener;
 console.log('✅ MovieCard menu accessibility and lifecycle passed');

@@ -22,9 +22,8 @@ assert.ok(adminHtml.includes('for="userStatusFilterSelect"'), 'User status label
 assert.ok(adminHtml.includes('id="user-page-size-select" class="page-size-select" aria-label="Строк на странице"'), 'Page size select needs an accessible name');
 assert.ok(adminHtml.includes('tabindex="0" role="region" aria-label="Таблица пользователей"'), 'Users table scroll region must be keyboard reachable');
 assert.ok(adminHtml.includes('id="usersCount">0 пользователей'), 'Users counter must start localized');
-assert.ok(adminHtml.includes('aria-label="Подтверждение удаления пользователя"'), 'User delete modal needs localized semantics');
-assert.ok(adminHtml.includes('id="confirmDeleteBtn">Удалить пользователя'), 'User delete action must be localized');
-assert.ok(adminHtml.includes('id="confirmDeleteRatingBtn">Удалить оценку'), 'Rating delete action must be localized');
+// User deletion confirms through the shared ConfirmDialog (tests/adminSettingsConfirmations.test.cjs).
+assert.ok(adminJs.includes("confirmLabel: 'Удалить пользователя'"), 'User delete action must be localized');
 
 assert.ok(!adminJs.includes("addEventListener('mousedown'"), 'Admin controls must use click, not mousedown');
 const setupIndex = adminJs.indexOf('this.setupEventListeners();');

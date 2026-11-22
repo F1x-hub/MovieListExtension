@@ -83,11 +83,6 @@ try {
     MovieCard.escapeHtml = originalEscapeHtml;
 }
 
-const collectionCard = MovieCard.create({ movie: { kinopoiskId: 300, name: 'Collection title' } }, {
-    showRemoveFromCollection: true
-});
-assert.match(collectionCard.innerHTML, /data-action="remove-from-collection"/, 'Collection removal must use MovieCard actions');
-
 const unavailableOverlay = { innerHTML: '', dataset: {} };
 MovieCard.updateCompactRatings({
     dataset: {},

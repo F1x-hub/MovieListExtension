@@ -74,16 +74,6 @@ assert.ok(
     'registry entries should normalize and retain their movieId owner'
 );
 
-manager.playerRegistry['custom-parser'].initialized = true;
-let mounted = null;
-manager.mountPlayer = (parserId, movieId) => {
-    mounted = { parserId, movieId };
-    return true;
-};
-
-assert.strictEqual(await manager.reuseCachedPlayer('101'), true, 'owned player should be reusable');
-assert.deepStrictEqual(mounted, { parserId: 'custom-parser', movieId: '101' });
-assert.strictEqual(await manager.reuseCachedPlayer('202'), false, 'player from another movie must not be reused');
 
 const oldContainers = Object.values(manager.playerRegistry).map(entry => entry.container);
 manager.initPlayerRegistry('202');

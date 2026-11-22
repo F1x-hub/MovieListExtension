@@ -41,11 +41,6 @@ try {
         const mounted = await new configured.window.VidSrcAdapter().mount(target, { imdbId: 'tt1234567', mediaType: 'movie' });
         assert.equal(mounted.element.getAttribute('sandbox'), policy, 'real VidSrc mount applies shared policy');
     } finally { configured.window.close(); }
-    const search = read('../src/pages/search/search.js');
-    assert.ok(search.includes('MovieDetailsPlayerSurface.renderFrameInto'));
-    assert.doesNotMatch(search, /<iframe src="\$\{url\}"/);
-    const html = read('../src/pages/search/search.html');
-    assert.ok(html.indexOf('src="../movie-details/PlayerSurface.js"') < html.indexOf('src="search.js"'));
     for (const file of ['../src/shared/services/parsers/BaseParserService.js',
         '../src/shared/services/player/adapters/VidSrcAdapter.js', '../src/pages/movie-details/movie-details.js']) {
         assert.ok(read(file).includes('getProviderSandbox'), `provider mount uses policy: ${file}`);

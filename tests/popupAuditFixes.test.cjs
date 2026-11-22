@@ -171,11 +171,6 @@ function createHarness({ locale = 'en', bindEvents = true } = {}) {
     manager.elements.mainContent.style.display = 'flex';
     manager.elements.headerActionsGroup.style.display = 'flex';
     manager.showError = message => { errors.push(message); };
-    // Animation timing and platform initialization are outside these regressions.
-    manager.hideFeedContentWithFade = async () => {};
-    manager.showFeedContentWithFade = async () => {};
-    manager.showLoadingWithFade = async () => {};
-    manager.hideLoadingWithFade = async () => {};
     if (bindEvents) manager.setupEventListeners();
     manager.updateAuthUI(true, state.user, false);
     return { dom, window, document, clock, manager, state, errors, writes, resets, openedTabs,

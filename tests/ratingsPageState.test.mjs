@@ -58,7 +58,15 @@ globalThis.firebaseManager = {
 };
 
 process.on('unhandledRejection', () => {}); // init() runs against the stub DOM; ignore it
+await import('../src/shared/components/RatingDialog.js');
 await import('../src/pages/ratings/ratings.js');
+// What the shared rating dialog hands to the page's save (tests/ratingDialog.test.cjs covers the dialog).
+const dialogRequest = (rating, comment, existing = null) => ({
+    rating, comment, review: '', existingId: existing?.id || null,
+    ratingChanged: !existing?.id || rating !== existing.rating,
+    commentChanged: comment !== (existing?.comment || ''),
+    reviewChanged: false
+});
 domListeners.DOMContentLoaded();
 const RatingsPageManager = window.ratingsPage.constructor;
 
@@ -196,7 +204,7 @@ function createPage() {
     assert.ok(locales.ru.ratings.sort.locked_by_avg_filter && locales.en.ratings.sort.locked_by_avg_filter);
 
     const page = createPage();
-    assert.equal(page.t('favorite_added'), locales.en.ratings.toast.favorite_added);
+    assert.equal(page.t('rating_save_failed'), locales.en.ratings.toast.rating_save_failed);
 
     const active = fs.readFileSync(path.join(projectRoot, 'src/pages/ratings/ratings.js'), 'utf8');
     for (const key of enKeys) {
@@ -392,17 +400,19 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
             movie: { kinopoiskId: 5, name: 'Film', lastRatingUpdatedAt: createdAt }
         }];
         page.filteredMovies = page.movies;
-        page.selectedMovie = page.movies[0].movie;
-        page.elements = { ...page.elements, ratingSlider: { value: '7' }, ratingComment: { value: 'better words' }, ratingModal: { style: {} } };
         page.applyFilters = () => {};
         return { page, createdAt };
     };
     globalThis.Utils.showToast = () => {};
-    globalThis.firebaseManager.getRatingService = () => ({ addOrUpdateRating: async () => ({ id: 'alice_5' }) });
+    globalThis.firebaseManager.getRatingService = () => ({
+        addOrUpdateRating: async () => ({ id: 'alice_5' }),
+        updateRatingText: async () => ({ id: 'alice_5' })
+    });
     globalThis.firebaseManager.getUserService = () => ({ getUserProfile: async () => ({ displayName: 'Alice' }) });
 
+    const existing = { id: 'alice_5', rating: 7, comment: 'ok' };
     const commentOnly = makeSavePage();
-    await commentOnly.page.saveRating();
+    await commentOnly.page.saveRating(commentOnly.page.movies[0].movie, dialogRequest(7, 'better words', existing));
     const item = commentOnly.page.movies[0];
     assert.equal(item.myComment, 'better words');
     assert.equal(item.createdAt, commentOnly.createdAt, 'Comment-only edit keeps the sort date');
@@ -410,8 +420,7 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
     assert.equal(commentOnly.page.recentLocalEdits.has('5'), false, 'The server will not report a comment-only edit');
 
     const newScore = makeSavePage();
-    newScore.page.elements.ratingSlider.value = '9';
-    await newScore.page.saveRating();
+    await newScore.page.saveRating(newScore.page.movies[0].movie, dialogRequest(9, 'better words', existing));
     assert.notEqual(newScore.page.movies[0].createdAt, newScore.createdAt, 'A new score moves the card to the top');
     assert.equal(newScore.page.recentLocalEdits.has('5'), true, 'Its listener echo will not be marked as new');
 }
@@ -423,13 +432,6 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
         const page = createLivePage();
         page.currentUser = { uid: 'alice' };
         page.userProfilesMap.set('alice', { displayName: 'Alice', photoURL: 'a.png' });
-        page.selectedMovie = { kinopoiskId: 77, name: 'Series', type: 'TV_SERIES' };
-        page.elements = {
-            ratingSlider: { value: String(score) },
-            ratingComment: { value: 'new comment' },
-            ratingModal: makeElement(),
-            saveRatingBtn: makeElement()
-        };
         page.movies = [{
             id: 'alice_77', movieId: 77, rating: 8, myRating: 8, myComment: 'old comment',
             myRatingSource: 'episodes', myEpisodeAverage: 8.4, myEpisodesRatedCount: 12,
@@ -437,31 +439,32 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
                 id: 'alice_77', userId: 'alice', rating: 8, comment: 'old comment',
                 ratingSource: 'episodes', episodeAverage: 8.4, episodesRatedCount: 12
             }],
-            movie: page.selectedMovie
+            movie: { kinopoiskId: 77, name: 'Series', type: 'TV_SERIES' }
         }];
         page.filteredMovies = page.movies;
         page.applyFilters = () => {};
-        page.closeRatingModal = () => {};
         page.t = key => key;
         page.recentLocalEdits = new Map();
         return page;
     };
     let genericWrites = 0;
     globalThis.firebaseManager.getRatingService = () => ({
-        addOrUpdateRating: async () => { genericWrites++; return { id: 'alice_77' }; }
+        addOrUpdateRating: async () => { genericWrites++; return { id: 'alice_77' }; },
+        updateRatingText: async () => { genericWrites++; return { id: 'alice_77' }; }
     });
     globalThis.firebaseManager.getSeriesEpisodeRatingService = () => {
         throw new Error('Title editing must not access episode ratings');
     };
     globalThis.Utils.showToast = () => {};
 
+    const stored = { id: 'alice_77', rating: 8, comment: 'old comment' };
     const commentEdit = makeEpisodeSavePage(8);
-    await commentEdit.saveRating();
+    await commentEdit.saveRating(commentEdit.movies[0].movie, dialogRequest(8, 'new comment', stored));
     assert.equal(genericWrites, 1, 'Comment edits use the title writer');
     assert.deepEqual(commentEdit.getMyRating(commentEdit.movies[0]), { rating: 8, comment: 'new comment' });
 
     const scoreEdit = makeEpisodeSavePage(9);
-    await scoreEdit.saveRating();
+    await scoreEdit.saveRating(scoreEdit.movies[0].movie, dialogRequest(9, 'new comment', stored));
     assert.equal(genericWrites, 2, 'Score edits use the same title writer');
     assert.deepEqual(scoreEdit.getMyRating(scoreEdit.movies[0]), { rating: 9, comment: 'new comment' });
 }
@@ -570,19 +573,14 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
     );
 }
 
-// H1. A double click on "Save" writes once; a failed write restores only that card.
+// H1. A save updates the card at once; a failed write restores only that card.
+// (One press, one write is the shared dialog's lock: tests/ratingDialog.test.cjs.)
 {
     const page = createPage();
     page.currentUser = { uid: 'alice' };
     page.recentLocalEdits = new Map();
     page.renderedMoviesState = new Map();
     page.userProfilesMap.set('alice', { id: 'alice', displayName: 'Alice', photoURL: 'a.png' });
-    page.elements = {
-        ratingSlider: { value: '9' },
-        ratingComment: { value: 'Great' },
-        ratingModal: makeElement(),
-        saveRatingBtn: makeElement()
-    };
     page.t = key => key;
     page.applyFilters = () => {};
     globalThis.Utils.showToast = () => {};
@@ -601,11 +599,8 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
     let profileReads = 0;
     globalThis.firebaseManager.getUserService = () => ({ getUserProfile: async () => { profileReads++; return null; } });
 
-    page.selectedMovie = original.movie;
-    const firstSave = page.saveRating();
-    const secondSave = page.saveRating();
-    await Promise.all([firstSave, secondSave]);
-    assert.equal(writes, 1, 'A repeated click while saving does not write twice');
+    await page.saveRating(original.movie, dialogRequest(9, 'Great'));
+    assert.equal(writes, 1, 'One save, one background write');
     assert.equal(profileReads, 0, 'The already loaded profile is reused instead of re-read on every save');
     assert.equal(page.movies[0].myRating, 9, 'The card updates optimistically');
 
@@ -616,7 +611,6 @@ const doc = (id, seconds, extra = {}) => ({ id: String(id), kinopoiskId: id, las
     assert.deepEqual(page.movies.map(item => item.movieId), [1, 2, 3], 'Other cards and later pages are kept');
     assert.equal(page.movies[0].myRating, 5, 'The failed card returns to its previous rating');
     assert.equal(page.movies[0].allRaters[0].rating, 5);
-    assert.equal(page.isSavingRating, false);
 }
 
 // H2. Client-only sorts read large pages and render the full list once.

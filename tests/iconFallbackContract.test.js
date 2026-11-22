@@ -5,7 +5,6 @@ const IconUtils = require('../src/shared/utils/IconUtils.js');
 const canonicalIcon = 'src/shared/assets/icons/app/icon48-white.png';
 const pagesWithFormerBrokenFallbacks = [
     'src/pages/admin/admin.js',
-    'src/pages/search/search.js',
 ];
 
 assert.ok(fs.existsSync(canonicalIcon), `Missing fallback icon asset: ${canonicalIcon}`);

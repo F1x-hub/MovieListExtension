@@ -25,6 +25,131 @@ class MovieCard {
         return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>';
     }
 
+    /**
+     * The four bookmark statuses in the card menu, keyed by the stored status value.
+     * A film has at most one of them; `statusMenuItemHtml` draws an item and
+     * `setStatusButtons` repaints a rendered card, so both always agree.
+     */
+    static STATUS_MENU_ITEMS = {
+        favorite: {
+            action: 'toggle-favorite',
+            attribute: 'data-is-favorite',
+            labels: ['movie_card.remove_favorite', 'movie_card.add_favorite'],
+            path: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>',
+            fillWhenActive: true
+        },
+        watching: {
+            action: 'toggle-watching',
+            attribute: 'data-is-watching',
+            labels: ['movie_card.remove_watching', 'movie_card.add_watching'],
+            path: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>',
+            fillWhenActive: false
+        },
+        watched: {
+            action: 'toggle-watched',
+            attribute: 'data-is-watched',
+            labels: ['movie_card.remove_watched', 'movie_card.add_watched'],
+            path: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>',
+            fillWhenActive: false
+        },
+        plan_to_watch: {
+            action: 'toggle-watchlist',
+            attribute: 'data-is-in-watchlist',
+            labels: ['movie_card.remove_watchlist', 'movie_card.add_watchlist'],
+            path: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>',
+            fillWhenActive: true
+        }
+    };
+
+    static ACTIVE_STATUS_BACKGROUND = '#c0c0c0';
+    static ACTIVE_STATUS_COLOR = '#000';
+
+    static statusIconHtml(status, isActive) {
+        const item = MovieCard.STATUS_MENU_ITEMS[status];
+        const filled = Boolean(isActive && item.fillWhenActive);
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${item.path}</svg>`;
+    }
+
+    static statusLabel(status, isActive) {
+        const item = MovieCard.STATUS_MENU_ITEMS[status];
+        return window.i18n?.get(item.labels[isActive ? 0 : 1]) || '';
+    }
+
+    /** One status item of the card menu (favorite, watching, watched or plan to watch). */
+    static statusMenuItemHtml(status, isActive, { movieId = '', ratingId } = {}) {
+        const item = MovieCard.STATUS_MENU_ITEMS[status];
+        const active = Boolean(isActive);
+        const ratingAttribute = ratingId === undefined ? '' : ` data-rating-id="${MovieCard.escapeHtml(ratingId || '')}"`;
+        const activeStyle = active
+            ? ` style="background-color: ${MovieCard.ACTIVE_STATUS_BACKGROUND}; color: ${MovieCard.ACTIVE_STATUS_COLOR};"`
+            : '';
+        return `
+                            <button class="mc-menu-item" data-action="${item.action}"${ratingAttribute}
+                                    data-movie-id="${MovieCard.escapeHtml(movieId || '')}"
+                                    ${item.attribute}="${active}"${activeStyle}>
+                                <span class="mc-menu-item-icon">${MovieCard.statusIconHtml(status, active)}</span>
+                                <span class="mc-menu-item-text"${active ? ' style="font-weight: 500;"' : ''}>${MovieCard.statusLabel(status, active)}</span>
+                            </button>`;
+    }
+
+    /** Repaints every status item inside `root` (a card) for the given status, or none for null. */
+    static setStatusButtons(root, status) {
+        if (!root?.querySelectorAll) return;
+        for (const [value, item] of Object.entries(MovieCard.STATUS_MENU_ITEMS)) {
+            root.querySelectorAll(`[data-action="${item.action}"]`).forEach(button => {
+                const isActive = value === status;
+                button.setAttribute(item.attribute, String(isActive));
+                button.style.backgroundColor = isActive ? MovieCard.ACTIVE_STATUS_BACKGROUND : '';
+                button.style.color = isActive ? MovieCard.ACTIVE_STATUS_COLOR : '';
+                const icon = button.querySelector('.mc-menu-item-icon');
+                if (icon) icon.innerHTML = MovieCard.statusIconHtml(value, isActive);
+                const text = button.querySelector('.mc-menu-item-text');
+                if (text) {
+                    text.textContent = MovieCard.statusLabel(value, isActive);
+                    text.style.fontWeight = isActive ? '500' : '';
+                }
+            });
+        }
+    }
+
+    /** The status a rendered card shows, or null when none of its status items is on. */
+    static statusFromCard(root) {
+        if (!root?.querySelector) return null;
+        for (const [value, item] of Object.entries(MovieCard.STATUS_MENU_ITEMS)) {
+            if (root.querySelector(`[data-action="${item.action}"][${item.attribute}="true"]`)) return value;
+        }
+        return null;
+    }
+
+    static COLLECTION_CHECK_HTML = '<span class="mc-collection-check" style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>';
+
+    /** One collection item of the card menu, checked when the film is in that collection. */
+    static collectionMenuItemHtml(collection, isInCollection, movieId) {
+        const inCollection = Boolean(isInCollection);
+        return `
+                                    <button class="mc-menu-item" data-action="toggle-collection"
+                                            data-movie-id="${MovieCard.escapeHtml(movieId || '')}"
+                                            data-collection-id="${MovieCard.escapeHtml(collection.id)}"
+                                            data-in-collection="${inCollection}">
+                                        <span class="mc-menu-item-icon">${MovieCard.collectionIconHtml(collection.icon)}</span>
+                                        <span class="mc-menu-item-text" style="${inCollection ? 'font-weight: 500;' : ''}">
+                                            ${MovieCard.escapeHtml(collection.name)}
+                                        </span>
+                                        ${inCollection ? MovieCard.COLLECTION_CHECK_HTML : ''}
+                                    </button>`;
+    }
+
+    /** Repaints one rendered collection item as checked or unchecked. */
+    static setCollectionItemState(button, isInCollection) {
+        if (!button) return;
+        const inCollection = Boolean(isInCollection);
+        button.setAttribute('data-in-collection', String(inCollection));
+        button.querySelector('.mc-collection-check')?.remove();
+        if (inCollection) button.insertAdjacentHTML('beforeend', MovieCard.COLLECTION_CHECK_HTML);
+        const text = button.querySelector('.mc-menu-item-text');
+        if (text) text.style.fontWeight = inCollection ? '500' : '';
+    }
+
     static renderCompactRatingBadges({
         kpRating = 0,
         imdbRating = 0,
@@ -123,7 +248,6 @@ class MovieCard {
             showUserInfo = false,
             showEditRating = false,
             showAddToCollection = false,
-            showRemoveFromCollection = false,
             showRemoveFromWatchlist = false,
             showRemoveFromWatching = false, // New option
             showRemoveFromWatched = false, // New option
@@ -278,43 +402,10 @@ class MovieCard {
                         <span class="mc-menu-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg></span>
                     </button>
                     <div class="mc-menu-dropdown" role="menu" data-action="stop-propagation">
-                        ${showFavorite ? `
-                            <button class="mc-menu-item" data-action="toggle-favorite" 
-                                    data-rating-id="${data.id}"
-                                    data-movie-id="${canonicalMovieId || ''}" 
-                                    data-is-favorite="${isFavorite}"
-                                    ${isFavorite ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
-                                <span class="mc-menu-item-icon">${isFavorite ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'}</span>
-                                <span class="mc-menu-item-text" ${isFavorite ? 'style="font-weight: 500;"' : ''}>${isFavorite ? window.i18n?.get('movie_card.remove_favorite') : window.i18n?.get('movie_card.add_favorite')}</span>
-                            </button>
-                        ` : ''}
-                        ${showWatching ? `
-                            <button class="mc-menu-item" data-action="toggle-watching"
-                                    data-movie-id="${canonicalMovieId || ''}"
-                                    data-is-watching="${isWatching}"
-                                    ${isWatching ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></span>
-                                <span class="mc-menu-item-text" ${isWatching ? 'style="font-weight: 500;"' : ''}>${isWatching ? window.i18n?.get('movie_card.remove_watching') : window.i18n?.get('movie_card.add_watching')}</span>
-                            </button>
-                        ` : ''}
-                        ${showWatched ? `
-                            <button class="mc-menu-item" data-action="toggle-watched"
-                                    data-movie-id="${canonicalMovieId || ''}"
-                                    data-is-watched="${isWatched}"
-                                    ${isWatched ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></span>
-                                <span class="mc-menu-item-text" ${isWatched ? 'style="font-weight: 500;"' : ''}>${isWatched ? window.i18n?.get('movie_card.remove_watched') : window.i18n?.get('movie_card.add_watched')}</span>
-                            </button>
-                        ` : ''}
-                        ${showWatchlist ? `
-                            <button class="mc-menu-item" data-action="toggle-watchlist"
-                                    data-movie-id="${canonicalMovieId || ''}"
-                                    data-is-in-watchlist="${isInWatchlist}"
-                                    ${isInWatchlist ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
-                                <span class="mc-menu-item-icon">${isInWatchlist ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'}</span>
-                                <span class="mc-menu-item-text" ${isInWatchlist ? 'style="font-weight: 500;"' : ''}>${isInWatchlist ? window.i18n?.get('movie_card.remove_watchlist') : window.i18n?.get('movie_card.add_watchlist')}</span>
-                            </button>
-                        ` : ''}
+                        ${showFavorite ? MovieCard.statusMenuItemHtml('favorite', isFavorite, { movieId: canonicalMovieId, ratingId: data.id }) : ''}
+                        ${showWatching ? MovieCard.statusMenuItemHtml('watching', isWatching, { movieId: canonicalMovieId }) : ''}
+                        ${showWatched ? MovieCard.statusMenuItemHtml('watched', isWatched, { movieId: canonicalMovieId }) : ''}
+                        ${showWatchlist ? MovieCard.statusMenuItemHtml('plan_to_watch', isInWatchlist, { movieId: canonicalMovieId }) : ''}
                         ${hasReview && canonicalMovieId ? `
                             <button class="mc-menu-item" data-action="open-review"
                                     data-movie-id="${canonicalMovieId}"
@@ -337,13 +428,6 @@ class MovieCard {
                                     data-movie-id="${canonicalMovieId || ''}">
                                 <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>
                                 <span class="mc-menu-item-text">${window.i18n?.get('movie_card.add_collection')}</span>
-                            </button>
-                        ` : ''}
-                        ${showRemoveFromCollection ? `
-                            <button class="mc-menu-item" data-action="remove-from-collection"
-                                    data-movie-id="${canonicalMovieId || ''}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
-                                <span class="mc-menu-item-text">${window.i18n?.get('movie_card.remove') || 'Remove'}</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatching ? `
@@ -377,22 +461,7 @@ class MovieCard {
                         ${availableCollections.length > 0 ? `
                         <div class="mc-menu-divider" style="height: 1px; background: rgba(255,255,255,0.1); margin: 4px 0;"></div>
                         <div class="mc-menu-collections">
-                            ${availableCollections.map(col => {
-                                const isInCollection = movieCollections.includes(col.id);
-                                const iconHtml = MovieCard.collectionIconHtml(col.icon);
-                                    
-                                return `
-                                    <button class="mc-menu-item" data-action="toggle-collection"
-                                            data-movie-id="${canonicalMovieId || ''}"
-                                            data-collection-id="${col.id}">
-                                        <span class="mc-menu-item-icon">${iconHtml}</span>
-                                        <span class="mc-menu-item-text" style="${isInCollection ? 'font-weight: 500;' : ''}">
-                                            ${col.name}
-                                        </span>
-                                        ${isInCollection ? '<span style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' : ''}
-                                    </button>
-                                `;
-                            }).join('')}
+                            ${availableCollections.map(col => MovieCard.collectionMenuItemHtml(col, movieCollections.includes(col.id), canonicalMovieId)).join('')}
                         </div>
                     ` : ''}
                     </div>
@@ -434,43 +503,10 @@ class MovieCard {
                         <span class="mc-menu-icon">⋮</span>
                     </button>
                     <div class="mc-menu-dropdown" role="menu" data-action="stop-propagation">
-                        ${showFavorite ? `
-                            <button class="mc-menu-item" data-action="toggle-favorite" 
-                                    data-rating-id="${data.id}"
-                                    data-movie-id="${canonicalMovieId || ''}" 
-                                    data-is-favorite="${isFavorite}"
-                                    ${isFavorite ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
-                                <span class="mc-menu-item-icon">${isFavorite ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'}</span>
-                                <span class="mc-menu-item-text" ${isFavorite ? 'style="font-weight: 500;"' : ''}>${isFavorite ? window.i18n?.get('movie_card.remove_favorite') : window.i18n?.get('movie_card.add_favorite')}</span>
-                            </button>
-                        ` : ''}
-                        ${showWatching ? `
-                            <button class="mc-menu-item" data-action="toggle-watching"
-                                    data-movie-id="${canonicalMovieId || ''}"
-                                    data-is-watching="${isWatching}"
-                                    ${isWatching ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></span>
-                                <span class="mc-menu-item-text" ${isWatching ? 'style="font-weight: 500;"' : ''}>${isWatching ? window.i18n?.get('movie_card.remove_watching') : window.i18n?.get('movie_card.add_watching')}</span>
-                            </button>
-                        ` : ''}
-                        ${showWatched ? `
-                            <button class="mc-menu-item" data-action="toggle-watched"
-                                    data-movie-id="${canonicalMovieId || ''}"
-                                    data-is-watched="${isWatched}"
-                                    ${isWatched ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></span>
-                                <span class="mc-menu-item-text" ${isWatched ? 'style="font-weight: 500;"' : ''}>${isWatched ? window.i18n?.get('movie_card.remove_watched') : window.i18n?.get('movie_card.add_watched')}</span>
-                            </button>
-                        ` : ''}
-                        ${showWatchlist ? `
-                            <button class="mc-menu-item" data-action="toggle-watchlist"
-                                    data-movie-id="${canonicalMovieId || ''}"
-                                    data-is-in-watchlist="${isInWatchlist}"
-                                    ${isInWatchlist ? 'style="background-color: #c0c0c0; color: #000;"' : ''}>
-                                <span class="mc-menu-item-icon">${isInWatchlist ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'}</span>
-                                <span class="mc-menu-item-text" ${isInWatchlist ? 'style="font-weight: 500;"' : ''}>${isInWatchlist ? window.i18n?.get('movie_card.remove_watchlist') : window.i18n?.get('movie_card.add_watchlist')}</span>
-                            </button>
-                        ` : ''}
+                        ${showFavorite ? MovieCard.statusMenuItemHtml('favorite', isFavorite, { movieId: canonicalMovieId, ratingId: data.id }) : ''}
+                        ${showWatching ? MovieCard.statusMenuItemHtml('watching', isWatching, { movieId: canonicalMovieId }) : ''}
+                        ${showWatched ? MovieCard.statusMenuItemHtml('watched', isWatched, { movieId: canonicalMovieId }) : ''}
+                        ${showWatchlist ? MovieCard.statusMenuItemHtml('plan_to_watch', isInWatchlist, { movieId: canonicalMovieId }) : ''}
                         ${hasReview && canonicalMovieId ? `
                             <button class="mc-menu-item" data-action="open-review"
                                     data-movie-id="${canonicalMovieId}"
@@ -493,13 +529,6 @@ class MovieCard {
                                     data-movie-id="${canonicalMovieId || ''}">
                                 <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>
                                 <span class="mc-menu-item-text">${window.i18n?.get('movie_card.add_collection')}</span>
-                            </button>
-                        ` : ''}
-                        ${showRemoveFromCollection ? `
-                            <button class="mc-menu-item" data-action="remove-from-collection"
-                                    data-movie-id="${canonicalMovieId || ''}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2 2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
-                                <span class="mc-menu-item-text">${window.i18n?.get('movie_card.remove') || 'Remove'}</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatching ? `
@@ -533,22 +562,7 @@ class MovieCard {
                         ${availableCollections.length > 0 ? `
                         <div class="mc-menu-divider" style="height: 1px; background: rgba(255,255,255,0.1); margin: 4px 0;"></div>
                         <div class="mc-menu-collections">
-                            ${availableCollections.map(col => {
-                                const isInCollection = movieCollections.includes(col.id);
-                                const iconHtml = MovieCard.collectionIconHtml(col.icon);
-                                    
-                                return `
-                                    <button class="mc-menu-item" data-action="toggle-collection"
-                                            data-movie-id="${canonicalMovieId || ''}"
-                                            data-collection-id="${col.id}">
-                                        <span class="mc-menu-item-icon">${iconHtml}</span>
-                                        <span class="mc-menu-item-text" style="${isInCollection ? 'font-weight: 500;' : ''}">
-                                            ${col.name}
-                                        </span>
-                                        ${isInCollection ? '<span style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' : ''}
-                                    </button>
-                                `;
-                            }).join('')}
+                            ${availableCollections.map(col => MovieCard.collectionMenuItemHtml(col, movieCollections.includes(col.id), canonicalMovieId)).join('')}
                         </div>
                     ` : ''}
                     </div>
@@ -754,16 +768,6 @@ class MovieCard {
                 Utils.handlePosterError(img);
             }
         }, true);
-    }
-
-    /**
-     * Create a search-optimized lightweight movie card
-     * @param {Object} data - Movie data object
-     * @param {Object} options - Configuration options for the card
-     * @returns {HTMLElement} - The movie card element
-     */
-    static createSearchCard(data, options = {}) {
-        return this.create(data, { ...options, variant: 'search' });
     }
 
     /**

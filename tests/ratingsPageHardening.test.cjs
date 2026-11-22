@@ -163,15 +163,16 @@ function createFakeDb(collections, { failWhen = () => false } = {}) {
     assert.match(ratingsJs, /window\.SortControl\?\.enhance\(this\.elements\[id\]\)/, 'Filter and sort selects use the shared control');
     assert.match(sortControlJs, /'ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '/, 'Shared selects support keyboard navigation');
     assert.match(sortControlJs, /key === 'Escape'[\s\S]*?this\.close\(\)[\s\S]*?this\.trigger\.focus\(\)/, 'Escape closes the shared menu and returns focus');
-    assert.match(ratingsJs, /modal\.showModal\(\)/, 'The rating dialog opens as a native modal, which handles Escape, Tab and focus return');
-    assert.doesNotMatch(ratingsJs, /handleRatingModalKeydown|getRatingModalFocusables|modalReturnFocus/, 'No hand-written focus trap next to the native modal');
-    assert.match(ratingsHtml, /id="ratingSlider"[^>]*autofocus/, 'The slider gets focus when the dialog opens');
+    // The rating dialog is the shared RatingDialog (tests/ratingDialog.test.cjs: Escape, Tab, focus return).
+    assert.match(ratingsJs, /window\.RatingDialog\.shared\(\)\.open\(/, 'Ratings opens the shared rating dialog');
+    assert.match(ratingsHtml, /<script defer src="\.\.\/\.\.\/shared\/components\/RatingDialog\.js"><\/script>/);
+    assert.match(ratingsHtml, /<link rel="stylesheet" href="\.\.\/\.\.\/shared\/styles\/rating-dialog\.css">/);
+    assert.doesNotMatch(ratingsHtml, /id="ratingModal"|id="ratingSlider"/, 'The old slider dialog is gone');
     assert.match(ratingsJs, /removeEl = document\.createElement\('button'\)/, 'Filter tag removal is a real button');
     assert.match(ratingsHtml, /fonts\.googleapis\.com[^>]*media="print" data-async-style/, 'Font CSS does not block the first paint');
     assert.match(ratingsHtml, /<script src="\.\.\/\.\.\/shared\/utils\/asyncStyles\.js"><\/script>/);
     assert.match(ratingsHtml, /rel="preload" as="script" href="\.\.\/\.\.\/\.\.\/libs\/firebase-auth-compat\.js"/);
     assert.match(ratingsHtml, /id="avgRatingTo"[^>]*aria-label=/, 'The upper range handle has a name');
-    assert.match(ratingsHtml, /<label class="rating-main-label" for="ratingSlider"/);
     assert.doesNotMatch(ratingsHtml, /<button(?![^>]*type=)[^>]*>/, 'Every button declares its type');
 
     console.log('Ratings page hardening tests passed');

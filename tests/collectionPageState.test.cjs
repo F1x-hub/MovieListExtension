@@ -1,18 +1,18 @@
 /**
- * Collection runs its real load and sign-out paths here; only Firebase is
- * replaced. Tests that stubbed applyFilters could not see these paths crash.
+ * A custom collection opens inside Bookmarks: the old collection page only sends
+ * its links there, and deleting a collection asks through the shared ConfirmDialog.
+ * Ratings and Bookmarks are also checked for calls to methods they do not have.
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { JSDOM, VirtualConsole } = require('jsdom');
+const vm = require('node:vm');
+const { JSDOM } = require('jsdom');
 
 const root = path.resolve(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
-const USER = { uid: 'user-1' };
 const MANAGERS = {
-    collection: 'CollectionPageManager',
     ratings: 'RatingsPageManager',
     bookmarks: 'BookmarksPageManager'
 };
@@ -31,41 +31,6 @@ function loadManagerClass(window, page) {
     return window.TestManager;
 }
 
-function openCollection() {
-    // Exceptions thrown inside event listeners land here instead of being lost.
-    const pageErrors = [];
-    const virtualConsole = new VirtualConsole();
-    virtualConsole.on('jsdomError', error => {
-        if (!/^Not implemented/.test(error.message)) pageErrors.push(error.detail || error);
-    });
-    const dom = new JSDOM(read('src/pages/collection/collection.html'), {
-        url: 'https://extension.test/src/pages/collection/collection.html?id=list-1',
-        runScripts: 'outside-only',
-        pretendToBeVisual: true,
-        virtualConsole
-    });
-    const { window } = dom;
-    window.chrome = {
-        runtime: { getURL: file => file },
-        storage: { local: { get: (_keys, done) => done({}) }, onChanged: { addListener() {} } }
-    };
-    window.eval(read('src/shared/components/SortControl.js'));
-    window.firebaseManager = {
-        init: async () => {},
-        waitForAuthReady: async () => {},
-        getCurrentUser: () => USER
-    };
-    window.CollectionService = class {
-        async getCollection() { return { name: 'List', icon: 'L', movieIds: [] }; }
-    };
-    const Manager = loadManagerClass(window, 'collection');
-    return { window, document: window.document, manager: new Manager(), pageErrors };
-}
-
-async function settle(window) {
-    for (let turn = 0; turn < 25; turn++) await new Promise(resolve => window.setTimeout(resolve, 0));
-}
-
 function checkEveryCalledMethodExists() {
     for (const page of Object.keys(MANAGERS)) {
         const dom = new JSDOM('<!doctype html>', { url: 'https://extension.test/', runScripts: 'outside-only' });
@@ -80,34 +45,35 @@ function checkEveryCalledMethodExists() {
     }
 }
 
-async function checkSignOut() {
-    const { window, document, pageErrors } = openCollection();
-    const element = id => document.getElementById(id);
-    const isShown = id => element(id).style.display !== 'none';
-    try {
-        await settle(window);
-        assert.equal(isShown('emptyState'), true, 'An empty collection says so');
-        assert.equal(isShown('errorState'), false, 'An empty collection is not an error');
-
-        window.dispatchEvent(new window.CustomEvent('authStateChanged', { detail: { user: null } }));
-        await settle(window);
-
-        assert.equal(isShown('errorState'), true, 'Signing out asks to sign in');
-        assert.equal(element('errorMessage').textContent, 'Для просмотра коллекции необходимо войти в аккаунт.');
-        assert.equal(isShown('emptyState'), false, 'The message replaces the empty state');
-        assert.equal(isShown('moviesGrid'), false);
-        assert.match(element('resultsCount').textContent, /\b0\b/, 'The old count is cleared');
-        assert.deepEqual(pageErrors, [], 'No uncaught exceptions in event listeners');
-    } finally {
-        window.close();
-    }
+function redirectFor(search) {
+    const replaced = [];
+    const window = { location: { search, replace: url => replaced.push(url) } };
+    vm.runInNewContext(read('src/pages/collection/collection.js'), { window, URLSearchParams });
+    return replaced;
 }
 
-(async () => {
-    checkEveryCalledMethodExists();
-    await checkSignOut();
-    console.log('Collection page state passed: sign-out shows only the sign-in message, and Collection, Ratings and Bookmarks call no missing methods (JSDOM fixtures).');
-})().catch(error => {
-    console.error(error);
-    process.exitCode = 1;
-});
+function checkOldCollectionLinks() {
+    assert.deepEqual(redirectFor('?id=list-1'), ['../bookmarks/bookmarks.html?filter=collection:list-1']);
+    assert.deepEqual(redirectFor('?id=a%20b%26c'), ['../bookmarks/bookmarks.html?filter=collection:a%20b%26c'],
+        'The id is passed on encoded');
+    assert.deepEqual(redirectFor(''), ['../bookmarks/bookmarks.html'], 'Without an id the link opens Bookmarks');
+
+    const html = read('src/pages/collection/collection.html');
+    assert.doesNotMatch(html, /deleteCollectionModal|class="modal/, 'The old page has no dialog of its own');
+    assert.match(html, /<script src="collection\.js"><\/script>/);
+}
+
+function checkDeleteAsksThroughConfirmDialog() {
+    const source = read('src/pages/bookmarks/bookmarks.js');
+    const remove = source.match(/\n {4}async deleteActiveCollection\(\) \{[\s\S]*?\n {4}\}/);
+    assert.ok(remove, 'Bookmarks deletes the open collection');
+    assert.match(remove[0], /await ConfirmDialog\.confirm\(\{[\s\S]*danger: true/);
+    assert.ok(remove[0].indexOf('ConfirmDialog.confirm') < remove[0].indexOf('deleteCollection('),
+        'The collection is deleted only after the confirmation');
+    assert.match(read('src/pages/bookmarks/bookmarks.html'), /shared\/components\/ConfirmDialog\.js/);
+}
+
+checkEveryCalledMethodExists();
+checkOldCollectionLinks();
+checkDeleteAsksThroughConfirmDialog();
+console.log('Collection page state passed: old collection links open the collection in Bookmarks, deleting asks through ConfirmDialog, and Ratings and Bookmarks call no missing methods.');

@@ -90,7 +90,7 @@ function method(window, file, start, end, name) {
         swapVideo.dispatchEvent(new w.Event('loadedmetadata'));
         assert.equal(swapVideo.currentTime, 25, 'metadata restoration runs once');
 
-        const render = method(w, 'src/pages/movie-details/movie-details.js', '    async renderCustomPlayer(', '    setupCustomControls(', 'renderCustomPlayer');
+        const render = method(w, 'src/pages/movie-details/movie-details.js', '    async renderCustomPlayer(', '    renderSimplePlayer(', 'renderCustomPlayer');
         const torrent = { sessionId: 'owned', preferHls: true, hlsUrl: sources[0].url };
         let pending;
         w.LazyLoader = { loadScript: () => new Promise(resolve => { pending = resolve; }) };
@@ -137,20 +137,6 @@ function method(window, file, start, end, name) {
             await staleRender;
         }
         assert.equal(profiles.length, 2, 'request or in-place session changes invalidate delayed mounts');
-
-        const toggle = method(w, 'src/pages/search/search.js', '    async togglePlayPause(', '    async handleWatchingToggle(', 'togglePlayPause');
-        const search = { isPlaying: false, currentVideoUrl: sources[0].url, elements: { videoContainer: host }, invalidatePlayerRestore() {} };
-        const switching = toggle.call(search);
-        assert.equal(host.querySelector('video').hasAttribute('src'), false);
-        assert.equal(host.querySelector('source'), null, 'HLS markup cannot initiate native networking before the library loads');
-        pending();
-        await switching;
-        assert.equal(host.querySelector('video'), null, 'unavailable factory shows the existing error state');
-        assert.match(host.textContent, /unavailable/);
-        search.isPlaying = false;
-        search.currentVideoUrl = 'https://example.com/direct.mp4';
-        await toggle.call(search);
-        assert.equal(host.querySelector('video').src, search.currentVideoUrl);
 
         const initGhost = method(w, 'src/shared/services/player/PlayerGhostPreview.js', '    _initSource(url) {', '    // ─── UI', '_initSource');
         const protectedConfig = { loader: class { static movieExtensionPolicyLoader = true; } };

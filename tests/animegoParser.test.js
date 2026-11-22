@@ -597,7 +597,7 @@ const searchHtml = `<!doctype html><html><body><div class="ani-grid">
             'bridge qualities win over single-level HLS and DOM heuristics');
         const seasonvar = fs.readFileSync('src/shared/services/parsers/SeasonvarParser.js', 'utf8');
         assert.match(seasonvar, /id="seasonvar-voiceover-source" data-player-voiceover-source="seasonvar"/);
-        for (const page of ['src/pages/movie-details/movie-details.html', 'src/pages/search/search.html']) {
+        for (const page of ['src/pages/movie-details/movie-details.html']) {
             const html = fs.readFileSync(page, 'utf8');
             assert.ok(html.indexOf('parsers/KodikStreamResolver.js') > 0
                 && html.indexOf('parsers/KodikStreamResolver.js') < html.indexOf('parsers/AnimeGoParser.js'),
@@ -756,7 +756,7 @@ const searchHtml = `<!doctype html><html><body><div class="ani-grid">
             'new sources append after AnimeGo: the Search page keeps Kinogo as its primary source');
         assert.match(init, /registry\.register\(new AnimeGoParser\(\)\)/);
 
-        for (const page of ['src/pages/movie-details/movie-details.html', 'src/pages/search/search.html']) {
+        for (const page of ['src/pages/movie-details/movie-details.html']) {
             const html = fs.readFileSync(page, 'utf8');
             const parserIndex = html.indexOf('parsers/AnimeGoParser.js');
             assert.ok(parserIndex > html.indexOf('parsers/BaseParserService.js'), `${page} loads AnimeGo after the base class`);

@@ -62,6 +62,7 @@ function toFirestoreValue(value) {
     if (Number.isInteger(value)) return { integerValue: String(value) };
     if (typeof value === 'number') return { doubleValue: value };
     if (value === null) return { nullValue: null };
+    if (Array.isArray(value)) return { arrayValue: { values: value.map(toFirestoreValue) } };
     throw new Error(`Unsupported seed value: ${value}`);
 }
 

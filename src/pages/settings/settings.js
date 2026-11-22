@@ -1206,48 +1206,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function showJackettDeleteDialog(indexer) {
-        return new Promise(resolve => {
-            const { overlay, dialog } = createJackettDialogBase(
-                'jackett-delete-dialog-overlay',
-                `Удалить ${indexer.name}?`,
-                'Jackett удалит индексер из настроенных источников. Скачанные файлы MediaPlayer не затрагиваются.'
-            );
-            const actions = document.createElement('div');
-            actions.className = 'unsaved-dialog-actions';
-            const cancelBtn = document.createElement('button');
-            cancelBtn.className = 'btn btn-secondary';
-            cancelBtn.type = 'button';
-            cancelBtn.textContent = 'Отмена';
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'btn btn-danger';
-            deleteBtn.type = 'button';
-            deleteBtn.textContent = 'Удалить';
-
-            let settled = false;
-            const finish = confirmed => {
-                if (settled) return;
-                settled = true;
-                document.removeEventListener('keydown', onKeyDown);
-                overlay.classList.remove('active');
-                removeOverlayAfterMotion(overlay);
-                resolve(confirmed);
-            };
-            const onKeyDown = event => {
-                if (event.key === 'Escape') finish(false);
-            };
-            cancelBtn.addEventListener('click', () => finish(false));
-            deleteBtn.addEventListener('click', () => finish(true));
-            overlay.addEventListener('click', event => {
-                if (event.target === overlay) finish(false);
-            });
-            document.addEventListener('keydown', onKeyDown);
-            actions.append(cancelBtn, deleteBtn);
-            dialog.appendChild(actions);
-            document.body.appendChild(overlay);
-            requestAnimationFrame(() => {
-                overlay.classList.add('active');
-                cancelBtn.focus();
-            });
+        return ConfirmDialog.confirm({
+            title: `Удалить ${indexer.name}?`,
+            message: 'Jackett удалит индексер из настроенных источников. Скачанные файлы MediaPlayer не затрагиваются.',
+            confirmLabel: 'Удалить',
+            danger: true
         });
     }
 
@@ -2484,68 +2447,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function showPlaybackUpdateDialog(version) {
-        return new Promise((resolve) => {
-            const overlay = document.createElement('div');
-            overlay.className = 'unsaved-dialog-overlay update-playback-dialog-overlay';
-
-            const dialog = document.createElement('div');
-            dialog.className = 'unsaved-dialog';
-            dialog.setAttribute('role', 'dialog');
-            dialog.setAttribute('aria-modal', 'true');
-            dialog.setAttribute('aria-label', i18n.get('settings.updates.playback_warning_title'));
-
-            const title = document.createElement('h3');
-            title.textContent = i18n.get('settings.updates.playback_warning_title');
-
-            const text = document.createElement('p');
-            text.textContent = i18n.get('settings.updates.playback_warning')
-                .replace('{version}', version || 'latest');
-
-            const actions = document.createElement('div');
-            actions.className = 'unsaved-dialog-actions';
-
-            const declineBtn = document.createElement('button');
-            declineBtn.className = 'btn btn-secondary';
-            declineBtn.type = 'button';
-            declineBtn.textContent = i18n.get('settings.updates.playback_decline_button');
-
-            const confirmBtn = document.createElement('button');
-            confirmBtn.className = 'btn btn-primary';
-            confirmBtn.type = 'button';
-            confirmBtn.textContent = i18n.get('settings.updates.playback_confirm_button');
-
-            let settled = false;
-            const finish = (confirmed) => {
-                if (settled) return;
-                settled = true;
-                document.removeEventListener('keydown', onKeyDown);
-                overlay.classList.remove('active');
-                removeOverlayAfterMotion(overlay);
-                resolve(confirmed);
-            };
-            const onKeyDown = (event) => {
-                if (event.key === 'Escape') finish(false);
-            };
-
-            declineBtn.addEventListener('click', () => finish(false));
-            confirmBtn.addEventListener('click', () => finish(true));
-            overlay.addEventListener('click', (event) => {
-                if (event.target === overlay) finish(false);
-            });
-            document.addEventListener('keydown', onKeyDown);
-
-            actions.appendChild(declineBtn);
-            actions.appendChild(confirmBtn);
-            dialog.appendChild(title);
-            dialog.appendChild(text);
-            dialog.appendChild(actions);
-            overlay.appendChild(dialog);
-            document.body.appendChild(overlay);
-
-            requestAnimationFrame(() => {
-                overlay.classList.add('active');
-                confirmBtn.focus();
-            });
+        return ConfirmDialog.confirm({
+            title: i18n.get('settings.updates.playback_warning_title'),
+            message: i18n.get('settings.updates.playback_warning').replace('{version}', version || 'latest'),
+            confirmLabel: i18n.get('settings.updates.playback_confirm_button'),
+            cancelLabel: i18n.get('settings.updates.playback_decline_button')
         });
     }
 

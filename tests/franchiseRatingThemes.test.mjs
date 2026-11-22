@@ -82,14 +82,15 @@ for (const movie of plain) {
     assert.equal(getRatingTheme(movie), '', `${JSON.stringify(movie)} keeps the stars`);
 }
 
-// Every theme has its button markup, both pictures, and CSS that shows them.
-const css = fs.readFileSync(path.join(root, 'src/pages/movie-details/movie-details.css'), 'utf8');
+// Every theme has its button markup, both pictures, and CSS that shows them. The shared rating
+// dialog (film page and Ratings) owns these styles.
+const css = fs.readFileSync(path.join(root, 'src/shared/styles/rating-dialog.css'), 'utf8');
 for (const theme of RATING_THEMES) {
     assert.match(getRatingIconMarkup(theme), new RegExp(`class="[^"]*\\b${theme}-rating-icon\\b`), `${theme} has its own icon markup`);
     for (const state of ['active', 'inactive']) {
         const file = `src/shared/assets/icons/ratings/${theme}-rating-${state}.svg`;
         assert.match(fs.readFileSync(path.join(root, file), 'utf8'), /^<svg [^>]*viewBox=/, `${file} is an SVG picture`);
-        assert.ok(css.includes(`ratings/${theme}-rating-${state}.svg`), `movie-details.css shows ${file}`);
+        assert.ok(css.includes(`ratings/${theme}-rating-${state}.svg`), `rating-dialog.css shows ${file}`);
     }
 }
 assert.match(getRatingIconMarkup(''), /^<svg /, 'an ordinary film keeps the star');

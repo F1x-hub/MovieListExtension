@@ -240,7 +240,12 @@ class BookmarksPageManager {
 
         // Migration removed
 
-        // Event Delegation for Movie Cards
+        // Status and collection items in the card menu: the shared quick-action handler (on click)
+        if (typeof MovieCardActions !== 'undefined') {
+            this.cardActions = this.createCardActions().bind(this.elements.moviesGrid);
+        }
+
+        // Event Delegation for the remaining Movie Card actions
         this.elements.moviesGrid.addEventListener('mousedown', (e) => {
             // If it's not a left click, let the browser handle it (e.g. middle click for new tab)
             if (e.button !== 0) return;
@@ -255,24 +260,6 @@ class BookmarksPageManager {
             if (!movieId && action !== 'view-details') return; // movieId might be needed, check logic
 
             switch (action) {
-                case 'toggle-favorite':
-                    // If currently favorite (is-favorite="true"), remove. Else set to favorite.
-                    // Actually, we can just use the target's state or the movie's current state.
-                    // But simpler: just toggle to 'favorite' if not already, or remove if is.
-                    // However, we have handleStatusChange which takes newStatus.
-                    // If we are toggling, we need to know current state.
-                    // Let's check the button's data attribute or the local movie object.
-                    this.handleToggleAction(movieId, 'favorite', target);
-                    break;
-                case 'toggle-watching':
-                    this.handleToggleAction(movieId, 'watching', target);
-                    break;
-                case 'toggle-watchlist':
-                    this.handleToggleAction(movieId, 'plan_to_watch', target);
-                    break;
-                case 'toggle-watched':
-                    this.handleToggleAction(movieId, 'watched', target);
-                    break;
                 case 'remove-from-watching':
                     this.handleRemoveBookmark(movieId);
                     break; 
@@ -285,13 +272,6 @@ class BookmarksPageManager {
                 case 'remove-from-bookmarks':
                     this.handleRemoveBookmark(movieId);
                     break;
-                case 'toggle-collection': {
-                    const collectionId = target.dataset.collectionId;
-                    if (collectionId) {
-                        this.handleToggleCollection(movieId, collectionId, target);
-                    }
-                    break;
-                }
                 case 'resume-watching':
                     // Redirect to search page with autoplay=true
                     if (movieId) {
@@ -299,16 +279,6 @@ class BookmarksPageManager {
                     }
                     break;
             }
-        });
-
-        document.addEventListener('movie-card-status-change', async (e) => {
-            const { movieId, status } = e.detail;
-            await this.handleStatusChange(movieId, status);
-        });
-
-        document.addEventListener('movie-card-remove', async (e) => {
-            const { movieId } = e.detail;
-            await this.handleRemoveBookmark(movieId);
         });
 
 
@@ -341,221 +311,111 @@ class BookmarksPageManager {
         Utils.bindTabsAndMenus(document);
     }
 
-    async handleToggleAction(movieId, targetStatus, button) {
-        // Find current movie status
-        const movie = this.allBookmarks.find(m => m.movieId == movieId || m.id == movieId);
-        if (!movie) return;
-
-        if (movie.status === targetStatus) {
-            // If already in this status, remove it (toggle off)
-            await this.handleRemoveBookmark(movieId); // Or just set status to null if we supported that? usually remove.
-        } else {
-            // Set to new status
-            await this.handleStatusChange(movieId, targetStatus);
-            
-            // Optimistic button update could happen here but handleStatusChange does full re-render/update
-        }
+    /**
+     * Card menu quick actions. Bookmarks differs from Search and Ratings only here:
+     * removing asks first, and a film that leaves the open list fades out of it.
+     */
+    createCardActions() {
+        return new MovieCardActions({
+            getUser: () => this.currentUser,
+            getMovie: movieId => this.findBookmark(movieId),
+            getStatus: movieId => {
+                const bookmark = this.findBookmark(movieId);
+                return bookmark ? (bookmark.status || null) : undefined;
+            },
+            confirmRemove: () => this.confirmRemoveBookmark(),
+            onStatusChange: (movieId, status) => this.applyBookmarkStatus(movieId, status),
+            getCollectionService: () => this.collectionService || null,
+            getCollections: () => this.availableCollections,
+            onCollectionChange: (movieId, collectionId) => {
+                // The sidebar counts and an open collection read this list.
+                this.renderCustomCollections(this.availableCollections);
+                if (this.activeCollectionId === collectionId) this.applyFilters();
+            }
+        });
     }
 
-    async handleStatusChange(movieId, newStatus) {
-        if (!this.currentUser || !movieId) return;
-
-        try {
-            // Update in Firestore
-            await this.favoriteService.updateStatus(this.currentUser.uid, movieId, newStatus);
-            
-            // Update local data
-            const movie = this.allBookmarks.find(m => m.movieId == movieId || m.id == movieId);
-            if (movie) {
-                movie.status = newStatus;
-                movie.updatedAt = new Date(); // Optimistic update
-            }
-
-            // Update UI (counts)
-            this.updateCounts();
-            
-            // Update grid without full re-render
-            const card = this.elements.moviesGrid.querySelector(`[data-movie-id="${movieId}"]`);
-            if (card) {
-                const isFilteredOut = this.statusFilter !== 'all' && 
-                                     !this.statusFilter.startsWith('collection:') && 
-                                     this.statusFilter !== newStatus;
-                
-                if (isFilteredOut) {
-                    card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-                    card.style.opacity = '0';
-                    card.style.transform = 'scale(0.95)';
-                    setTimeout(() => {
-                        if (card && card.parentNode) card.remove();
-                        const visibleCards = this.elements.moviesGrid.querySelectorAll('.movie-card-component:not([style*="opacity: 0"])');
-                        if (visibleCards.length === 0) {
-                            this.elements.emptyState.style.display = 'flex';
-                            this.elements.moviesGrid.style.display = 'none';
-                        }
-                    }, 300);
-                } else {
-                    const btnActions = [
-                        { action: 'favorite', statusMatch: 'favorite', iconOn: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>', iconOff: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>' },
-                        { action: 'watching', statusMatch: 'watching', iconOn: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>', iconOff: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>' },
-                        { action: 'watched', statusMatch: 'watched', iconOn: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>', iconOff: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>' },
-                        { action: 'watchlist', statusMatch: 'plan_to_watch', iconOn: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>', iconOff: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>' }
-                    ];
-                    
-                    btnActions.forEach(item => {
-                        const btn = card.querySelector(`[data-action="toggle-${item.action}"]`);
-                        if (btn) {
-                            const isActive = newStatus === item.statusMatch;
-                            btn.style.backgroundColor = isActive ? '#c0c0c0' : '';
-                            btn.style.color = isActive ? '#000' : '';
-                            
-                            const textSpan = btn.querySelector('.mc-menu-item-text');
-                            if (textSpan) {
-                                textSpan.style.fontWeight = isActive ? '500' : '';
-                                if (window.i18n) {
-                                    textSpan.textContent = window.i18n.get(`movie_card.${isActive ? 'remove' : 'add'}_${item.action}`);
-                                }
-                            }
-                            
-                            const iconSpan = btn.querySelector('.mc-menu-item-icon');
-                            if (iconSpan) {
-                                iconSpan.innerHTML = isActive ? item.iconOn : item.iconOff;
-                            }
-                            
-                            const attrName = item.action === 'watchlist' ? 'data-is-in-watchlist' : `data-is-${item.action}`;
-                            btn.setAttribute(attrName, isActive.toString());
-                        }
-                    });
-                }
-            } else if (this.statusFilter === newStatus) {
-                this.applyFilters();
-            }
-            
-            // Show toast (if Utils available)
-            if (typeof Utils !== 'undefined') {
-                Utils.showToast(`Status updated to ${newStatus.replace('_', ' ')}`, 'success');
-            }
-        } catch (error) {
-            console.error('Failed to update status:', error);
-            if (typeof Utils !== 'undefined') {
-                Utils.showToast('Failed to update status', 'error');
-            }
-        }
+    findBookmark(movieId) {
+        const id = String(movieId);
+        return this.allBookmarks.find(m => String(m.movieId) === id || String(m.id) === id) || null;
     }
 
-    async handleRemoveBookmark(movieId) {
-        if (!this.currentUser || !movieId) return;
-        
-        const confirmed = await ConfirmDialog.confirm({
+    confirmRemoveBookmark() {
+        return ConfirmDialog.confirm({
             title: i18n.get('confirm_dialog.remove_bookmark_title'),
             message: i18n.get('confirm_dialog.remove_bookmark_message'),
             confirmLabel: i18n.get('confirm_dialog.remove'),
             danger: true
         });
-        if (!confirmed) return;
+    }
+
+    /** Keeps the local list, counts and grid in step after a saved status change (null = removed). */
+    applyBookmarkStatus(movieId, status) {
+        const id = String(movieId);
+        if (status === null) {
+            this.allBookmarks = this.allBookmarks.filter(m =>
+                String(m.movieId) !== id && String(m.kinopoiskId) !== id && String(m.id) !== id
+            );
+        } else {
+            const bookmark = this.findBookmark(movieId);
+            if (bookmark) {
+                bookmark.status = status;
+                bookmark.updatedAt = new Date();
+            }
+        }
+        this.updateCounts();
+
+        const card = this.elements.moviesGrid.querySelector(`.movie-card-component[data-movie-id="${CSS.escape(id)}"]`);
+        const inCollectionView = this.statusFilter.startsWith('collection:');
+        const leavesList = status === null || (this.statusFilter !== 'all' && !inCollectionView && this.statusFilter !== status);
+        if (card && leavesList) {
+            this.fadeOutCard(card);
+        } else if (!card && status !== null && this.statusFilter === status) {
+            this.applyFilters();
+        }
+    }
+
+    /** Fades a card out of the grid and shows the empty state when it was the last one. */
+    fadeOutCard(card) {
+        card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        card.style.opacity = '0';
+        card.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+            if (card.parentNode) card.remove();
+            const visibleCards = this.elements.moviesGrid.querySelectorAll('.movie-card-component:not([style*="opacity: 0"])');
+            if (visibleCards.length === 0) {
+                this.elements.emptyState.style.display = 'flex';
+                this.elements.moviesGrid.style.display = 'none';
+            }
+        }, 300);
+    }
+
+    /** The "Remove" menu items: asks, deletes the bookmark and drops the card. */
+    async handleRemoveBookmark(movieId) {
+        if (!this.currentUser || !movieId) return;
+        if (!(await this.confirmRemoveBookmark())) return;
 
         try {
             const success = await this.favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
             if (success) {
-                // Remove from local list
-                this.allBookmarks = this.allBookmarks.filter(m => 
-                    (m.movieId && String(m.movieId) !== String(movieId)) && 
-                    (m.kinopoiskId && String(m.kinopoiskId) !== String(movieId))
-                );
-                
-                // Update counts
-                this.updateCounts();
-                
-                const card = this.elements.moviesGrid.querySelector(`[data-movie-id="${movieId}"]`);
-                if (card) {
-                    card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-                    card.style.opacity = '0';
-                    card.style.transform = 'scale(0.95)';
-                    setTimeout(() => {
-                        if (card && card.parentNode) card.remove();
-                        const visibleCards = this.elements.moviesGrid.querySelectorAll('.movie-card-component:not([style*="opacity: 0"])');
-                        if (visibleCards.length === 0) {
-                            this.elements.emptyState.style.display = 'flex';
-                            this.elements.moviesGrid.style.display = 'none';
-                        }
-                    }, 300);
-                }
-                
-                if (typeof Utils !== 'undefined') Utils.showToast('Removed from bookmarks', 'success');
+                this.applyBookmarkStatus(movieId, null);
+                window.navigation?.updateCounts?.();
+                if (typeof Utils !== 'undefined') Utils.showToast(i18n.get('bookmarks.toast.removed'), 'success');
             }
         } catch (error) {
             console.error('Error removing bookmark:', error);
-            if (typeof Utils !== 'undefined') Utils.showToast('Error removing bookmark', 'error');
+            if (typeof Utils !== 'undefined') Utils.showToast(i18n.get('bookmarks.toast.remove_error'), 'error');
         }
     }
 
-    async handleToggleCollection(movieId, collectionId, buttonElement) {
-        if (!this.collectionService) return;
-        
-        // Optimistic UI update
-        const originalHtml = buttonElement.innerHTML;
-        const textSpan = buttonElement.querySelector('.mc-menu-item-text');
-        
-        try {
-            // Check if checkmark exists (it's a span with margin-left: auto)
-            // We can look for the specific content or style
-            let checkSpan = Array.from(buttonElement.children).find(child => child.classList?.contains('mc-collection-check') || child.textContent.includes('✓') || child.querySelector('svg'));
-            const isChecked = !!checkSpan;
-            
-            if (isChecked) {
-                checkSpan.remove();
-                if (textSpan) {
-                    textSpan.style.fontWeight = 'normal';
-                    textSpan.style.color = '';
-                }
-            } else {
-                const newCheck = document.createElement('span');
-                newCheck.className = 'mc-collection-check';
-                newCheck.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-                newCheck.style.marginLeft = 'auto';
-                newCheck.style.fontWeight = 'bold';
-                newCheck.style.color = 'var(--accent-color, #4CAF50)';
-                buttonElement.appendChild(newCheck);
-                
-                if (textSpan) {
-                    // Weight only: a fixed white vanished on the light theme's menu.
-                    textSpan.style.fontWeight = '500';
-                }
-            }
-
-            await this.collectionService.toggleMovieInCollection(collectionId, parseInt(movieId)); // ID type?
-            
-            // Update availableCollections cache? 
-            // The collection object in availableCollections needs update for renderGrid correctness on next render
-            const col = this.availableCollections.find(c => c.id === collectionId);
-            if (col) {
-                col.movieIds ||= [];
-                // Stored ids may be numbers or strings.
-                const idx = col.movieIds.findIndex(id => String(id) === String(movieId));
-                if (idx > -1) {
-                    col.movieIds.splice(idx, 1);
-                } else {
-                    col.movieIds.push(parseInt(movieId));
-                }
-                // The sidebar counts and an open collection read this list.
-                this.renderCustomCollections(this.availableCollections);
-                if (this.activeCollectionId === collectionId) this.applyFilters();
-            }
-
-            if (typeof Utils !== 'undefined') Utils.showToast(isChecked ? 'Removed from collection' : 'Added to collection', 'success');
-
-        } catch (error) {
-            console.error('Error toggling collection:', error);
-            // Revert UI
-            buttonElement.innerHTML = originalHtml;
-            if (typeof Utils !== 'undefined') Utils.showToast('Error updating collection', 'error');
-        }
-    }    async setupFirebase() {
+    async setupFirebase() {
         if (typeof firebaseManager === 'undefined') {
             throw new Error('Firebase Manager not available');
         }
         await firebaseManager.waitForAuthReady();
         this.currentUser = firebaseManager.getCurrentUser();
-        
+        this.signedOut = !this.currentUser;
+
         if (this.currentUser) {
             this.favoriteService = firebaseManager.getFavoriteService();
         }
@@ -565,14 +425,25 @@ class BookmarksPageManager {
             const user = e.detail?.user;
             if (!user) {
                 this.currentUser = null;
+                this.signedOut = true;
                 this.allBookmarks = [];
                 this.filteredBookmarks = [];
+                // Another account's collections must not stay on screen.
+                this.availableCollections = [];
+                this.renderCustomCollections([]);
+                this.closeCollectionMenu();
+                if (this.elements.collectionMenuBtn) this.elements.collectionMenuBtn.style.display = 'none';
                 this.updateCounts();
+                this.page.showContent();
                 this.applyFilters();
-                this.page.showError('Для просмотра закладок необходимо войти в аккаунт.');
             } else if (!this.currentUser || this.currentUser.uid !== user.uid) {
                 this.currentUser = user;
+                this.signedOut = false;
                 this.favoriteService = firebaseManager.getFavoriteService();
+                await this.loadCustomCollections();
+                if (this.activeCollectionId && this.elements.collectionMenuBtn) {
+                    this.elements.collectionMenuBtn.style.display = 'flex';
+                }
                 await this.loadBookmarks();
             }
         });
@@ -580,7 +451,9 @@ class BookmarksPageManager {
 
     async loadBookmarks() {
         if (!this.currentUser) {
-            this.page.showError('Для просмотра закладок необходимо войти в аккаунт.');
+            // The empty state carries the sign-in message (the page has no error screen).
+            this.page.showContent();
+            this.applyFilters();
             return;
         }
 
@@ -677,13 +550,18 @@ class BookmarksPageManager {
     renderCustomCollections(collections) {
         if (!this.elements.customCollectionsList) return;
 
+        // A collection opened from the address is chosen before sign-in finishes, when its
+        // name cannot be read yet; name the title once the list is here.
+        const open = this.activeCollectionId && collections.find(col => col.id === this.activeCollectionId);
+        if (open && this.elements.pageTitle) this.elements.pageTitle.textContent = open.name;
+
         this.elements.customCollectionsList.innerHTML = collections.map(col => {
             const iconHtml = CollectionService.renderIconHtml(col.icon, { size: 20 });
 
             return `
-                <button type="button" class="sidebar-item filter-choice collection-item ${this.activeCollectionId === col.id ? 'active is-active' : ''}" data-collection-id="${col.id}" aria-pressed="${this.activeCollectionId === col.id}">
+                <button type="button" class="sidebar-item filter-choice collection-item ${this.activeCollectionId === col.id ? 'active is-active' : ''}" data-collection-id="${this.escapeHtml(col.id)}" aria-pressed="${this.activeCollectionId === col.id}">
                     <span class="sidebar-icon">${iconHtml}</span>
-                    <span class="sidebar-label">${col.name}</span>
+                    <span class="sidebar-label">${this.escapeHtml(col.name)}</span>
                     <span class="sidebar-count">${col.movieIds?.length || 0}</span>
                 </button>
             `;
@@ -1209,6 +1087,7 @@ class BookmarksPageManager {
         grid.innerHTML = '';
 
         if (movies.length === 0) {
+            this.updateEmptyStateText();
             this.elements.emptyState.style.display = 'flex';
             this.elements.moviesGrid.style.display = 'none';
             return;
@@ -1350,6 +1229,22 @@ class BookmarksPageManager {
     }
 
 
+
+    /**
+     * A signed-out visitor is asked to sign in, an empty collection says so, and
+     * the other lists keep the bookmarks wording.
+     */
+    updateEmptyStateText() {
+        const state = this.elements.emptyState;
+        const title = state?.querySelector('h3');
+        const message = state?.querySelector('p');
+        if (!title || !message || typeof i18n === 'undefined') return;
+        let prefix = 'bookmarks.empty.';
+        if (this.signedOut) prefix = 'bookmarks.empty.signed_out_';
+        else if (this.statusFilter.startsWith('collection:')) prefix = 'bookmarks.empty.collection_';
+        title.textContent = i18n.get(`${prefix}title`);
+        message.textContent = i18n.get(`${prefix}message`);
+    }
 
     // Local showLoading/hideLoading removed in favor of this.page (PageStateManager)
 

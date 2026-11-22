@@ -17,7 +17,6 @@ const css = fs.readFileSync(path.join(root, 'src/shared/styles/admin.css'), 'utf
   'id="addProviderKeyModal"',
   'id="providerKeyForm"',
   'id="providerKeySecret"',
-  'id="providerKeyConfirmModal"',
 ].forEach((requiredMarkup) => {
   assert.ok(html.includes(requiredMarkup), `Missing provider key markup: ${requiredMarkup}`);
 });

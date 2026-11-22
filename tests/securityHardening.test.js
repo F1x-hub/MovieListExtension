@@ -83,7 +83,7 @@ assert.match(settingsHandler, /sender\.id !== chrome\.runtime\.id/);
 // Page escapers feed attribute values (alt=, title=, aria-label=), so they must escape quotes.
 // The textContent/innerHTML trick does not, and a display name with `"` broke out of alt="".
 for (const file of ['src/pages/search/search.js', 'src/pages/bookmarks/bookmarks.js',
-    'src/pages/collection/collection.js', 'src/shared/components/Navigation.js']) {
+    'src/shared/components/Navigation.js']) {
     const escaper = read(file).match(/\n {4}escapeHtml\(text\) \{[\s\S]*?\n {4}\}/);
     assert.ok(escaper, `${file}: escapeHtml method`);
     assert.doesNotMatch(escaper[0], /textContent/, `${file}: escapeHtml must be quote-safe`);

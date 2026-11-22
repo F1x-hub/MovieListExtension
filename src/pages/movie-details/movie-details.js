@@ -58,10 +58,6 @@ class MovieDetailsManager {
         this.renderEnrichmentSnapshot = null;
         // Provider ratings other pages already found, read once at page start.
         this.cardRatingsSnapshot = null;
-        this.currentRating = 0;
-        this.originalRating = 0;
-        this.isReviewVisible = false;
-        this.currentRatingId = null;
         this.currentPersonalRating = null;
         this.currentSeriesEpisodeRatings = {
             exists: false,
@@ -70,9 +66,6 @@ class MovieDetailsManager {
         this.episodeRatingsPermissionDeniedMovieId = null;
         this.episodeRatingUiVersion = 0;
         this.isEpisodeRatingMutationPending = false;
-        this.originalRatingComment = '';
-        this.originalRatingReview = '';
-        this.ratingReviewTouched = false;
         this.activeReviewReaderRating = null;
         this.parserRegistry = window.parserRegistry || new ParserRegistry();
         this.progressService = new ProgressService();
@@ -296,7 +289,6 @@ class MovieDetailsManager {
 
         this.setupEventListeners();
         this.setupCommentReactionListeners();
-        this.initSelectionPopup();
         this.init().catch(error => {
             console.error('[MovieDetails] Initialization failed:', error);
             this.page.showError(error, { context: { operation: 'movie-details-init' } });
@@ -354,23 +346,7 @@ class MovieDetailsManager {
             retryLoadBtn: document.getElementById('retryLoadBtn'),
             backToSearchBtn: document.getElementById('backToSearchBtn'),
             
-            // Rating Modal
-            ratingModal: document.getElementById('ratingModal'),
-            ratingMoviePoster: document.getElementById('ratingMoviePoster'),
-            ratingMovieTitle: document.getElementById('ratingMovieTitle'),
-            ratingMovieMeta: document.getElementById('ratingMovieMeta'),
-            ratingStars: document.getElementById('ratingStars'),
-            ratingStatus: document.getElementById('ratingStatus'),
-            writeReviewBtn: document.getElementById('writeReviewBtn'),
-            reviewContainer: document.getElementById('reviewContainer'),
-            ratingComment: document.getElementById('ratingComment'),
-            charCount: document.getElementById('charCount'),
-            ratingReview: document.getElementById('ratingReview'),
-            reviewCharCount: document.getElementById('reviewCharCount'),
-            ratingReviewError: document.getElementById('ratingReviewError'),
-            saveRatingBtn: document.getElementById('saveRatingBtn'),
-            cancelRatingBtn: document.getElementById('cancelRatingBtn'),
-            ratingModalClose: document.getElementById('ratingModalClose'),
+            // Review reader (the rating dialog is the shared RatingDialog)
             reviewReaderModal: document.getElementById('reviewReaderModal'),
             reviewReaderClose: document.getElementById('reviewReaderClose'),
             reviewReaderCloseAction: document.getElementById('reviewReaderCloseAction'),
@@ -474,18 +450,6 @@ class MovieDetailsManager {
             this.elements.backToSearchBtn.addEventListener('click', () => this.goBackToSearch());
         }
         
-        // Rating Modal
-        if (this.elements.ratingModalClose) {
-            this.elements.ratingModalClose.addEventListener('click', () => this.closeRatingModal());
-        }
-        if (this.elements.cancelRatingBtn) {
-            this.elements.cancelRatingBtn.addEventListener('click', () => this.closeRatingModal());
-        }
-        if (this.elements.ratingModal) {
-            this.elements.ratingModal.addEventListener('mousedown', (e) => {
-                if (e.target === this.elements.ratingModal) this.closeRatingModal();
-            });
-        }
         if (this.elements.reviewReaderClose) {
             this.elements.reviewReaderClose.addEventListener('click', () => this.closeReviewReader());
         }
@@ -499,94 +463,6 @@ class MovieDetailsManager {
         }
         if (this.elements.reviewReaderReport) {
             this.elements.reviewReaderReport.addEventListener('click', () => this.reportActiveReview());
-        }
-        
-        // Rating Stars
-        if (this.elements.ratingStars) {
-            this.elements.ratingStars.addEventListener('pointerover', (e) => {
-                const btn = e.target.closest('.star-rating-btn');
-                if (btn) {
-                    if (this.proPlayerEnabled && this.watchRoomController?.room && !['owner', 'controller'].includes(this.watchRoomController.role)) {
-                        e.preventDefault(); return;
-                    }
-                    const rating = parseInt(btn.dataset.rating);
-                    this.updateStarVisuals(rating, true);
-                }
-            });
-
-            this.elements.ratingStars.addEventListener('pointerleave', () => {
-                this.updateStarVisuals(this.currentRating, false);
-            });
-
-            this.elements.ratingStars.addEventListener('focusin', (e) => {
-                const btn = e.target.closest('.star-rating-btn');
-                if (btn) this.updateStarVisuals(parseInt(btn.dataset.rating), true);
-            });
-
-            this.elements.ratingStars.addEventListener('focusout', (e) => {
-                if (e.target.closest('.star-rating-btn')) {
-                    this.updateStarVisuals(this.currentRating, false);
-                }
-            });
-
-            this.elements.ratingStars.addEventListener('keydown', (e) => {
-                const btn = e.target.closest('.star-rating-btn');
-                if (!btn) return;
-
-                const buttons = [...this.elements.ratingStars.querySelectorAll('.star-rating-btn')];
-                const index = buttons.indexOf(btn);
-                const targetIndex = {
-                    ArrowLeft: Math.max(0, index - 1),
-                    ArrowDown: Math.max(0, index - 1),
-                    ArrowRight: Math.min(buttons.length - 1, index + 1),
-                    ArrowUp: Math.min(buttons.length - 1, index + 1),
-                    Home: 0,
-                    End: buttons.length - 1
-                }[e.key];
-
-                if (targetIndex === undefined) return;
-                e.preventDefault();
-                buttons[targetIndex].focus();
-            });
-
-            this.elements.ratingStars.addEventListener('click', (e) => {
-                const btn = e.target.closest('.star-rating-btn');
-                if (btn) {
-                    const rating = parseInt(btn.dataset.rating);
-                    this.currentRating = rating;
-                    this.updateStarVisuals(rating, false);
-                }
-            });
-        }
-
-        if (this.elements.writeReviewBtn) {
-            this.elements.writeReviewBtn.addEventListener('click', () => {
-                this.isReviewVisible = !this.isReviewVisible;
-                this.elements.reviewContainer.style.display = this.isReviewVisible ? 'grid' : 'none';
-                this.elements.reviewContainer.classList.toggle('is-open', this.isReviewVisible);
-                this.elements.reviewContainer.inert = !this.isReviewVisible;
-                this.elements.writeReviewBtn.setAttribute('aria-expanded', String(this.isReviewVisible));
-                if (this.isReviewVisible) {
-                    this.elements.ratingComment.focus();
-                }
-            });
-        }
-
-        if (this.elements.ratingComment && this.elements.charCount) {
-            this.elements.ratingComment.addEventListener('input', (e) => {
-                this.elements.charCount.textContent = this.getRatingTextLength(e.target.value);
-            });
-        }
-        if (this.elements.ratingReview) {
-            this.elements.ratingReview.addEventListener('input', (e) => {
-                this.ratingReviewTouched = true;
-                this.elements.reviewCharCount.textContent = this.getRatingTextLength(e.target.value);
-                this.clearRatingReviewError();
-            });
-        }
-        
-        if (this.elements.saveRatingBtn) {
-            this.elements.saveRatingBtn.addEventListener('click', () => this.saveRating());
         }
         this.elements.movieDetailsContainer?.addEventListener('keydown', event => this.handleEpisodeRatingKeydown(event));
         this.elements.movieDetailsContainer?.addEventListener('keydown', event => this.handleSeasonsBrowserKeydown(event));
@@ -1048,7 +924,6 @@ class MovieDetailsManager {
 
         this.setupTheNumbersChartTooltip();
         this.setupImageErrorHandlers();
-        this.initSelectionPopup();
 
         // Global spoiler reveal logic
         if (typeof Utils !== 'undefined') {
@@ -1533,24 +1408,6 @@ class MovieDetailsManager {
                 }
             });
         }
-    }
-
-    loadCachedMovieImmediately(movieId) {
-        try {
-            const localKey = `kp_movie_${movieId}`;
-            const localData = localStorage.getItem(localKey);
-            if (localData) {
-                const movie = JSON.parse(localData);
-                // console.log('MovieDetails: Loaded from instant cache', movieId);
-                // Render immediately. displayMovieDetails handles missing currentUser gracefully.
-                this.displayMovieDetails(movie);
-                this.page.hideLoader(); 
-                return true;
-            }
-        } catch (e) {
-            console.warn('MovieDetails: Failed to load instant cache', e);
-        }
-        return false;
     }
 
     async loadSpeculativeCachedMovie(movieId) {
@@ -2404,10 +2261,6 @@ class MovieDetailsManager {
                     ? this.formatMovieDetailsText('movie_details.personal_rating', { rating: score })
                     : i18n.get('movie_details.rate_title');
             }
-        }
-        // While the dialog is open this is the user's choice, not the stored rating.
-        if (!this.isDialogShown(this.elements.ratingModal)) {
-            this.currentRating = Number(rating?.rating) || 0;
         }
         this.updateSeriesEpisodeRatingUI();
     }
@@ -3854,8 +3707,8 @@ class MovieDetailsManager {
         if (this.isVideoModalOpen) {
             try { this.closeVideoModal(); } catch { /* ignore */ }
         }
-        this.ratingReviewTouched = false;
-        this.currentRating = 0;
+        // The dialog belongs to the film that is being left.
+        this.closeRatingModal?.();
     }
 
     capturePageContext(movie = this.selectedMovie) {
@@ -3986,9 +3839,9 @@ class MovieDetailsManager {
         });
         stack.register('rating', {
             order: 70,
-            isOpen: () => this.isDialogShown(this.elements.ratingModal),
+            isOpen: () => this.isRatingDialogOpen(),
             close: () => this.closeRatingModal(),
-            getFocusContainer: () => this.elements.ratingModal
+            getFocusContainer: () => window.RatingDialog?.instance?.getElement() || null
         });
         stack.register('video-player', {
             order: 80,
@@ -8280,19 +8133,6 @@ class MovieDetailsManager {
         this.getPlayerModal().restore();
     }
 
-    async reuseCachedPlayer(movieId) {
-        const registryMovieId = String(movieId);
-        // Find the first initialized parser entry for this movie in the registry
-        const parserId = Object.keys(this.playerRegistry).find(pid => {
-            const entry = this.playerRegistry[pid];
-            return entry && entry.movieId === registryMovieId && entry.initialized;
-        });
-
-        if (!parserId) return false;
-
-        return this.mountPlayer(parserId, registryMovieId);
-    }
-
     destroyPlayer() {
         this.beginSourceSwitchRequest();
         this.stopTorrentProgressMonitoring();
@@ -10050,15 +9890,6 @@ class MovieDetailsManager {
         return this.loadParserSource('seasonvar');
     }
 
-    /** @deprecated Use parser.renderPlayer() instead */
-    async renderSeasonvarPlayer(episodes, translations) {
-        const parser = this.parserRegistry.get('seasonvar');
-        if (parser) {
-            const sources = episodes.map(ep => ({ name: ep.title, url: ep.url, type: 'video', subtitle: ep.subtitle }));
-            await parser.renderPlayer(this.elements.videoContainer, sources, { translations });
-        }
-    }
-
     /**
      * @param {string} url What the frame loads.
      * @param {object} [options]
@@ -10371,162 +10202,6 @@ class MovieDetailsManager {
 
         // player-cleaner is the single owner of native player controls.
         if (video.isConnected) video.dispatchEvent(new Event('extension-player-source-ready', { bubbles: true }));
-    }
-
-    setupCustomControls(video, wrapper) {
-
-        const playPauseBtn = wrapper.querySelector('#playPauseBtn');
-        const progressBarContainer = wrapper.querySelector('#progressBarContainer');
-        const progressBar = wrapper.querySelector('#progressBar');
-        const currentTimeEl = wrapper.querySelector('#currentTime');
-        const durationEl = wrapper.querySelector('#duration');
-        const pipBtn = wrapper.querySelector('#pipBtn');
-        const volumeBtn = wrapper.querySelector('#volumeBtn');
-        const volumeSlider = wrapper.querySelector('#volumeSlider');
-        const fullscreenBtn = wrapper.querySelector('#fullscreenBtn');
-
-        // Play/Pause
-        const togglePlay = () => {
-            if (video.paused || video.ended) {
-                video.play();
-                playPauseBtn.innerHTML = Icons.PAUSE;
-                wrapper.classList.remove('paused');
-            } else {
-                video.pause();
-                playPauseBtn.innerHTML = Icons.PLAY;
-                wrapper.classList.add('paused');
-            }
-        };
-
-        playPauseBtn.addEventListener('click', togglePlay);
-        video.addEventListener('click', togglePlay);
-        
-        video.addEventListener('play', () => {
-             playPauseBtn.innerHTML = Icons.PAUSE;
-             wrapper.classList.remove('paused');
-        });
-        video.addEventListener('pause', () => {
-             playPauseBtn.innerHTML = Icons.PLAY;
-             wrapper.classList.add('paused');
-        });
-
-        // PiP Listeners for auto-minimize
-        video.addEventListener('enterpictureinpicture', () => {
-            this.minimizePlayer(false); // don't pause
-        });
-
-        video.addEventListener('leavepictureinpicture', () => {
-            this.restorePlayer();
-        });
-
-        // Time Update & Progress
-        video.addEventListener('timeupdate', () => {
-            if (!video.duration) return;
-            const progress = (video.currentTime / video.duration) * 100;
-            progressBar.style.width = `${progress}%`;
-            currentTimeEl.textContent = this.formatTime(video.currentTime);
-            durationEl.textContent = this.formatTime(video.duration);
-        });
-
-        video.addEventListener('loadedmetadata', () => {
-            durationEl.textContent = this.formatTime(video.duration);
-        });
-
-        // Seek
-        progressBarContainer.addEventListener('click', (e) => {
-            const rect = progressBarContainer.getBoundingClientRect();
-            const pos = (e.clientX - rect.left) / rect.width;
-            video.currentTime = pos * video.duration;
-        });
-
-        // Volume
-        let lastVolume = 1;
-        volumeSlider.addEventListener('input', (e) => {
-            const val = parseFloat(e.target.value);
-            video.volume = val;
-            video.muted = val === 0;
-            updateVolumeIcon(val);
-        });
-
-        volumeBtn.addEventListener('click', () => {
-            if (video.muted || video.volume === 0) {
-                video.muted = false;
-                video.volume = lastVolume || 1;
-                volumeSlider.value = lastVolume || 1;
-            } else {
-                lastVolume = video.volume;
-                video.muted = true;
-                video.volume = 0;
-                volumeSlider.value = 0;
-            }
-            updateVolumeIcon(video.volume);
-        });
-
-        const updateVolumeIcon = (vol) => {
-            if (video.muted || vol === 0) volumeBtn.innerHTML = Icons.VOLUME_MUTE;
-            else volumeBtn.innerHTML = Icons.VOLUME_HIGH;
-        };
-
-        // Picture-in-Picture
-        if (document.pictureInPictureEnabled) {
-            pipBtn.addEventListener('click', async () => {
-                try {
-                    if (document.pictureInPictureElement) {
-                        await document.exitPictureInPicture();
-                    } else {
-                        await video.requestPictureInPicture();
-                    }
-                } catch (error) {
-                    console.error('PiP Error:', error);
-                }
-            });
-
-            video.addEventListener('enterpictureinpicture', () => {
-                pipBtn.classList.add('active');
-            });
-
-            video.addEventListener('leavepictureinpicture', () => {
-                pipBtn.classList.remove('active');
-            });
-        } else {
-            pipBtn.style.display = 'none';
-        }
-
-        // Fullscreen
-        fullscreenBtn.addEventListener('click', () => {
-            if (!document.fullscreenElement) {
-                wrapper.requestFullscreen().catch(err => {
-                    console.error(`Error attempting to enable fullscreen: ${err.message}`);
-                });
-            } else {
-                document.exitFullscreen();
-            }
-        });
-
-        document.addEventListener('fullscreenchange', () => {
-            if (document.fullscreenElement) {
-                fullscreenBtn.innerHTML = Icons.FULLSCREEN_EXIT;
-            } else {
-                fullscreenBtn.innerHTML = Icons.FULLSCREEN;
-            }
-        });
-
-        // Auto-hide controls
-        let timeout;
-        const resetTimer = () => {
-            wrapper.classList.remove('idle');
-            wrapper.style.cursor = 'default';
-            clearTimeout(timeout);
-            if (!video.paused) {
-                timeout = setTimeout(() => {
-                    wrapper.classList.add('idle');
-                    wrapper.style.cursor = 'none';
-                }, 3000);
-            }
-        };
-
-        wrapper.addEventListener('mousemove', resetTimer);
-        wrapper.addEventListener('click', resetTimer);
     }
 
     renderSimplePlayer() {
@@ -11061,10 +10736,6 @@ class MovieDetailsManager {
         }
     }
 
-    async loadTrailer(movieId, isSeries = false) {
-        return this.loadTrailerFallback(movieId, isSeries);
-    }
-
     renderTrailerBlock(trailer, source = 'TMDB_STRUCTURED') {
         if (!trailer) return;
         const actionContainer = this.elements.movieDetailsContainer?.querySelector('.movie-actions-container');
@@ -11246,14 +10917,6 @@ class MovieDetailsManager {
         }
     }
 
-    openTrailerModal(trailer) {
-        this.openVideoModal(trailer);
-    }
-
-    openYouTubeModal(key, title) {
-        this.openVideoModal({ provider: 'YouTube', key, name: title });
-    }
-
     closeTrailerModal() {
         this.youtubeTitleRequestToken = null;
         if (this.elements.trailerModal) {
@@ -11318,14 +10981,6 @@ class MovieDetailsManager {
         } catch (error) {
             console.error('[MovieDetails] Error in sequel fallback:', error);
             this.showSequelPlaceholder(img);
-        }
-    }
-
-    showFrameAtIndex(frames, index) {
-        if (!frames || !frames.length) return;
-        const frameUrls = frames.map(f => typeof f === 'string' ? f : (f.url || f.previewUrl || '')).filter(Boolean);
-        if (typeof window.ImageLightbox !== 'undefined') {
-            window.ImageLightbox.show(frameUrls, index);
         }
     }
 
@@ -11742,16 +11397,6 @@ class MovieDetailsManager {
             const tabBtn = document.querySelector('.tab-btn[data-tab="seasons"]');
             if (tabBtn) tabBtn.style.display = 'none';
         }
-    }
-
-    async loadSeasons(movieId) {
-        if (this.selectedMovie && (
-            (Array.isArray(this.selectedMovie.seasons) && this.selectedMovie.seasons.length > 0) ||
-            (Array.isArray(this.selectedMovie.seasonsInfo) && this.selectedMovie.seasonsInfo.length > 0)
-        )) {
-            return this.resolveAndRenderSeasons(this.selectedMovie);
-        }
-        return this.loadSeasonsFallback(movieId);
     }
 
     formatDate(dateStr) {

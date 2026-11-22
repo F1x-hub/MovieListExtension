@@ -1,8 +1,8 @@
 /**
  * User ratings and reviews on Movie Details: the live ratings list and its
  * Firestore listener, review cards and the review reader, comment reactions,
- * the rating dialog (stars, review text, save and delete) and the text
- * selection popup that wraps spoilers in a review.
+ * deleting a rating, and this page's side of the shared rating dialog
+ * (src/shared/components/RatingDialog.js): the film, its franchise icons and the write.
  *
  * Strangler step: methods moved verbatim from movie-details.js and installed onto
  * MovieDetailsManager.prototype by installMovieDetailsUserRatings(); they reach page state and
@@ -860,10 +860,19 @@ class MovieDetailsUserRatingsMethods {
         }
     }
 
-    // Rating Modal Methods
+    // Rating dialog: the shared RatingDialog (src/shared/components/RatingDialog.js).
+    // This page gives it the film, the franchise icons, the fresh read and the write.
+    getRatingDialog() {
+        return global.RatingDialog.shared();
+    }
+
+    isRatingDialogOpen() {
+        return Boolean(global.RatingDialog?.instance?.isOpen());
+    }
+
     async showRatingModal(movie) {
-        if (this.isSavingRating) return;
-        this.setRatingSaving(false);
+        const dialog = this.getRatingDialog();
+        if (dialog.isSaving()) return;
         this.selectedMovie = movie;
         const currentUser = firebaseManager.getCurrentUser();
         if (!currentUser) {
@@ -876,147 +885,24 @@ class MovieDetailsUserRatingsMethods {
         }
         this.currentUser = currentUser;
 
-        this.elements.ratingMoviePoster.src = movie.posterUrl || '/src/shared/assets/icons/app/icon48.png';
-        this.elements.ratingMovieTitle.textContent = movie.name;
-        const genresStr = typeof Utils !== 'undefined' && Utils.formatGenres ? Utils.formatGenres(movie.genres, 3) : (Array.isArray(movie.genres) ? movie.genres.slice(0, 3).map(g => (typeof g === 'object' && g ? (g.name || g.genre || '') : g)).filter(Boolean).join(', ') : (movie.genres || ''));
-        const metaParts = [];
-        if (movie.year) metaParts.push(movie.year);
-        if (genresStr) metaParts.push(genresStr);
-        this.elements.ratingMovieMeta.textContent = metaParts.join(' • ');
-
-        this.elements.ratingStars.innerHTML = '';
         const ratingTheme = getRatingTheme(movie);
-        const ratingIcon = getRatingIconMarkup(ratingTheme);
-
-        for (let i = 1; i <= 10; i++) {
-            const btn = document.createElement('button');
-            btn.className = ratingTheme ? `star-rating-btn ${ratingTheme}-rating-btn` : 'star-rating-btn';
-            btn.dataset.rating = i;
-            btn.type = 'button';
-            btn.setAttribute('aria-label', `Оценить на ${i} из 10`);
-            btn.setAttribute('aria-pressed', 'false');
-            btn.innerHTML = ratingIcon;
-            this.elements.ratingStars.appendChild(btn);
-        }
-
-        // Open at once with what the page already knows. The read below only
-        // confirms it, so a press never waits for the network.
-        const knownRating = this.currentPersonalRating;
-        this.applyRatingToDialog(knownRating);
-        this.openAccessibleDialog(this.elements.ratingModal);
-
-        const load = this.beginRatingDialogLoad();
-        const freshRating = await firebaseManager.getRatingService()
-            .getRating(currentUser.uid, movie.kinopoiskId)
-            .catch(() => null);
-        // Closed or reopened meanwhile: the reply belongs to a dialog that is gone.
-        if (this.ratingDialogLoad !== load) return;
-        this.endRatingDialogLoad();
-        // getRating reports a failed read as null, which must not erase a known rating.
-        this.applyRatingToDialog(freshRating || knownRating);
-    }
-
-    applyRatingToDialog(existingRating) {
-        this.currentRatingId = existingRating?.id || null;
-        this.currentPersonalRating = existingRating || null;
-        if (existingRating) {
-            this.currentRating = existingRating.rating;
-            this.originalRating = Number(existingRating.rating) || 0;
-            this.updateStarVisuals(this.currentRating, false);
-            const normalizedComment = Utils.normalizeRatingComment(existingRating.comment);
-            const normalizedReview = this.normalizeReviewForDisplay(existingRating.review);
-            this.elements.ratingComment.value = normalizedComment;
-            this.elements.charCount.textContent = this.getRatingTextLength(normalizedComment);
-            this.elements.ratingReview.value = normalizedReview;
-            this.elements.reviewCharCount.textContent = this.getRatingTextLength(normalizedReview);
-            this.originalRatingComment = normalizedComment;
-            this.originalRatingReview = normalizedReview;
-            this.ratingReviewTouched = false;
-            this.clearRatingReviewError();
-            this.isReviewVisible = Boolean(normalizedComment || normalizedReview);
-            this.elements.reviewContainer.style.display = this.isReviewVisible ? 'grid' : 'none';
-            this.elements.reviewContainer.classList.toggle('is-open', this.isReviewVisible);
-            this.elements.reviewContainer.inert = !this.isReviewVisible;
-            this.elements.writeReviewBtn?.setAttribute('aria-expanded', String(this.isReviewVisible));
-        } else {
-            this.currentRating = 0;
-            this.originalRating = 0;
-            this.updateStarVisuals(0, false);
-            this.elements.ratingComment.value = '';
-            this.elements.charCount.textContent = '0';
-            this.elements.ratingReview.value = '';
-            this.elements.reviewCharCount.textContent = '0';
-            this.currentRatingId = null;
-            this.originalRatingComment = '';
-            this.originalRatingReview = '';
-            this.ratingReviewTouched = false;
-            this.clearRatingReviewError();
-            this.isReviewVisible = false;
-            this.elements.reviewContainer.style.display = 'none';
-            this.elements.reviewContainer.classList.remove('is-open');
-            this.elements.reviewContainer.inert = true;
-            this.elements.writeReviewBtn?.setAttribute('aria-expanded', 'false');
-        }
-    }
-
-    /**
-     * Until the fresh read answers, the choice stays locked: it could be replaced
-     * by a rating changed in another tab, and saving would overwrite that one.
-     * @returns {Object} Identifies this load, so a late reply can tell it is stale
-     */
-    beginRatingDialogLoad() {
-        clearTimeout(this.ratingLoadingHintTimer);
-        const load = {};
-        this.ratingDialogLoad = load;
-        const body = this.elements.ratingModal?.querySelector('.rating-modal-body');
-        if (body) body.inert = true;
-        this.elements.saveRatingBtn?.setAttribute('aria-disabled', 'true');
-        // Like other loaders, the hint waits 150ms so a quick read never flashes it.
-        this.ratingLoadingHintTimer = setTimeout(() => {
-            if (!this.elements.ratingStatus) return;
-            this.elements.ratingStatus.textContent = i18n.get('movie_details.rating_loading');
-            this.elements.ratingStatus.dataset.state = 'loading';
-        }, 150);
-        return load;
-    }
-
-    endRatingDialogLoad() {
-        clearTimeout(this.ratingLoadingHintTimer);
-        this.ratingDialogLoad = null;
-        const body = this.elements.ratingModal?.querySelector('.rating-modal-body');
-        if (body) body.inert = false;
-        this.elements.saveRatingBtn?.removeAttribute('aria-disabled');
+        dialog.open({
+            movie,
+            theme: ratingTheme,
+            iconMarkup: getRatingIconMarkup(ratingTheme),
+            known: this.currentPersonalRating,
+            load: () => firebaseManager.getRatingService().getRating(currentUser.uid, movie.kinopoiskId),
+            onLoaded: rating => { this.currentPersonalRating = rating || null; },
+            save: request => this.saveRating(movie, request),
+            onSaved: () => this.refreshAfterRatingSave(movie)
+        });
     }
 
     closeRatingModal() {
-        // A write cannot be recalled, so the dialog stays until it settles.
-        if (this.isSavingRating) return;
-        this.endRatingDialogLoad();
-        this.closeAccessibleDialog(this.elements.ratingModal);
-        this.currentRating = 0;
+        return global.RatingDialog?.instance?.close() || false;
     }
 
-    /**
-     * While a rating is being written the dialog shows it and cannot be edited
-     * or dismissed, so what was saved is always what the user last saw.
-     * @param {boolean} saving
-     */
-    setRatingSaving(saving) {
-        this.isSavingRating = saving;
-        const { saveRatingBtn, cancelRatingBtn, ratingModalClose, ratingModal } = this.elements;
-        if (saveRatingBtn) {
-            saveRatingBtn.disabled = saving;
-            saveRatingBtn.classList.toggle('btn--pending', saving);
-            saveRatingBtn.setAttribute('aria-busy', String(saving));
-        }
-        if (cancelRatingBtn) cancelRatingBtn.disabled = saving;
-        if (ratingModalClose) ratingModalClose.disabled = saving;
-        const body = ratingModal?.querySelector('.rating-modal-body');
-        if (body) body.inert = saving;
-    }
-
-    async saveRating() {
-        if (this.isSavingRating || this.ratingDialogLoad) return;
+    async saveRating(movie, request) {
         const currentUser = firebaseManager.getCurrentUser();
         if (!currentUser) {
             this.page.showError(createAppError('AUTH_REQUIRED', {
@@ -1024,70 +910,26 @@ class MovieDetailsUserRatingsMethods {
                 retryable: false,
                 context: { operation: 'rating-save' }
             }));
-            return;
+            throw new Error('Signed out before the rating was saved');
         }
+        const userProfile = await firebaseManager.getUserService().getUserProfile(currentUser.uid);
+        await global.RatingDialog.write(firebaseManager.getRatingService(), {
+            uid: currentUser.uid,
+            displayName: userProfile?.displayName || currentUser.displayName || currentUser.email,
+            photoURL: userProfile?.photoURL || '',
+            movie
+        }, request);
+    }
 
-        if (!this.currentRating || this.currentRating < 1) {
-            if (typeof Utils !== 'undefined') Utils.showToast('Выберите оценку', 'warning');
-            return;
-        }
-
-        const comment = Utils.normalizeRatingComment(this.elements.ratingComment.value);
-        const review = this.normalizeReviewForDisplay(this.elements.ratingReview?.value || '');
-        if (this.getRatingTextLength(review) > 5000) {
-            this.showRatingReviewError('Рецензия не должна превышать 5000 символов.');
-            return;
-        }
-
-        this.setRatingSaving(true);
-        try {
-            const ratingService = firebaseManager.getRatingService();
-            const userService = firebaseManager.getUserService();
-            const userProfile = await userService.getUserProfile(currentUser.uid);
-            const displayName = userProfile?.displayName || currentUser.displayName || currentUser.email;
-            const commentChanged = comment !== this.originalRatingComment;
-            const reviewChanged = review !== this.originalRatingReview;
-
-            if (this.currentRatingId && this.originalRating === Number(this.currentRating) && (commentChanged || reviewChanged)) {
-                const patch = {};
-                if (commentChanged) patch.comment = comment;
-                if (reviewChanged || this.ratingReviewTouched) patch.review = review;
-                await ratingService.updateRatingText(currentUser.uid, this.currentRatingId, patch);
-            } else if (Number(this.currentRating) !== Number(this.originalRating) || !this.currentRatingId) {
-                const reviewOptions = reviewChanged || this.ratingReviewTouched ? { review } : {};
-                await ratingService.addOrUpdateRating(
-                    currentUser.uid, displayName, userProfile?.photoURL || '',
-                    this.selectedMovie.kinopoiskId, this.currentRating,
-                    comment, this.selectedMovie, reviewOptions
-                );
-            }
-        } catch (error) {
-            console.error('Error saving rating:', error);
-            this.setRatingSaving(false);
-            this.elements.saveRatingBtn?.focus();
-            // A toast, not the review field's error slot: that slot sits inside a
-            // section that is usually collapsed, where nobody would see it.
-            if (typeof Utils !== 'undefined') Utils.showToast(i18n.get('ratings.toast.rating_save_error'), 'error');
-            return;
-        }
-
-        // The buttons keep their state while the dialog closes, so they do not
-        // visibly flip back; showRatingModal resets them on the next opening.
-        this.isSavingRating = false;
-        this.closeRatingModal();
-        if (typeof Utils !== 'undefined') Utils.showToast('Оценка сохранена!', 'success');
+    async refreshAfterRatingSave(movie) {
+        if (typeof Utils !== 'undefined') Utils.showToast(i18n.get('rating_dialog.saved'), 'success');
         try {
             // The ratings listener patches the review list live; a full page reload
             // would reset scroll and drop render-bound enrichments.
-            await this.loadPersonalState(this.selectedMovie.kinopoiskId);
+            await this.loadPersonalState(movie.kinopoiskId);
         } catch (error) {
             console.error('Error refreshing personal state after saving a rating:', error);
         }
-    }
-
-    getRatingTextLength(value) {
-        const config = typeof globalThis !== 'undefined' ? globalThis.RatingConfig : null;
-        return config?.getLength ? config.getLength(value) : Array.from(String(value || '').replace(/\r\n?/g, '\n')).length;
     }
 
     normalizeReviewForDisplay(value) {
@@ -1095,195 +937,6 @@ class MovieDetailsUserRatingsMethods {
             return Utils.normalizeRatingReview(value);
         }
         return typeof value === 'string' ? value.replace(/\r\n?/g, '\n').trim() : '';
-    }
-
-    showRatingReviewError(message) {
-        const error = this.elements.ratingReviewError;
-        if (!error) return;
-        error.textContent = message;
-        error.hidden = false;
-        this.elements.ratingReview?.setAttribute('aria-invalid', 'true');
-    }
-
-    clearRatingReviewError() {
-        const error = this.elements.ratingReviewError;
-        if (!error) return;
-        error.textContent = '';
-        error.hidden = true;
-        this.elements.ratingReview?.removeAttribute('aria-invalid');
-    }
-
-    updateStarVisuals(rating, isHover) {
-        const buttons = this.elements.ratingStars.querySelectorAll('.star-rating-btn');
-        buttons.forEach(btn => {
-            const starRating = parseInt(btn.dataset.rating);
-            if (starRating <= rating) {
-                btn.classList.add(isHover ? 'hover' : 'active');
-                if (isHover) btn.classList.remove('active');
-            } else {
-                btn.classList.remove('active', 'hover');
-            }
-            const selectedRating = isHover ? this.currentRating : rating;
-            btn.setAttribute('aria-pressed', String(selectedRating > 0 && starRating === selectedRating));
-        });
-        this.updateRatingStatus(rating, isHover);
-    }
-
-    updateRatingStatus(rating, isHover) {
-        if (!this.elements.ratingStatus) return;
-
-        const statusKey = rating > 0
-            ? (isHover ? 'movie_details.rating_preview' : 'movie_details.rating_selected')
-            : 'movie_details.rating_prompt';
-        const template = i18n.get(statusKey);
-        this.elements.ratingStatus.textContent = template.replace('{rating}', String(rating));
-        this.elements.ratingStatus.dataset.state = rating > 0 ? (isHover ? 'preview' : 'selected') : 'empty';
-    }
-
-    initSelectionPopup() {
-        const textareas = [this.elements.ratingComment, this.elements.ratingReview].filter(Boolean);
-        if (textareas.length === 0) return;
-
-        let popup = null;
-        let activeTextarea = null;
-
-        const hidePopup = () => {
-            if (popup) popup.style.display = 'none';
-            activeTextarea = null;
-        };
-
-        const handleSelection = (textarea) => {
-            const selectedText = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd).trim();
-
-            if (selectedText.length > 0 && document.activeElement === textarea) {
-                activeTextarea = textarea;
-                if (!popup) {
-                    popup = document.createElement('div');
-                    popup.className = 'selection-popup';
-                    popup.innerHTML = `
-                        <button class="selection-popup-btn" type="button" title="Скрыть как спойлер" aria-label="Скрыть выделенный текст как спойлер">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                            <span>Спойлер</span>
-                        </button>
-                    `;
-                    document.body.appendChild(popup);
-
-                    popup.querySelector('button').addEventListener('mousedown', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        this.wrapSelectionWithSpoilerTag(activeTextarea);
-                        hidePopup();
-                    });
-                }
-
-                // Calculate position above selection
-                const coords = this.getTextareaSelectionCoords(textarea);
-                popup.style.display = 'flex';
-                const halfPopupWidth = popup.offsetWidth / 2;
-                const left = Math.max(
-                    halfPopupWidth + 12,
-                    Math.min(window.innerWidth - halfPopupWidth - 12, coords.left + coords.width / 2)
-                );
-                popup.style.left = `${left}px`;
-                popup.style.top = `${coords.top - 45}px`;
-                popup.style.transform = 'translateX(-50%)';
-            } else {
-                hidePopup();
-            }
-        };
-
-        textareas.forEach(textarea => {
-            textarea.addEventListener('mouseup', () => handleSelection(textarea));
-            textarea.addEventListener('keyup', () => handleSelection(textarea));
-            textarea.addEventListener('blur', () => setTimeout(hidePopup, 200));
-        });
-
-        // Hide popup on scroll if needed, but since it's in a modal, maybe not necessary
-        window.addEventListener('resize', hidePopup);
-        if (this.elements.ratingModal) {
-            this.elements.ratingModal.addEventListener('scroll', hidePopup);
-        }
-    }
-
-    getTextareaSelectionCoords(textarea) {
-        const { selectionStart, selectionEnd } = textarea;
-        const style = window.getComputedStyle(textarea);
-
-        // Create a ghost element to measure text position
-        const ghost = document.createElement('div');
-        const properties = [
-            'direction', 'boxSizing', 'width', 'height', 'overflowX', 'overflowY',
-            'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
-            'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-            'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'lineHeight', 'fontFamily',
-            'textAlign', 'textTransform', 'textIndent', 'textDecoration', 'letterSpacing', 'wordSpacing'
-        ];
-
-        properties.forEach(prop => {
-            ghost.style[prop] = style[prop];
-        });
-
-        const textareaRect = textarea.getBoundingClientRect();
-        ghost.style.position = 'fixed';
-        ghost.style.left = `${textareaRect.left}px`;
-        ghost.style.top = `${textareaRect.top - textarea.scrollTop}px`;
-        ghost.style.width = `${textareaRect.width}px`;
-        ghost.style.height = 'auto';
-        ghost.style.visibility = 'hidden';
-        ghost.style.pointerEvents = 'none';
-        ghost.style.whiteSpace = 'pre-wrap';
-        ghost.style.wordBreak = 'break-word';
-
-        const textBefore = textarea.value.substring(0, selectionStart);
-        const selectedText = textarea.value.substring(selectionStart, selectionEnd);
-
-        ghost.textContent = textBefore;
-        const span = document.createElement('span');
-        span.textContent = selectedText;
-        ghost.appendChild(span);
-
-        document.body.appendChild(ghost);
-        const spanRect = span.getBoundingClientRect();
-
-        const coords = {
-            top: spanRect.top,
-            left: spanRect.left,
-            width: spanRect.width,
-            height: spanRect.height
-        };
-
-        document.body.removeChild(ghost);
-        return coords;
-    }
-
-    wrapSelectionWithSpoilerTag(textarea) {
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        const text = textarea.value;
-        const selectedText = text.substring(start, end);
-
-        if (selectedText.length === 0) return false;
-
-        const candidate = text.substring(0, start) + `||${selectedText}||` + text.substring(end);
-        const maxLength = textarea === this.elements.ratingReview ? 5000 : 500;
-        if (this.getRatingTextLength(candidate) > maxLength) {
-            if (textarea === this.elements.ratingReview) {
-                this.showRatingReviewError('Добавление спойлера превысит лимит 5000 символов.');
-            } else if (typeof Utils !== 'undefined') {
-                Utils.showToast('Добавление спойлера превысит лимит 500 символов', 'warning');
-            }
-            return false;
-        }
-
-        textarea.value = candidate;
-
-        // Restore focus and selection
-        textarea.focus();
-        textarea.setSelectionRange(start, end + 4);
-
-        // Trigger input event for character counter if any
-        textarea.dispatchEvent(new Event('input'));
-        return true;
     }
 }
 

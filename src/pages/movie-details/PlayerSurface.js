@@ -99,13 +99,6 @@ class MovieDetailsPlayerSurface {
         if (poster && safeUrl) poster.style.backgroundImage = `url(${JSON.stringify(safeUrl)})`;
         return container.querySelector?.('#mainPlayBtn') || null;
     }
-
-    getActiveFrame() {
-        const container = this.container;
-        return container?.querySelector?.('iframe[data-player-source-active="true"]')
-            || container?.querySelector?.('iframe')
-            || null;
-    }
 }
 
 if (typeof window !== 'undefined') {

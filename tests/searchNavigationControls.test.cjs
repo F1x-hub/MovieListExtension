@@ -47,7 +47,11 @@ const savedFilters = JSON.stringify({ yearFrom: '1995', yearTo: '2010', genres: 
 const context = vm.createContext({
     console, URLSearchParams, Date,
     document,
-    window: { addEventListener() {}, location: { pathname: '/src/pages/search/search.html', search: '', replace(url) { this.redirect = url; } } },
+    window: {
+        addEventListener() {},
+        location: { pathname: '/src/pages/search/search.html', search: '', replace(url) { this.redirect = url; } },
+        history: { replaceState(state, title, url) { this.url = url; } }
+    },
     chrome: { runtime: { getURL: value => value } },
     firebaseManager: { waitForAuthReady: async () => {}, isAuthenticated: () => true, getCurrentUser: () => ({ uid: 'test' }) },
     localStorage: { getItem: () => savedFilters },
@@ -70,9 +74,11 @@ vm.runInContext(searchSource.replace(/^import .*;\r?\n/gm, '') + '\nthis.SearchM
 vm.runInContext(fs.readFileSync('src/shared/components/Navigation.js', 'utf8') + '\nthis.Navigation = Navigation;', context);
 
 async function checkRoutes() {
-    for (const route of ['?q=Alien', '?query=Alien', '', '?movieId=42&autoplay=true', '?type=series', '?sourceUrl=https%3A%2F%2Fexample.test']) {
+    for (const route of ['?q=Alien', '?query=Alien', '', '?movieId=42&autoplay=true', '?type=series',
+        '?sourceUrl=https%3A%2F%2Fexample.test', '?sourceUrl=https%3A%2F%2Fexample.test&q=Alien']) {
         context.window.location.search = route;
         context.window.location.redirect = null;
+        context.window.history.url = null;
         const manager = Object.create(context.SearchManager.prototype);
         manager.elements = { searchInput: new Element(), yearFromFilter: new Element(), yearToFilter: new Element(), genreCheckboxes: new Element(), countryCheckboxes: new Element() };
         manager.searchGeneration = 0;
@@ -93,15 +99,20 @@ async function checkRoutes() {
             assert.equal(manager.elements.genreCheckboxes.children[0].getAttribute('data-filter-state'), 'exclude');
             assert.equal(manager.elements.countryCheckboxes.children[0].getAttribute('data-filter-state'), 'include');
         };
-        let sourceLoaded = false;
-        manager.loadMovieFromSource = async url => { assert.equal(url, 'https://example.test'); sourceLoaded = true; return true; };
         await manager.initializeUI();
-        assert.equal(searched, route.startsWith('?q'));
-        assert.equal(sourceLoaded, route.startsWith('?sourceUrl'));
+        assert.equal(searched, /[?&]q(uery)?=/.test(route));
         if (!route) assert.equal(manager.elements.yearToFilter.value, '2010');
+        // Search has no film view of its own: a legacy ?sourceUrl= link drops the
+        // parameter and lands on the plain search page (or runs the query it carried).
+        if (route.startsWith('?sourceUrl')) {
+            const expected = route.includes('&q=') ? '/src/pages/search/search.html?q=Alien' : '/src/pages/search/search.html';
+            assert.equal(context.window.history.url, expected);
+            assert.equal(context.window.location.redirect, null);
+            assert.equal(manager.elements.genreCheckboxes.children.length, 1, 'plain search page shows its filters');
+        } else assert.equal(context.window.history.url, null);
         if (route.startsWith('?movieId')) assert.equal(context.window.location.redirect, 'src/pages/movie-details/movie-details.html?movieId=42&autoplay=true');
         if (route.startsWith('?type')) assert.equal(context.window.location.redirect, 'src/pages/catalog/catalog.html?category=films');
-        if (route.startsWith('?movieId') || route.startsWith('?type') || sourceLoaded) assert.equal(manager.elements.genreCheckboxes.children.length, 0);
+        if (route.startsWith('?movieId') || route.startsWith('?type')) assert.equal(manager.elements.genreCheckboxes.children.length, 0);
     }
 }
 
@@ -168,6 +179,30 @@ function checkNavigationControls() {
     for (const id of ['navMobileToggle', 'navUserTrigger', 'navSearchToggle']) assert.equal(elements[id].listeners.mousedown, undefined);
 }
 
+// Results open on Movie Details. Search's own film card, film dialog and player were
+// unreachable and were removed; keep them from coming back.
+function checkFilmViewRemoved(html) {
+    for (const id of ['movieModal', 'modalBody', 'movieDetailBtn', 'closeModalBtn', 'videoPlayerModal', 'videoContainer', 'sourceSelect']) {
+        assert.doesNotMatch(html, new RegExp(`id="${id}"`), `search.html must not carry #${id}`);
+    }
+    for (const script of ['parsers/ParserRegistry.js', 'parsers/parser-init.js', 'player/HlsPlaybackFactory.js', 'movie-details/PlayerSurface.js',
+        'services/ProgressService.js', 'components/CommentReactionBar.js', 'components/ImageLightbox.js', 'styles/player.css']) {
+        assert.ok(!html.includes(script), `search.html must not load ${script}`);
+    }
+    for (const name of ['loadMovieFromSource', 'displaySingleMovieResult', 'createDetailedMovieCard', 'showMovieModal',
+        'handleWatchClick', 'showVideoModal', 'changeVideoSource', 'togglePlayPause', 'watch-movie-btn']) {
+        assert.ok(!searchSource.includes(name), `search.js must not bring back ${name}`);
+    }
+    const locales = fs.readFileSync('src/shared/i18n/locales.js', 'utf8');
+    for (const key of ['movie_details_modal', 'movie_detail_btn', 'fees_world', 'show_all: "']) {
+        assert.ok(!locales.includes(key), `unused locale key ${key} stays removed`);
+    }
+    const css = fs.readFileSync('src/shared/styles/search.css', 'utf8');
+    for (const selector of ['.search-detail-modal', '.movie-detail-page', '.user-rating-card', '.award-card', '.movie-frame']) {
+        assert.ok(!css.includes(selector), `search.css must not keep ${selector}`);
+    }
+}
+
 (async () => {
     await checkRoutes();
     checkSearchControls();
@@ -175,5 +210,6 @@ function checkNavigationControls() {
     const html = fs.readFileSync('src/pages/search/search.html', 'utf8');
     for (const id of ['toggleFiltersBtn', 'searchBtn']) assert.doesNotMatch(html.match(new RegExp(`<button[^>]+id="${id}"[^>]*>`))[0], /data-i18n=/);
     assert.match(html, /id="clearHistoryBtn"[^>]*data-i18n="\[title\]search.clear_history"/);
-    console.log('Search route/filter state and Search/Navigation click disclosure regressions passed (VM fixtures).');
+    checkFilmViewRemoved(html);
+    console.log('Search route/filter state, removed film view and Search/Navigation click disclosure regressions passed (VM fixtures).');
 })().catch(error => { console.error(error); process.exitCode = 1; });

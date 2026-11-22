@@ -3,8 +3,6 @@ const fs = require('node:fs');
 
 const read = path => fs.readFileSync(path, 'utf8');
 const sharedStyles = read('src/shared/styles/components.css');
-const collectionStyles = read('src/shared/styles/collection.css');
-const collectionHtml = read('src/pages/collection/collection.html');
 const ratingsStyles = read('src/shared/styles/ratings.css');
 const ratingsHtml = read('src/pages/ratings/ratings.html');
 const adminStyles = read('src/shared/styles/admin.css');
@@ -27,23 +25,15 @@ for (const selector of [
     assert.match(sharedStyles, new RegExp(`\\.${selector}\\s*\\{`));
 }
 
-assert.match(collectionHtml, /class="modal-overlay"[^>]*role="dialog"[^>]*aria-modal="true"/);
-assert.match(collectionHtml, /class="modal collection-modal"/);
-assert.match(collectionStyles, /\.collection-modal(?:\s|\.)/);
-
-for (const selector of ['modal-overlay', 'modal-content', 'modal-header', 'modal-close', 'modal-body', 'modal-footer']) {
-    assert.doesNotMatch(
-        collectionStyles,
-        new RegExp(`^\\.${selector}\\s*\\{`, 'm'),
-        `Collection must not redefine generic .${selector} ownership`
-    );
+// Ratings and Movie Details rate a film in the one shared dialog (RatingDialog.js),
+// which builds its own modal markup; neither page carries a rating dialog of its own.
+const ratingDialogJs = read('src/shared/components/RatingDialog.js');
+assert.match(ratingDialogJs, /root\.className = 'modal-overlay rating-dialog-overlay'/);
+assert.match(ratingDialogJs, /root\.setAttribute\('aria-labelledby', 'ratingModalTitle'\)/);
+for (const html of [ratingsHtml, read('src/pages/movie-details/movie-details.html')]) {
+    assert.doesNotMatch(html, /id="ratingModal"/);
+    assert.match(html, /shared\/components\/RatingDialog\.js/);
 }
-
-assert.match(ratingsHtml, /class="modal-overlay ratings-modal-overlay"/);
-// The unused movie-details modal was removed; the rating modal is the page's dialog.
-// It is a native <dialog>: showModal() supplies the semantics, so no ARIA role or aria-modal.
-assert.match(ratingsHtml, /<dialog id="ratingModal"[^>]*aria-labelledby="ratingModalTitle"/);
-assert.doesNotMatch(ratingsHtml, /id="ratingModal"[^>]*(role="dialog"|aria-modal)/);
 assert.doesNotMatch(ratingsHtml, /ratings-detail-modal|id="movieModal"/);
 assert.doesNotMatch(ratingsStyles, /\.ratings-detail-modal/);
 
@@ -55,9 +45,10 @@ for (const selector of ['modal-overlay', 'modal-content', 'modal-header', 'modal
     );
 }
 
-assert.match(searchHtml, /class="modal search-detail-modal"/);
-assert.match(searchHtml, /id="videoPlayerModal"[^>]*role="dialog"[^>]*aria-modal="true"/);
-assert.match(searchStyles, /\.search-detail-modal(?:\s|\.)/);
+// Search opens films on Movie Details; its own film and player dialogs were unreachable and are gone.
+assert.doesNotMatch(searchHtml, /id="movieModal"|id="videoPlayerModal"|search-detail-modal/,
+    'Search must not carry the unreachable film and player dialogs');
+assert.doesNotMatch(searchStyles, /\.search-detail-modal\b/);
 
 for (const selector of ['modal', 'modal-body', 'modal-close']) {
     assert.doesNotMatch(
@@ -67,9 +58,10 @@ for (const selector of ['modal', 'modal-body', 'modal-close']) {
     );
 }
 
-assert.match(adminHtml, /class="modal-overlay"[^>]*role="dialog"[^>]*aria-modal="true"/);
-assert.match(adminHtml, /class="modal delete-modal"/);
-assert.match(adminStyles, /\.delete-modal(?:\s|\.)/);
+// Admin confirmations use the shared ConfirmDialog; the API-key form is its own dialog.
+assert.match(adminHtml, /class="modal-overlay provider-key-modal"[^>]*role="dialog"[^>]*aria-modal="true"/);
+assert.match(adminHtml, /class="modal provider-key-dialog"/);
+assert.match(adminStyles, /\.provider-key-dialog\s*\{/);
 
 for (const selector of ['modal-header', 'modal-close', 'modal-body', 'modal-footer']) {
     assert.doesNotMatch(

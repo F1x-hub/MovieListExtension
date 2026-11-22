@@ -2687,26 +2687,6 @@ class RandomManager {
             wheel.appendChild(linesSvg);
         }
     }
-
-    /** Load and display a specific movie by Kinopoisk ID */
-    async _loadMovieById(kpId) {
-        this.showState('loading');
-        this.toggleConfig(false);
-        try {
-            if (window.firebaseManager) {
-                await window.firebaseManager.waitForAuthReady();
-            }
-            const movie = await this.kinopoiskService.getMovieById(kpId);
-            if (movie) {
-                this.displayMovie(movie);
-            } else {
-                this.showState('error');
-            }
-        } catch (error) {
-            console.error('RandomManager: Error loading movie by id:', error);
-            this.showState('error');
-        }
-    }
 }
 
 // Initialize

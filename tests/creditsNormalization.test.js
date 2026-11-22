@@ -356,7 +356,7 @@ console.log('\n--- 8. Testing Full UnifiedMovieDTO Aggregation Integration ---')
     console.log('  ✅ 8.1 UnifiedMovieDTO integration produces canonical credits with legacy aliases');
 }
 
-// --- Test 9: Legacy Consumer Safety (MovieCard.createCompactDetail & search.js) ---
+// --- Test 9: Legacy Consumer Safety (MovieCard.createCompactDetail) ---
 console.log('\n--- 9. Testing Legacy Consumer Safety ---');
 {
     const movieWithUnifiedCredits = {

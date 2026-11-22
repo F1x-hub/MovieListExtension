@@ -94,11 +94,25 @@ checklist; `npm run test:visual-design` enforces much of it.
   `--popover-bg`/`--popover-border`) and `.movie-actions-container`. Page styles add only scoped
   layout, placement, density or content variants. Loaders use the `app-loader` namespace from
   `common.css`. Every movie card is `src/shared/components/MovieCard.js`, which also owns its menu.
+- Card menu quick actions (the four status items and the collection items) on Search, Ratings
+  and Bookmarks run through `src/shared/components/MovieCardActions.js`, loaded after
+  `MovieCard.js` and before the page script. One status per film: the shown one removes the
+  bookmark, another switches it; the card repaints at once (`MovieCard.setStatusButtons`) and
+  rolls back on a failed write. Pages pass only callbacks (film data, their own status record,
+  Bookmarks' remove confirmation and fade-out); keep no per-page copies. Movie Details has its
+  own status buttons. Person Details draws the status items but nothing handles them yet.
 - HTML entry points link `common.css` and `components.css` once, and no stylesheet re-imports
   them. Adding or moving a stylesheet means updating its classification in `test:visual-design`.
-- **Search compatibility boundary**: `search.css` is still loaded by Collection and Ratings for
-  the rating modal. Add no consumers or selectors; remove the dependency only after runtime
-  checks cover both pages.
+- **Search compatibility boundary**: `search.css` is still loaded by Ratings for its filters,
+  search input and results. Add no consumers or selectors; remove the dependency only after
+  runtime checks cover the page.
+- **One rating dialog**: rating a film, on Movie Details and on Ratings, is
+  `src/shared/components/RatingDialog.js` with `src/shared/styles/rating-dialog.css`. It builds
+  its own markup (`#ratingModal`), keeps Escape, Tab and focus return, locks the choice until
+  its fresh read answers and stays undismissable during a write; `RatingDialog.write()` is the
+  one way a save becomes `updateRatingText` or `addOrUpdateRating`, and an untouched review is
+  never sent. Pages give it the film, the franchise theme and icons, the read and the save; add
+  no second rating dialog.
 - Buttons centre icon and text with an explicit `inline-flex` or `grid` layout and line-height.
   The `M8 5v14l11-7z` Play path needs a 1.5px left and 0.5px up optical correction, only in the
   Play state and only in the control's owner. Controls use the rounded-square radius; circles are
@@ -152,8 +166,9 @@ checklist; `npm run test:visual-design` enforces much of it.
   `recent_ratings_cache`. Live updates insert new films directly only on the default newest-first
   view near the top of a visible tab; otherwise they wait behind `#ratingsLivePill`, so the grid
   never shifts under the user.
-- Controls use `click` and keyboard handlers, never `mousedown` alone. A failed optimistic save
-  rolls back only its card. `myRating`/`myComment` belong to the signed-in user, `rating`/`comment`
+- Controls use `click` and keyboard handlers, never `mousedown` alone. "Edit rating" opens the
+  shared rating dialog; the page's save updates the card at once and writes in the background,
+  and a failed write rolls back only its card. `myRating`/`myComment` belong to the signed-in user, `rating`/`comment`
   to the featured rater.
 - The old exploration ("sphere") view is gone: `tests/ratingsPageContract.test.js` keeps it out,
   and the service worker deletes its retired poster cache. Do not bring it back from old notes.
@@ -167,6 +182,9 @@ checklist; `npm run test:visual-design` enforces much of it.
   `watched`) is the only source; `WatchlistService` and `WatchingService` are deprecated and their
   pages only redirect. Views with many cards read bookmark states once with
   `getBookmarksBatch(userId, movieIds)` and fall back to `false` when signed out or on failure.
+- Custom collections open only inside Bookmarks (`bookmarks.html?filter=collection:<id>`), which
+  owns their rename and delete (through `ConfirmDialog`). `collection/collection.html?id=` and
+  `ratings.html?collection=` only redirect there with `location.replace`; build no second view.
 - Episode ratings: private `seriesEpisodeRatings/{uid}_{kpId}`, keyed `season:episode`, are
   independent of the title rating both ways, and an episode write never touches public rating
   caches, genres, metadata or the watchlist. The server-only `aggregateSeriesEpisodeRatings` builds
@@ -444,6 +462,8 @@ checklist; `npm run test:visual-design` enforces much of it.
   connection error, not a guest session. Metadata loads have a 25 s deadline.
 - Dialogs use `role="dialog"`, `aria-modal="true"` and an accessible name, share one focus
   lifecycle and close topmost first on Escape; the episode picker stays a non-modal popover.
+  The shared rating dialog handles its own Escape and Tab and is the 'rating' layer of the page
+  stack (`isRatingDialogOpen()`), so the player underneath never takes them.
 - The cast is one `#actorsGrid` (three full rows collapsed) of up to 150 actors (`MAX_CAST`);
   series take TMDB's `aggregate_credits`. Raise `MediaAggregatorService.CAST_SCHEMA_VERSION` when
   the cast's shape changes. The poster rail shows KP and IMDb tiles, which hold their place from

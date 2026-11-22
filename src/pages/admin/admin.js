@@ -9,7 +9,9 @@ class AdminPanelManager {
         this.currentUser = null;
         this.isAdmin = false;
         this.users = [];
+        // Set while a deletion is being confirmed or runs, so a second click waits.
         this.userToDelete = null;
+        this.bulkDeleteInFlight = false;
         
         // Movies and ratings data
         this.movies = [];
@@ -43,8 +45,6 @@ class AdminPanelManager {
         this.providerKeysRequest = null;
         this.providerKeyActionRequest = null;
         this.providerKeyModalTrigger = null;
-        this.providerKeyConfirmTrigger = null;
-        this.providerKeyPendingRevoke = null;
         this.commentReactionConfig = null;
         this.commentReactionConfigRequest = null;
         this.commentReactionSavePending = false;
@@ -59,9 +59,6 @@ class AdminPanelManager {
             lastVisibleDocs: [], // Stack of last visible docs for navigation
             hasMore: true
         };
-        
-        // Rating modal state
-        this.ratingToDelete = null;
         
         // Filters
         this.ratingsFilters = {
@@ -542,7 +539,7 @@ class AdminPanelManager {
         // Add click handler for delete button
         const deleteBtn = row.querySelector('.btn-delete');
         if (deleteBtn && !isCurrentUser) {
-            deleteBtn.addEventListener('click', () => this.showDeleteConfirmation(user));
+            deleteBtn.addEventListener('click', () => this.showDeleteConfirmation(user, deleteBtn));
         }
 
         const avatar = row.querySelector('.user-avatar');
@@ -1319,7 +1316,7 @@ class AdminPanelManager {
     async handleProviderKeyAction(action, keyId) {
         if (!keyId || this.providerKeyActionRequest) return;
         if (action === 'revoke') {
-            this.openProviderKeyConfirm(keyId);
+            await this.confirmProviderKeyRevoke(keyId);
             return;
         }
 
@@ -1428,35 +1425,20 @@ class AdminPanelManager {
         button.setAttribute('aria-label', isVisible ? 'Показать ключ' : 'Скрыть ключ');
     }
 
-    openProviderKeyConfirm(keyId) {
+    async confirmProviderKeyRevoke(keyId) {
         const key = this.providerKeys.find((item) => item.id === keyId);
-        const modal = document.getElementById('providerKeyConfirmModal');
-        const text = document.getElementById('providerKeyConfirmText');
-        if (!key || !modal) return;
-        this.providerKeyPendingRevoke = keyId;
-        this.providerKeyConfirmTrigger = document.activeElement;
-        if (text) text.textContent = `Ключ «${key.label || 'Без названия'}» (${key.provider || 'провайдер'}, ${key.maskedValue || 'маска недоступна'}) будет отключён и удалён из Secret Manager.`;
-        modal.style.display = 'flex';
-        document.getElementById('cancelProviderKeyConfirmBtn')?.focus();
-    }
-
-    closeProviderKeyConfirm() {
-        const modal = document.getElementById('providerKeyConfirmModal');
-        if (modal) modal.style.display = 'none';
-        this.providerKeyPendingRevoke = null;
-        this.providerKeyConfirmTrigger?.focus?.();
-        this.providerKeyConfirmTrigger = null;
-    }
-
-    async confirmProviderKeyRevoke() {
-        const keyId = this.providerKeyPendingRevoke;
-        const button = document.getElementById('confirmProviderKeyBtn');
-        if (!keyId || this.providerKeyActionRequest) return;
+        if (!key || this.providerKeyActionRequest) return;
         this.providerKeyActionRequest = true;
-        if (button) button.disabled = true;
         try {
+            const confirmed = await ConfirmDialog.confirm({
+                title: 'Отозвать ключ?',
+                message: `Ключ «${key.label || 'Без названия'}» (${key.provider || 'провайдер'}, ${key.maskedValue || 'маска недоступна'}) будет отключён и удалён из Secret Manager. Это действие нельзя отменить.`,
+                confirmLabel: 'Отозвать ключ',
+                danger: true
+            });
+            if (!confirmed) return;
+            this.setProviderKeyRowBusy(keyId, true);
             await this.adminService.revokeProviderKey(keyId);
-            this.closeProviderKeyConfirm();
             await this.loadProviderKeys(true);
             this.showSuccessMessage('API-ключ отозван');
         } catch (error) {
@@ -1464,8 +1446,16 @@ class AdminPanelManager {
             this.renderProviderKeysError(error);
         } finally {
             this.providerKeyActionRequest = false;
-            if (button) button.disabled = false;
+            this.setProviderKeyRowBusy(keyId, false);
         }
+    }
+
+    setProviderKeyRowBusy(keyId, busy) {
+        document.querySelectorAll('[data-provider-key-action]').forEach((button) => {
+            if (button.dataset.providerKeyId !== keyId) return;
+            button.disabled = busy;
+            button.toggleAttribute('aria-busy', busy);
+        });
     }
 
     renderFirestoreUsageMetric(name, metric, options) {
@@ -1617,7 +1607,7 @@ class AdminPanelManager {
             // Delete button listener
             const deleteBtn = row.querySelector('.btn-delete');
             if (deleteBtn) {
-                deleteBtn.addEventListener('click', () => this.showDeleteConfirmation(user));
+                deleteBtn.addEventListener('click', () => this.showDeleteConfirmation(user, deleteBtn));
             }
 
             tableBody.appendChild(row);
@@ -1713,82 +1703,65 @@ class AdminPanelManager {
         );
     }
 
-    async showDeleteConfirmation(user) {
+    async showDeleteConfirmation(user, triggerButton = null) {
+        if (!user || this.userToDelete) return;
+        this.userToDelete = user;
         try {
-            // Get deletion preview
-            const preview = await this.adminService.getUserDeletionPreview(user.id);
-            
-            this.userToDelete = user;
-            
-            // Fill modal with user info
-            const userPreview = document.getElementById('userPreview');
-            const statsList = document.getElementById('deletionStatsList');
-            
-            if (userPreview) {
-                userPreview.innerHTML = `
-                    <p><strong>Имя:</strong> ${this.escapeHtml(preview.user.displayName || 'Пользователь без имени')}</p>
-                    <p><strong>Email:</strong> ${this.escapeHtml(preview.user.email || 'Нет email')}</p>
-                `;
-            }
-            
-            if (statsList) {
-                statsList.innerHTML = `
-                    <li>${this.formatRussianCount(preview.ratingsCount, 'оценка', 'оценки', 'оценок')}</li>
-                    <li>${this.formatRussianCount(preview.collectionCount, 'элемент коллекции', 'элемента коллекции', 'элементов коллекции')}</li>
-                    <li>Профиль пользователя и связанные данные</li>
-                `;
-            }
-            
-            // Show modal
-            const modal = document.getElementById('deleteModal');
-            if (modal) {
-                modal.style.display = 'flex';
-            }
-        } catch (error) {
-            console.error('Error getting deletion preview:', error);
-            this.showError('Не удалось получить данные пользователя. Повторите попытку.');
-        }
-    }
-
-    async confirmDelete() {
-        if (!this.userToDelete) return;
-
-        try {
-            const confirmBtn = document.getElementById('confirmDeleteBtn');
-            if (confirmBtn) {
-                confirmBtn.disabled = true;
-                confirmBtn.textContent = 'Удаление...';
+            let preview;
+            try {
+                preview = await this.adminService.getUserDeletionPreview(user.id);
+            } catch (error) {
+                console.error('Error getting deletion preview:', error);
+                this.showError('Не удалось получить данные пользователя. Повторите попытку.');
+                return;
             }
 
-            await this.adminService.deleteUser(this.userToDelete.id, this.currentUser.uid);
-            
-            // Close modal
-            this.hideDeleteModal();
-            
-            // Reload users
+            const confirmed = await ConfirmDialog.confirm({
+                title: 'Удалить пользователя?',
+                message: [
+                    'Пользователь будет удалён навсегда:',
+                    `Имя: ${preview.user.displayName || 'Пользователь без имени'}`,
+                    `Email: ${preview.user.email || 'Нет email'}`,
+                    '',
+                    'Будут удалены:',
+                    `• ${this.formatRussianCount(preview.ratingsCount, 'оценка', 'оценки', 'оценок')}`,
+                    `• ${this.formatRussianCount(preview.collectionCount, 'элемент коллекции', 'элемента коллекции', 'элементов коллекции')}`,
+                    '• Профиль пользователя и связанные данные',
+                    '',
+                    'Действие необратимо. Все данные будут удалены.'
+                ].join('\n'),
+                confirmLabel: 'Удалить пользователя',
+                danger: true
+            });
+            if (!confirmed) return;
+
+            this.setDeleteButtonBusy(triggerButton, true);
+            try {
+                await this.adminService.deleteUser(user.id, this.currentUser.uid);
+            } catch (error) {
+                console.error('Error deleting user:', error);
+                this.showError('Не удалось удалить пользователя. Повторите попытку.');
+                return;
+            }
+            this.showSuccessMessage(`Пользователь «${user.displayName || 'без имени'}» удалён`);
             await this.loadUsers();
-            
-            // Show success message
-            this.showSuccessMessage(`Пользователь «${this.userToDelete.displayName || 'без имени'}» удалён`);
-            
+        } finally {
+            this.setDeleteButtonBusy(triggerButton, false);
             this.userToDelete = null;
-        } catch (error) {
-            console.error('Error deleting user:', error);
-            const confirmBtn = document.getElementById('confirmDeleteBtn');
-            if (confirmBtn) {
-                confirmBtn.disabled = false;
-                confirmBtn.textContent = 'Удалить пользователя';
-            }
-            this.showError('Не удалось удалить пользователя. Повторите попытку.');
         }
     }
 
-    hideDeleteModal() {
-        const modal = document.getElementById('deleteModal');
-        if (modal) {
-            modal.style.display = 'none';
+    setDeleteButtonBusy(button, busy) {
+        if (!button?.isConnected) return;
+        if (busy) {
+            button.dataset.idleLabel = button.textContent;
+            button.textContent = 'Удаление...';
+        } else if (button.dataset.idleLabel) {
+            button.textContent = button.dataset.idleLabel;
+            delete button.dataset.idleLabel;
         }
-        this.userToDelete = null;
+        button.disabled = busy;
+        button.toggleAttribute('aria-busy', busy);
     }
 
     setupEventListeners() {
@@ -1818,33 +1791,6 @@ class AdminPanelManager {
                 }
             }
         });
-
-        // Delete user modal controls
-        const closeBtn = document.getElementById('closeDeleteModal');
-        const cancelBtn = document.getElementById('cancelDeleteBtn');
-        const confirmBtn = document.getElementById('confirmDeleteBtn');
-        const modal = document.getElementById('deleteModal');
-
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => this.hideDeleteModal());
-        }
-
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', () => this.hideDeleteModal());
-        }
-
-        if (confirmBtn) {
-            confirmBtn.addEventListener('click', () => this.confirmDelete());
-        }
-
-        // Close modal on outside click
-        if (modal) {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    this.hideDeleteModal();
-                }
-            });
-        }
 
         // Sidebar Navigation
         const sidebarLinks = document.querySelectorAll('.sidebar-link');
@@ -1993,19 +1939,6 @@ class AdminPanelManager {
             });
         }
 
-        const closeProviderKeyConfirmBtn = document.getElementById('closeProviderKeyConfirmBtn');
-        const cancelProviderKeyConfirmBtn = document.getElementById('cancelProviderKeyConfirmBtn');
-        const confirmProviderKeyBtn = document.getElementById('confirmProviderKeyBtn');
-        const providerKeyConfirmModal = document.getElementById('providerKeyConfirmModal');
-        if (closeProviderKeyConfirmBtn) closeProviderKeyConfirmBtn.addEventListener('click', () => this.closeProviderKeyConfirm());
-        if (cancelProviderKeyConfirmBtn) cancelProviderKeyConfirmBtn.addEventListener('click', () => this.closeProviderKeyConfirm());
-        if (confirmProviderKeyBtn) confirmProviderKeyBtn.addEventListener('click', () => this.confirmProviderKeyRevoke());
-        if (providerKeyConfirmModal) {
-            providerKeyConfirmModal.addEventListener('click', (event) => {
-                if (event.target === providerKeyConfirmModal) this.closeProviderKeyConfirm();
-            });
-        }
-
         const selectAllApprovalsCb = document.getElementById('selectAllApprovalsCheckbox');
         if (selectAllApprovalsCb) {
             selectAllApprovalsCb.addEventListener('change', (e) => {
@@ -2040,32 +1973,6 @@ class AdminPanelManager {
                 this.userPagination.currentPage = 1;
                 this.userPagination.lastVisibleDocs = [];
                 this.fetchUsersFromDb();
-            });
-        }
-
-        // Delete rating modal controls
-        const closeRatingBtn = document.getElementById('closeDeleteRatingModal');
-        const cancelRatingBtn = document.getElementById('cancelDeleteRatingBtn');
-        const confirmRatingBtn = document.getElementById('confirmDeleteRatingBtn');
-        const ratingModal = document.getElementById('deleteRatingModal');
-
-        if (closeRatingBtn) {
-            closeRatingBtn.addEventListener('click', () => this.hideDeleteRatingModal());
-        }
-
-        if (cancelRatingBtn) {
-            cancelRatingBtn.addEventListener('click', () => this.hideDeleteRatingModal());
-        }
-
-        if (confirmRatingBtn) {
-            confirmRatingBtn.addEventListener('click', () => this.confirmDeleteRating());
-        }
-
-        if (ratingModal) {
-            ratingModal.addEventListener('click', (e) => {
-                if (e.target === ratingModal) {
-                    this.hideDeleteRatingModal();
-                }
             });
         }
 
@@ -2163,37 +2070,10 @@ class AdminPanelManager {
             bulkDeleteBtn.addEventListener('click', () => this.showBulkDeleteConfirmation());
         }
 
-        // Bulk delete modal controls
-        const closeBulkDeleteBtn = document.getElementById('closeBulkDeleteModal');
-        const cancelBulkDeleteBtn = document.getElementById('cancelBulkDeleteBtn');
-        const confirmBulkDeleteBtn = document.getElementById('confirmBulkDeleteBtn');
-        const bulkDeleteModal = document.getElementById('bulkDeleteModal');
-
-        if (closeBulkDeleteBtn) {
-            closeBulkDeleteBtn.addEventListener('click', () => this.hideBulkDeleteModal());
-        }
-        if (cancelBulkDeleteBtn) {
-            cancelBulkDeleteBtn.addEventListener('click', () => this.hideBulkDeleteModal());
-        }
-        if (confirmBulkDeleteBtn) {
-            confirmBulkDeleteBtn.addEventListener('click', () => this.confirmBulkDelete());
-        }
-        if (bulkDeleteModal) {
-            bulkDeleteModal.addEventListener('click', (e) => {
-                if (e.target === bulkDeleteModal) {
-                    this.hideBulkDeleteModal();
-                }
-            });
-        }
-
         // Close on escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 this.closeAddProviderKeyModal();
-                this.closeProviderKeyConfirm();
-                this.hideDeleteModal();
-                this.hideDeleteRatingModal();
-                this.hideBulkDeleteModal();
             }
         });
     }
@@ -2415,22 +2295,6 @@ class AdminPanelManager {
         if (prevBtn) prevBtn.disabled = this.pagination.currentPage === 1;
         if (firstBtn) firstBtn.disabled = this.pagination.currentPage === 1;
         if (nextBtn) nextBtn.disabled = !this.pagination.hasMore;
-    }
-
-    populateUserFilter() {
-        const userFilter = document.getElementById('userFilter');
-        if (!userFilter) return;
-
-        // Clear existing options except "All Users"
-        userFilter.innerHTML = '<option value="">Все пользователи</option>';
-
-        // Get unique users from usersMap
-        this.usersMap.forEach((user, userId) => {
-            const option = document.createElement('option');
-            option.value = userId;
-            option.textContent = user.displayName || user.email || 'Пользователь без имени';
-            userFilter.appendChild(option);
-        });
     }
 
     applyMoviesFilters() {
@@ -2668,20 +2532,6 @@ class AdminPanelManager {
 
     // loadMoreMovies and updateLoadMoreButton removed in favor of pagination
 
-    updateProgress(loaded, total) {
-        const loadedCount = document.getElementById('loadedCount');
-        const progressFill = document.getElementById('progressBarFill');
-
-        if (loadedCount) {
-            loadedCount.textContent = `Загружено: ${loaded} из ${total} фильмов`;
-        }
-
-        if (progressFill) {
-            const percent = total > 0 ? (loaded / total) * 100 : 0;
-            progressFill.style.width = `${percent}%`;
-        }
-    }
-
     // Selection management
     handleCheckboxChange(movieId, isChecked, row) {
         if (isChecked) {
@@ -2758,23 +2608,6 @@ class AdminPanelManager {
     }
 
     // UI state indicators
-    showBackgroundSyncIndicator(show) {
-        const indicator = document.getElementById('backgroundSyncIndicator');
-        if (indicator) {
-            indicator.style.display = show ? 'inline-flex' : 'none';
-        }
-    }
-
-    showDataUpdatedBadge() {
-        const badge = document.getElementById('dataUpdatedBadge');
-        if (badge) {
-            badge.style.display = 'inline-flex';
-            setTimeout(() => {
-                badge.style.display = 'none';
-            }, 3000);
-        }
-    }
-
     updateOnlineStatus(isOnline) {
         this.isOnline = isOnline;
         this.updateOnlineIndicator();
@@ -2912,25 +2745,30 @@ class AdminPanelManager {
         }
     }
 
-    showBulkDeleteConfirmation() {
+    async showBulkDeleteConfirmation() {
         const count = this.selectedMovies.size;
-        if (count === 0) return;
-
-        const preview = document.getElementById('bulkDeletePreview');
-        if (preview) {
-            preview.textContent = `${count} фильмов`;
-        }
-
-        const modal = document.getElementById('bulkDeleteModal');
-        if (modal) {
-            modal.style.display = 'flex';
-        }
-    }
-
-    hideBulkDeleteModal() {
-        const modal = document.getElementById('bulkDeleteModal');
-        if (modal) {
-            modal.style.display = 'none';
+        if (count === 0 || this.bulkDeleteInFlight) return;
+        this.bulkDeleteInFlight = true;
+        try {
+            const confirmed = await ConfirmDialog.confirm({
+                title: 'Подтверждение удаления',
+                message: [
+                    'Вы собираетесь удалить выбранные фильмы и их оценки:',
+                    `${count} фильмов`,
+                    '',
+                    'Это действие:',
+                    '• Удалит все оценки для выбранных фильмов',
+                    '• Удалит фильмы из кэша',
+                    '• Очистит локальный кэш',
+                    '',
+                    'Это действие необратимо.'
+                ].join('\n'),
+                confirmLabel: 'Удалить',
+                danger: true
+            });
+            if (confirmed) await this.confirmBulkDelete();
+        } finally {
+            this.bulkDeleteInFlight = false;
         }
     }
 
@@ -2944,11 +2782,8 @@ class AdminPanelManager {
         const movieIds = Array.from(this.selectedMovies);
         if (movieIds.length === 0) return;
 
-        const confirmBtn = document.getElementById('confirmBulkDeleteBtn');
-        if (confirmBtn) {
-            confirmBtn.disabled = true;
-            confirmBtn.textContent = 'Удаление...';
-        }
+        const deleteBtn = document.getElementById('bulkDeleteBtn');
+        this.setDeleteButtonBusy(deleteBtn, true);
 
         try {
             const result = await this.adminService.bulkDeleteMoviesAndRatings(movieIds, this.currentUser.uid);
@@ -2959,138 +2794,17 @@ class AdminPanelManager {
             // Remove from local arrays
             this.movies = this.movies.filter(m => !movieIds.includes(m.kinopoiskId));
             movieIds.forEach(id => this.ratingsMap.delete(id));
-            
+
             this.selectedMovies.clear();
             this.applyMoviesFilters();
-            
-            this.hideBulkDeleteModal();
+
             this.showSuccessMessage(`Удалено ${result.moviesDeleted} фильмов и ${result.ratingsDeleted} оценок`);
         } catch (error) {
             console.error('Bulk delete error:', error);
             this.showError(`Ошибка удаления: ${error.message}`);
         } finally {
-            if (confirmBtn) {
-                confirmBtn.disabled = false;
-                confirmBtn.textContent = 'Удалить';
-            }
-        }
-    }
-
-    async showDeleteRatingConfirmation(rating) {
-        try {
-            this.ratingToDelete = rating;
-
-            const movie = rating.movie || {};
-            const user = rating.user || {};
-            const movieTitle = movie.name || 'Фильм без названия';
-            const userName = user.displayName || user.email || 'Пользователь без имени';
-
-            const ratingPreview = document.getElementById('ratingPreview');
-            if (ratingPreview) {
-                ratingPreview.innerHTML = `
-                    <p><strong>Фильм:</strong> ${this.escapeHtml(movieTitle)}</p>
-                    <p><strong>Пользователь:</strong> ${this.escapeHtml(userName)}</p>
-                    <p><strong>Оценка:</strong> <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> ${rating.rating}</p>
-                    ${rating.comment ? `<p><strong>Комментарий:</strong> ${this.escapeHtml(rating.comment.substring(0, 100))}${rating.comment.length > 100 ? '...' : ''}</p>` : ''}
-                `;
-            }
-
-            const modal = document.getElementById('deleteRatingModal');
-            if (modal) {
-                modal.style.display = 'flex';
-            }
-        } catch (error) {
-            console.error('Error showing delete rating confirmation:', error);
-            this.showError('Не удалось получить данные оценки. Повторите попытку.');
-        }
-    }
-
-    async confirmDeleteRating() {
-        if (!this.ratingToDelete) return;
-
-        try {
-            const confirmBtn = document.getElementById('confirmDeleteRatingBtn');
-            if (confirmBtn) {
-                confirmBtn.disabled = true;
-                confirmBtn.textContent = 'Удаление...';
-            }
-
-            await this.adminService.deleteRatingAsAdmin(this.ratingToDelete.id, this.currentUser.uid);
-            
-            // Close modal
-            this.hideDeleteRatingModal();
-            
-            // Reload movies/ratings
-            await this.loadMovies();
-            
-            // Show success message
-            this.showSuccessMessage('Оценка удалена');
-            
-            this.ratingToDelete = null;
-        } catch (error) {
-            console.error('Error deleting rating:', error);
-            const confirmBtn = document.getElementById('confirmDeleteRatingBtn');
-            if (confirmBtn) {
-                confirmBtn.disabled = false;
-                confirmBtn.textContent = 'Удалить оценку';
-            }
-            this.showError('Не удалось удалить оценку. Повторите попытку.');
-        }
-    }
-
-    hideDeleteRatingModal() {
-        const modal = document.getElementById('deleteRatingModal');
-        if (modal) {
-            modal.style.display = 'none';
-        }
-        this.ratingToDelete = null;
-    }
-
-    async updateMovieInfo(rating) {
-        if (!rating || !rating.movieId) return;
-        
-        const movieId = rating.movieId;
-        const movieTitle = rating.movie?.name || 'фильм без названия';
-
-        try {
-            // Show loading state
-            const buttons = document.querySelectorAll(`.btn-update-info[data-movie-id="${movieId}"]`);
-            buttons.forEach(btn => {
-                btn.disabled = true;
-                btn.textContent = 'Обновление...';
-            });
-
-            // 1. Fetch fresh data from Kinopoisk
-            const kinopoiskService = new KinopoiskService();
-            const freshMovieData = await kinopoiskService.getMovieById(movieId);
-
-            if (!freshMovieData) {
-                throw new Error('Failed to fetch data from Kinopoisk');
-            }
-
-            // 2. Update Firestore cache
-            const movieCacheService = firebaseManager.getMovieCacheService();
-            await movieCacheService.cacheRatedMovie(freshMovieData);
-
-            // 3. Clear local cache for this movie to ensure immediate update in UI
-            localStorage.removeItem(`kp_movie_${movieId}`);
-
-            // 4. Reload movies/ratings to reflect changes
-            await this.loadMovies();
-
-            this.showSuccessMessage(`Информация обновлена: «${movieTitle}»`);
-
-        } catch (error) {
-            console.error('Error updating movie info:', error);
-            
-            // Reset button state
-            const buttons = document.querySelectorAll(`.btn-update-info[data-movie-id="${movieId}"]`);
-            buttons.forEach(btn => {
-                btn.disabled = false;
-                btn.textContent = 'Обновить инфо';
-            });
-
-            this.showError('Не удалось обновить информацию о фильме. Повторите попытку.');
+            this.setDeleteButtonBusy(deleteBtn, false);
+            this.updateSelectionUI();
         }
     }
 

@@ -27,7 +27,8 @@ for (const id of ['resultsInfo', 'loadingSection', 'moviesGrid', 'emptyState', '
     assert.match(ratingsHtml, new RegExp(`id=["']${id}["']`), `Ratings page must keep ${id}`);
 }
 
-assert.match(ratingsHtml, /id=["']ratingModal["']/, 'Ratings page must keep ratingModal');
+assert.match(ratingsHtml, /shared\/components\/RatingDialog\.js/, 'Ratings page edits a rating in the shared rating dialog');
+assert.doesNotMatch(ratingsHtml, /id=["']ratingModal["']/, 'The page has no rating dialog of its own');
 assert.doesNotMatch(ratingsHtml, /id=["']movieModal["']/, 'The unused movie details modal stays removed');
 
 for (const pattern of [

@@ -12,8 +12,8 @@ const { chromium } = require('playwright');
     await page.locator('#pane-provider-keys').waitFor({ state: 'attached' });
     await page.locator('#providerKeyForm').waitFor({ state: 'attached' });
     assert.equal(await page.locator('#providerKeySecret').getAttribute('type'), 'password');
-    assert.equal(await page.locator('#providerKeyConfirmModal').getAttribute('role'), 'dialog');
-    assert.equal(await page.locator('#providerKeyConfirmModal').getAttribute('aria-modal'), 'true');
+    assert.equal(await page.locator('#addProviderKeyModal').getAttribute('role'), 'dialog');
+    assert.equal(await page.locator('#addProviderKeyModal').getAttribute('aria-modal'), 'true');
 
     await page.waitForFunction(() => Boolean(window.adminPanel), { timeout: 5_000 });
     await page.evaluate(() => {

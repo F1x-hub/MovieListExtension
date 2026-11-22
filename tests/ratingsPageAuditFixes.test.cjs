@@ -168,7 +168,7 @@ function createFakeDb(collections) {
     const ratingsHtml = fs.readFileSync(path.join(projectRoot, 'src/pages/ratings/ratings.html'), 'utf8');
     assert.doesNotMatch(ratingsHtml, /\son[a-z]+="/i, 'Inline handlers are blocked by the extension CSP');
     assert.doesNotMatch(ratingsHtml, /id="userFilterGroup"[^>]*display:\s*none/, 'User filter must be visible');
-    assert.match(ratingsJs, /async editRating\(movieId\) \{[\s\S]{0,200}this\.findMovieData\(movieId\)/, 'editRating matches IDs numerically');
+    assert.match(ratingsJs, /editRating\(movieId\) \{[\s\S]{0,200}this\.findMovieData\(movieId\)/, 'editRating matches IDs numerically');
     assert.doesNotMatch(ratingsJs, /myRating: Number\(currentUserRating/, 'myRating never comes from another rater');
 
     console.log('Ratings page audit fix tests passed');

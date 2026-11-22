@@ -5,7 +5,6 @@ const vm = require('vm');
 const { PlaybackController } = require('../src/shared/services/player/PlaybackController');
 
 const movieDetailsPath = path.join(__dirname, '../src/pages/movie-details/movie-details.js');
-const searchPath = path.join(__dirname, '../src/pages/search/search.js');
 
 function loadManager(sourcePath, globalName) {
     const listeners = new Map();
@@ -202,38 +201,6 @@ async function testMovieDetailsValidRestoreIsOneShot() {
     assert.strictEqual(harness.manager.currentEpisode, 4, 'valid resume must keep the numeric episode mirror');
 }
 
-async function testSearchLateRestoreIsDiscarded() {
-    const { Manager } = loadManager(searchPath, 'SearchPageManager');
-    const oldIframe = createIframe('');
-    const sent = [];
-    oldIframe.contentWindow.postMessage = message => sent.push(message);
-    let activeIframe = oldIframe;
-    let release;
-    const manager = Object.create(Manager.prototype);
-    manager.elements = {
-        videoContainer: {
-            querySelector: () => activeIframe
-        }
-    };
-    manager.selectedMovie = { kinopoiskId: 42 };
-    manager.currentVideoUrl = 'https://provider.example/embed/42';
-    manager.playerRestoreGeneration = 0;
-    manager.progressRestoreAttempt = null;
-    manager.progressService = {
-        getProgress: () => new Promise(resolve => {
-            release = resolve;
-        })
-    };
-
-    manager.restoreProgressForReadyIframe(oldIframe);
-    manager.invalidatePlayerRestore();
-    activeIframe = createIframe('');
-    release({ season: '1 сезон', episode: '4 серия' });
-    await flushMicrotasks();
-
-    assert.strictEqual(sent.length, 0, 'Search must discard restore after source/iframe invalidation');
-}
-
 function testControllerSelectionVersionAndProgressGuard() {
     const saves = [];
     const controller = new PlaybackController({
@@ -406,8 +373,6 @@ async function testLegacyNativeProgressCannotRegressCanonicalSelection() {
     console.log('  ✅ MovieDetails discards late stored E4 after explicit E8');
     await testMovieDetailsValidRestoreIsOneShot();
     console.log('  ✅ MovieDetails keeps valid resume one-shot');
-    await testSearchLateRestoreIsDiscarded();
-    console.log('  ✅ Search discards late restore after invalidation');
     testControllerSelectionVersionAndProgressGuard();
     console.log('  ✅ PlaybackController versions selection and rejects stale telemetry');
     await testNavigationDiscardedAfterSelectionChanges();

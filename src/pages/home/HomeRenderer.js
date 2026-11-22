@@ -726,22 +726,6 @@ class HomeRenderer {
     }
 
     /**
-     * Add the playback position to Continue watching cards.
-     * @param {Array<Object>} items
-     * @param {HTMLElement} grid
-     */
-    applyWatchProgress(items = [], grid) {
-        if (!grid) return;
-        const cards = grid.querySelectorAll('.movie-card-component');
-        items.forEach((item, index) => {
-            const label = this.formatWatchProgress(item?.watchProgress, item?.type || item?.movie?.type || '');
-            const poster = cards[index]?.querySelector('.mc-poster-container');
-            if (!label || !poster) return;
-            this.patchWatchProgress(cards[index], label);
-        });
-    }
-
-    /**
      * The dashboard frame. The placeholder and the loaded dashboard share it,
      * so replacing one with the other keeps the layout.
      * @param {Object} stats

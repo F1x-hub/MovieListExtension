@@ -491,7 +491,7 @@ async function main() {
     // On every page the sky shows through: nothing in the page's flow paints over it.
     await withExtension({ date: '2026-12-20T12:00:00+03:00' }, async (page, url, errors) => {
         const pages = ['home/home.html', 'random/random.html', 'catalog/catalog.html', 'search/search.html', 'ratings/ratings.html',
-            'bookmarks/bookmarks.html', 'calendar/calendar.html', 'collection/collection.html', 'profile/profile.html',
+            'bookmarks/bookmarks.html', 'calendar/calendar.html', 'profile/profile.html',
             'settings/settings.html', 'person-details/person-details.html?id=1', 'movie-details/movie-details.html?movieId=656',
             'admin/admin.html', 'live/live.html'];
         for (const target of pages) {

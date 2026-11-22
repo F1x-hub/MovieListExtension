@@ -21,8 +21,8 @@ assert(source.includes('.then((lateCollections) => {'),
     'Late collection reads must still update the page');
 assert(source.includes('this.refreshCollectionMenus();'),
     'Late collection reads must patch existing card collection menus');
-assert(source.includes('if (!loaded) routeOwnsResults = false;'),
-    'A failed source URL route must release the startup loader');
+assert(!source.includes('loadMovieFromSource'),
+    'Search must not render a film page of its own for a ?sourceUrl= link');
 assert(source.includes('if (!routeOwnsResults && this.searchGeneration === 0)'),
     'Initial cleanup must not replace a route or user-initiated search result');
 assert(source.includes('this.hideInitialLoading();'),

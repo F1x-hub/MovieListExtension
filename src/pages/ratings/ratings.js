@@ -1,6 +1,8 @@
 import { i18n } from '../../shared/i18n/I18n.js';
 import { getTimestamp } from '../../shared/utils/dateUtils.js';
 import { buildProviderRatingCache, mergeProviderRatingsIntoMovies } from '../../shared/utils/providerRatings.js';
+import { getRatingTheme } from '../../shared/config/franchiseRatingThemes.js';
+import { getRatingIconMarkup } from '../../shared/components/RatingIcons.js';
 
 /**
  * Ratings Page Manager
@@ -35,7 +37,7 @@ class RatingsPageManager {
         this.fetchedProfileIds = new Set(); // Profile IDs already fetched from Firestore this session
         this.availableCollections = []; // Store for menu
         this.renderedMoviesState = new Map(); // Store rendered movie signatures for diffing
-        this.pendingStatusActions = new Set(); // Movie IDs with a bookmark/status write in flight
+        this.cardActions = null; // MovieCardActions, created on first use
         // Live updates (newest rated movies listener + revalidation on return)
         this.liveUnsubscribe = null;
         this.liveSeenTimestamps = null; // movieId -> lastRatingUpdatedAt ms; null until the baseline snapshot
@@ -50,7 +52,6 @@ class RatingsPageManager {
         // Client-only sorts read every page: larger pages, one render at the end
         this.CLIENT_SORT_BATCH_SIZE = 40;
         this.bulkLoading = false;
-        this.isSavingRating = false;
         this._moviesLoadTriggered = false;
         this.init();
     }
@@ -116,10 +117,10 @@ class RatingsPageManager {
     }
 
     async init() {
-        // Legacy ?collection= links belong to the collection page; leave before any work
+        // Legacy ?collection= links open that collection in Bookmarks; leave before any work
         const collectionId = new URLSearchParams(window.location.search).get('collection');
         if (collectionId) {
-            window.location.href = chrome.runtime.getURL(`src/pages/collection/collection.html?id=${encodeURIComponent(collectionId)}`);
+            window.location.replace(chrome.runtime.getURL(`src/pages/bookmarks/bookmarks.html?filter=collection:${encodeURIComponent(collectionId)}`));
             return;
         }
 
@@ -197,24 +198,7 @@ class RatingsPageManager {
             // Results info
             resultsCount: document.getElementById('resultsCount'),
             resultsMode: document.getElementById('resultsMode'),
-            
-            // Rating modal (edit own rating)
-            ratingModal: document.getElementById('ratingModal'),
-            ratingModalTitle: document.getElementById('ratingModalTitle'),
-            ratingModalClose: document.getElementById('ratingModalClose'),
-            ratingSlider: document.getElementById('ratingSlider'),
-            ratingValue: document.getElementById('ratingValue'),
-            ratingWord: document.getElementById('ratingWord'),
-            episodeRatingLink: document.getElementById('episodeRatingLink'),
-            ratingComment: document.getElementById('ratingComment'),
-            charCount: document.getElementById('charCount'),
-            saveRatingBtn: document.getElementById('saveRatingBtn'),
-            cancelRatingBtn: document.getElementById('cancelRatingBtn'),
-            movieRatingInfo: document.getElementById('movieRatingInfo'),
-            currentRatingInfo: document.getElementById('currentRatingInfo'),
-            existingRatingValue: document.getElementById('existingRatingValue'),
-            existingRatingComment: document.getElementById('existingRatingComment'),
-            
+
             // Active Filters
             activeFiltersContainer: document.getElementById('activeFiltersContainer'),
             activeFiltersList: document.getElementById('activeFiltersList'),
@@ -242,10 +226,6 @@ class RatingsPageManager {
         this.sortControl = this.dropdowns.sortFilter;
         this.sortLocaleUnsubscribe?.();
         this.sortLocaleUnsubscribe = i18n.onLocaleChange?.(() => this.updateSortFilterUIState());
-    }
-
-    closeDropdown(dropdownId) {
-        this.dropdowns?.[dropdownId]?.close();
     }
 
     closeAllDropdowns() {
@@ -384,38 +364,6 @@ class RatingsPageManager {
         }, { passive: true });
         // Release the Firestore listener so the page stays eligible for the back/forward cache
         window.addEventListener('pagehide', () => this.stopLiveUpdates());
-
-        // Modal close buttons
-        this.elements.ratingModalClose?.addEventListener('click', () => this.closeRatingModal());
-        
-        // Rating modal
-        this.elements.ratingSlider?.addEventListener('input', (e) => {
-            this.elements.ratingValue.textContent = e.target.value;
-            this.updateRatingWord(e.target.value);
-        });
-        
-        this.elements.ratingComment?.addEventListener('input', (e) => {
-            const count = e.target.value.length;
-            this.elements.charCount.textContent = count;
-        });
-        
-        this.elements.saveRatingBtn?.addEventListener('click', () => this.saveRating());
-        this.elements.cancelRatingBtn?.addEventListener('click', () => this.closeRatingModal());
-        // Escape closes the native dialog itself; this runs for every way it closes
-        this.elements.ratingModal?.addEventListener('close', () => {
-            if (!this.elements.ratingModal.open) this.selectedMovie = null;
-        });
-        // Enter in the form saves instead of submitting the page
-        document.getElementById('ratingForm')?.addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.saveRating();
-        });
-        
-        // The dialog covers the viewport, so a press on the dialog itself (not on
-        // the .modal surface inside it) is a press on the dimmed background
-        this.elements.ratingModal?.addEventListener('mousedown', (e) => {
-            if (e.target === this.elements.ratingModal) this.closeRatingModal();
-        });
     }
 
     async setupFirebase() {
@@ -1858,19 +1806,6 @@ class RatingsPageManager {
         this.saveFiltersToStorage();
     }
 
-    /** Word for a 1–10 score («Шедевр», «Плохо»...); also read out by the slider. */
-    getRatingWord(value) {
-        const score = Math.round(Number(value));
-        if (!(score >= 1 && score <= 10)) return '';
-        return this.text(`modal.words.${score}`);
-    }
-
-    updateRatingWord(value) {
-        const word = this.getRatingWord(value);
-        if (this.elements?.ratingWord) this.elements.ratingWord.textContent = word;
-        this.elements?.ratingSlider?.setAttribute('aria-valuetext', word ? `${value} — ${word}` : String(value));
-    }
-
     parseMyRatingRange(value) {
         if (value === 'none') return { none: true };
         const match = /^(\d+)-(\d+)$/.exec(String(value || ''));
@@ -2279,17 +2214,6 @@ class RatingsPageManager {
                 return;
             }
 
-            const collectionBtn = e.target.closest('.collection-btn');
-            if (collectionBtn) {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                const movieId = parseInt(collectionBtn.getAttribute('data-movie-id'));
-                if (movieId && window.navigation?.showCollectionSelector) {
-                    window.navigation.showCollectionSelector(movieId, collectionBtn);
-                }
-                return;
-            }
-
             const target = e.target.closest('[data-action]');
             if (!target) return;
 
@@ -2304,24 +2228,10 @@ class RatingsPageManager {
             e.preventDefault();
             e.stopImmediatePropagation();
 
+            // Status and collection items: the shared quick-action handler
+            if ((this.cardActions ||= this.createCardActions()).handle(target)) return;
+
             switch (action) {
-                case 'toggle-favorite':
-                    this.runStatusAction(movieId, () => this.toggleFavorite(movieId, target));
-                    break;
-                case 'toggle-watching':
-                    this.runStatusAction(movieId, () => this.handleWatchingToggle(movieId, target));
-                    break;
-                case 'toggle-watchlist':
-                    this.runStatusAction(movieId, () => this.handleWatchlistToggle(movieId, target));
-                    break;
-                case 'toggle-watched':
-                    this.runStatusAction(movieId, () => this.handleWatchedToggle(movieId, target));
-                    break;
-                case 'toggle-collection': {
-                    const collectionId = target.getAttribute('data-collection-id');
-                    if (collectionId) this.handleToggleCollection(movieId, collectionId, target);
-                    break;
-                }
                 case 'edit-rating':
                     this.editRating(movieId);
                     break;
@@ -2334,25 +2244,8 @@ class RatingsPageManager {
                     );
                     break;
                 }
-                case 'add-to-collection':
-                    if (window.navigation?.showCollectionPicker) {
-                        window.navigation.showCollectionPicker(parseInt(movieId));
-                    }
-                    break;
             }
         });
-    }
-
-    /** Ignore repeat clicks while a bookmark/status write for the same movie is in flight. */
-    async runStatusAction(movieId, action) {
-        const key = String(movieId);
-        if (this.pendingStatusActions.has(key)) return;
-        this.pendingStatusActions.add(key);
-        try {
-            await action();
-        } finally {
-            this.pendingStatusActions.delete(key);
-        }
     }
 
     createMovieCard(movieData) {
@@ -2411,87 +2304,26 @@ class RatingsPageManager {
 
         return card;
     }
-    checkAuth() {
-        if (!this.currentUser) {
-            if (typeof Utils !== 'undefined') {
-                Utils.showToast(this.t('sign_in'), 'warning');
-            }
-            return false;
-        }
-        return true;
-    }
-
-    static STATUS_BUTTONS = {
-        favorite: {
-            attribute: 'data-is-favorite',
-            labels: ['movie_card.remove_favorite', 'movie_card.add_favorite'],
-            path: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>',
-            fillWhenActive: true
-        },
-        watching: {
-            attribute: 'data-is-watching',
-            labels: ['movie_card.remove_watching', 'movie_card.add_watching'],
-            path: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>',
-            fillWhenActive: false
-        },
-        watchlist: {
-            attribute: 'data-is-in-watchlist',
-            labels: ['movie_card.remove_watchlist', 'movie_card.add_watchlist'],
-            path: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>',
-            fillWhenActive: true
-        },
-        watched: {
-            attribute: 'data-is-watched',
-            labels: ['movie_card.remove_watched', 'movie_card.add_watched'],
-            path: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>',
-            fillWhenActive: false
-        }
-    };
-
-    static statusIcon(path, filled) {
-        return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
-    }
-
-    updateButtonState(button, type, isActive) {
-        const config = RatingsPageManager.STATUS_BUTTONS[type];
-        if (!button || !config) return;
-
-        button.setAttribute(config.attribute, isActive);
-        Utils.toggleActionButton(button, isActive, {
-            active: i18n.get(config.labels[0]),
-            inactive: i18n.get(config.labels[1])
-        }, {
-            active: RatingsPageManager.statusIcon(config.path, config.fillWhenActive),
-            inactive: RatingsPageManager.statusIcon(config.path, false)
+    /** Card menu quick actions; this page keeps its own film list in step. */
+    createCardActions() {
+        return new MovieCardActions({
+            getUser: () => this.currentUser,
+            getMovie: movieId => this.findMovieData(movieId)?.movie || null,
+            getStatus: movieId => {
+                const movieData = this.findMovieData(movieId);
+                return movieData ? (movieData.status || null) : undefined;
+            },
+            onStatusChange: (movieId, status) => {
+                const movieData = this.findMovieData(movieId);
+                if (!movieData) return;
+                movieData.status = status;
+                movieData.isFavorite = status === 'favorite';
+                movieData.isWatching = status === 'watching';
+                movieData.isInWatchlist = status === 'plan_to_watch';
+            },
+            getCollectionService: () => this.collectionService || null,
+            getCollections: () => this.availableCollections
         });
-    }
-
-    refreshCardButtons(descriptor) {
-        // Find card by movie id or rating id
-        // In existing implementation, cards have data-movie-id or data-rating-id
-        const card = document.querySelector(`.movie-card-component[data-movie-id="${descriptor}"]`) || 
-                     document.querySelector(`.movie-card-component[data-rating-id="${descriptor}"]`);
-        
-        if (!card) return;
-
-        // Since statuses are mutually exclusive, if one is active, others must be inactive
-        // We can just re-render the card, OR update all buttons in the menu
-        
-        // Let's update buttons
-        const movieData = this.filteredMovies.find(m => m.id == descriptor || m.movieId == descriptor || m.movie?.kinopoiskId == descriptor) ||
-                          this.movies.find(m => m.id == descriptor || m.movieId == descriptor || m.movie?.kinopoiskId == descriptor);
-
-        if (!movieData) return;
-
-        const favBtn = card.querySelector('[data-action="toggle-favorite"]');
-        const watchBtn = card.querySelector('[data-action="toggle-watching"]');
-        const planBtn = card.querySelector('[data-action="toggle-watchlist"]');
-        const watchedBtn = card.querySelector('[data-action="toggle-watched"]');
-
-        this.updateButtonState(favBtn, 'favorite', movieData.status === 'favorite');
-        this.updateButtonState(watchBtn, 'watching', movieData.status === 'watching');
-        this.updateButtonState(planBtn, 'watchlist', movieData.status === 'plan_to_watch');
-        this.updateButtonState(watchedBtn, 'watched', movieData.status === 'watched');
     }
 
     findMovieData(movieId) {
@@ -2519,307 +2351,30 @@ class RatingsPageManager {
         };
     }
 
-    async toggleFavorite(cardMovieId, buttonElement) {
-        if (!this.checkAuth()) return;
-
-        try {
-            const favoriteService = firebaseManager.getFavoriteService();
-            const movieData = this.findMovieData(cardMovieId);
-
-            if (!movieData) {
-                console.error('Movie data not found for movie:', cardMovieId);
-                return;
-            }
-
-            const movieId = movieData.movie?.kinopoiskId || movieData.movieId;
-            const isFavorite = movieData.isFavorite || movieData.status === 'favorite';
-
-            // Optimistic UI update
-            if (buttonElement) buttonElement.classList.add('animating');
-
-            if (isFavorite) {
-                // If currently favorite, remove it (or set to null status? usually remove)
-                await favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
-                movieData.isFavorite = false;
-                movieData.status = null;
-                
-                this.updateButtonState(buttonElement, 'favorite', false);
-                if (typeof Utils !== 'undefined') Utils.showToast(this.t('favorite_removed'), 'success');
-            } else {
-                // Check limit before adding
-                 const limitReached = await favoriteService.isFavoritesLimitReached(this.currentUser.uid, 50);
-                 if (limitReached) {
-                     if (typeof Utils !== 'undefined') {
-                         Utils.showToast(this.t('favorites_limit'), 'warning');
-                     }
-                     if (buttonElement) buttonElement.classList.remove('animating');
-                     return;
-                 }
-
-                // Add to favorites
-                await favoriteService.addToFavorites(this.currentUser.uid, {
-                    ...movieData.movie,
-                    movieId: movieId
-                }, 'favorite');
-                
-                // Update local model
-                movieData.isFavorite = true;
-                movieData.isWatching = false; // Mutually exclusive
-                movieData.isInWatchlist = false; // Mutually exclusive
-                movieData.status = 'favorite';
-                
-                this.updateButtonState(buttonElement, 'favorite', true);
-                // Also need to update other buttons for this card if they exist/are visible
-                this.refreshCardButtons(movieId);
-                
-                if (typeof Utils !== 'undefined') Utils.showToast(this.t('favorite_added'), 'success');
-            }
-            
-            if (window.navigation?.updateFavoritesCount) window.navigation.updateFavoritesCount();
-
-        } catch (error) {
-            console.error('Error toggling favorite:', error);
-            if (typeof Utils !== 'undefined') Utils.showToast(this.t('status_error'), 'error');
-        } finally {
-            if (buttonElement) setTimeout(() => buttonElement.classList.remove('animating'), 600);
-        }
-    }
-
-    async handleWatchingToggle(movieId, buttonElement) {
-        if (!this.checkAuth()) return;
-
-        try {
-            const favoriteService = firebaseManager.getFavoriteService();
-            const movieData = this.findMovieData(movieId);
-            if (!movieData) return;
-
-            const isWatching = movieData.isWatching || (movieData.status === 'watching');
-
-            if (isWatching) {
-                // Remove
-                await favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
-                movieData.isWatching = false;
-                movieData.status = null;
-                
-                this.updateButtonState(buttonElement, 'watching', false);
-                if (typeof Utils !== 'undefined') Utils.showToast(this.t('watching_removed'), 'success');
-            } else {
-                // Add to Watching
-                await favoriteService.addToFavorites(this.currentUser.uid, {
-                    ...movieData.movie,
-                    movieId: movieId
-                }, 'watching');
-                
-                movieData.isWatching = true;
-                movieData.isFavorite = false;
-                movieData.isInWatchlist = false;
-                movieData.status = 'watching';
-                
-                this.updateButtonState(buttonElement, 'watching', true);
-                this.refreshCardButtons(movieId);
-                
-                if (typeof Utils !== 'undefined') Utils.showToast(this.t('watching_added'), 'success');
-            }
-
-            if (window.navigation?.updateWatchingCount) window.navigation.updateWatchingCount();
-        } catch (error) {
-            console.error('Error toggling watching:', error);
-            if (typeof Utils !== 'undefined') Utils.showToast(this.t('status_error'), 'error');
-        }
-    }
-
-    async handleWatchedToggle(movieId, buttonElement) {
-        if (!this.checkAuth()) return;
-
-        try {
-            const favoriteService = firebaseManager.getFavoriteService();
-            const movieData = this.findMovieData(movieId);
-            if (!movieData) return;
-
-            const isWatched = movieData.status === 'watched';
-
-            if (isWatched) {
-                // Remove
-                await favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
-                movieData.status = null;
-                
-                this.updateButtonState(buttonElement, 'watched', false);
-                if (typeof Utils !== 'undefined') Utils.showToast(this.t('watched_removed'), 'success');
-            } else {
-                // Add to Watched
-                await favoriteService.addToFavorites(this.currentUser.uid, {
-                    ...movieData.movie,
-                    movieId: movieId
-                }, 'watched');
-                
-                movieData.isWatching = false;
-                movieData.isFavorite = false;
-                movieData.isInWatchlist = false;
-                movieData.status = 'watched';
-                
-                this.updateButtonState(buttonElement, 'watched', true);
-                this.refreshCardButtons(movieId);
-                
-                if (typeof Utils !== 'undefined') Utils.showToast(this.t('watched_added'), 'success');
-            }
-
-        } catch (error) {
-            console.error('Error toggling watched:', error);
-            if (typeof Utils !== 'undefined') Utils.showToast(this.t('status_error'), 'error');
-        }
-    }
-
-    async handleWatchlistToggle(movieId, buttonElement) {
-        if (!this.checkAuth()) return;
-
-        try {
-            const favoriteService = firebaseManager.getFavoriteService();
-            const movieData = this.findMovieData(movieId);
-            if (!movieData) return;
-
-            const isInWatchlist = movieData.isInWatchlist || (movieData.status === 'plan_to_watch');
-
-            if (isInWatchlist) {
-                // Remove
-                await favoriteService.removeFromFavorites(this.currentUser.uid, movieId);
-                movieData.isInWatchlist = false;
-                movieData.status = null;
-                
-                this.updateButtonState(buttonElement, 'watchlist', false);
-                if (typeof Utils !== 'undefined') Utils.showToast(this.t('watchlist_removed'), 'success');
-            } else {
-                // Add to Plan to Watch
-                await favoriteService.addToFavorites(this.currentUser.uid, {
-                    ...movieData.movie,
-                    movieId: movieId
-                }, 'plan_to_watch');
-                
-                movieData.isInWatchlist = true;
-                movieData.isFavorite = false;
-                movieData.isWatching = false;
-                movieData.status = 'plan_to_watch';
-                
-                this.updateButtonState(buttonElement, 'watchlist', true);
-                this.refreshCardButtons(movieId);
-                
-                if (typeof Utils !== 'undefined') Utils.showToast(this.t('watchlist_added'), 'success');
-            }
-
-            if (window.navigation?.updateWatchlistCount) window.navigation.updateWatchlistCount();
-        } catch (error) {
-            console.error('Error toggling watchlist:', error);
-            if (typeof Utils !== 'undefined') Utils.showToast(this.t('status_error'), 'error');
-        }
-    }
-
-    async handleToggleCollection(movieId, collectionId, buttonElement) {
-        if (!this.collectionService) return;
-        
-        // Optimistic UI update
-        const originalHtml = buttonElement.innerHTML;
-        const textSpan = buttonElement.querySelector('.mc-menu-item-text');
-        
-        try {
-            // Check if checkmark exists
-            let checkSpan = Array.from(buttonElement.children).find(child => child.classList?.contains('mc-collection-check') || child.textContent.includes('✓') || child.querySelector('svg'));
-            const isChecked = !!checkSpan;
-            
-            if (isChecked) {
-                checkSpan.remove();
-                if (textSpan) textSpan.style.fontWeight = 'normal';
-            } else {
-                const newCheck = document.createElement('span');
-                newCheck.className = 'mc-collection-check';
-                newCheck.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-                newCheck.style.marginLeft = 'auto';
-                newCheck.style.fontWeight = 'bold';
-                newCheck.style.color = 'var(--accent-color, #4CAF50)';
-                buttonElement.appendChild(newCheck);
-
-                // Text keeps the theme's menu color (a fixed white was unreadable in the light theme)
-                if (textSpan) textSpan.style.fontWeight = '500';
-            }
-
-            await this.collectionService.toggleMovieInCollection(collectionId, parseInt(movieId));
-            
-            // Update local cache
-            const col = this.availableCollections.find(c => c.id === collectionId);
-            if (col) {
-                const idToCheck = parseInt(movieId);
-                const idx = col.movieIds.indexOf(idToCheck);
-                if (idx > -1) {
-                    col.movieIds.splice(idx, 1);
-                } else {
-                    col.movieIds.push(idToCheck);
-                }
-            }
-            // Logic to revert or ensure consistency if cache was string/number mix is handled loosely above
-
-            if (typeof Utils !== 'undefined') Utils.showToast(isChecked ? this.t('collection_removed') : this.t('collection_added'), 'success');
-
-        } catch (error) {
-            console.error('Error toggling collection:', error);
-            buttonElement.innerHTML = originalHtml;
-            if (typeof Utils !== 'undefined') Utils.showToast(this.t('collection_error'), 'error');
-        }
-    }
-
-    async editRating(movieId) {
+    /** Opens the shared rating dialog for the signed-in user's own rating of a card's film. */
+    editRating(movieId) {
         // movieId arrives as a string from data attributes; findMovieData compares numerically
         const movieData = this.findMovieData(movieId);
-        if (!movieData) return;
+        if (!movieData || !this.currentUser || typeof window.RatingDialog === 'undefined') return;
 
         // Edit the signed-in user's own rating, never the featured rater's values
         const personalRating = this.getMyRating(movieData);
-        const { rating: currentRating, comment: currentComment } = personalRating;
-        if (!currentRating) return;
+        if (!personalRating.rating) return;
 
         const movie = movieData.movie;
-        this.selectedMovie = movie;
-        
-        // Update modal title
-        this.elements.ratingModalTitle.textContent = this.text('modal.edit_title', { title: movie.name });
-        
-        // Show movie info in rating modal
-        const formatScore = value => {
-            const score = Number(value);
-            return Number.isFinite(score) && score > 0 ? score.toFixed(1) : '';
-        };
-        const kpScore = formatScore(movie.kpRating);
-        const imdbScore = formatScore(movie.imdbRating);
-        const genresText = Utils.formatGenres
-            ? Utils.formatGenres(movie.genres, 3)
-            : (Array.isArray(movie.genres) ? movie.genres.slice(0, 3).filter(Boolean).join(', ') : '');
-        const metaText = [movie.year, genresText].filter(Boolean).join(' • ');
-
-        this.elements.movieRatingInfo.innerHTML = `
-            <div class="movie-detail">
-                <img src="${this.escapeHtml(movie.posterUrl || '/src/shared/assets/icons/app/icon48.png')}" alt="${this.escapeHtml(movie.name || '')}" class="movie-detail-poster">
-                <div class="movie-detail-info">
-                    <h3 class="movie-detail-title">${this.escapeHtml(movie.name)}</h3>
-                    <p class="movie-detail-meta">${this.escapeHtml(metaText)}</p>
-                    <div class="movie-detail-ratings">
-                        <span class="rating-badge kp">${this.escapeHtml(this.text('modal.kp_label'))}: ${kpScore || this.escapeHtml(this.text('modal.no_score'))}</span>
-                        ${imdbScore ? `<span class="rating-badge imdb">IMDb: ${imdbScore}</span>` : ''}
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        // Show current rating info
-        this.elements.currentRatingInfo.style.display = 'block';
-        this.elements.existingRatingValue.textContent = `${currentRating}/10`;
-        this.elements.existingRatingComment.innerHTML = currentComment ? Utils.parseSpoilers(this.escapeHtml(currentComment)) : this.escapeHtml(this.text('modal.no_comment'));
-        
-        // Set form values
-        this.elements.ratingSlider.value = currentRating;
-        this.elements.ratingValue.textContent = currentRating;
-        this.updateRatingWord(currentRating);
-        this.elements.ratingComment.value = currentComment || '';
-        this.elements.charCount.textContent = (currentComment || '').length;
-        
-        this.openRatingModal();
-        this.updateEpisodeRatingLink(movieData);
+        const id = Number(movieData.movieId || movie?.kinopoiskId);
+        const uid = this.currentUser.uid;
+        const theme = getRatingTheme(movie);
+        window.RatingDialog.shared().open({
+            movie,
+            theme,
+            iconMarkup: getRatingIconMarkup(theme),
+            // The card has no review and no document ID; the read below brings both.
+            known: { id: null, rating: personalRating.rating, comment: personalRating.comment },
+            load: () => firebaseManager.getRatingService().getRating(uid, id),
+            episodeLink: this.getEpisodeRatingLink(movieData),
+            save: request => this.saveRating(movie, request)
+        });
     }
 
     isSeriesMovie(movie) {
@@ -2831,99 +2386,107 @@ class RatingsPageManager {
      * Series get a link to Movie Details, which owns episode scores: only released
      * episodes from the TMDB season catalog can be rated there, and title ratings
      * here stay independent of episode scores.
+     * @returns {string|null}
      */
-    updateEpisodeRatingLink(movieData) {
-        const link = this.elements?.episodeRatingLink;
-        if (!link) return;
+    getEpisodeRatingLink(movieData) {
         const movieId = Number(movieData?.movieId || movieData?.movie?.kinopoiskId);
-        const show = movieId > 0 && this.isSeriesMovie(movieData?.movie);
-        link.hidden = !show;
-        if (!show) {
-            link.removeAttribute('href');
-            return;
-        }
+        if (!(movieId > 0) || !this.isSeriesMovie(movieData?.movie)) return null;
         const params = new URLSearchParams({ movieId: String(movieId) });
-        link.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?${params.toString()}`);
+        return chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?${params.toString()}`);
     }
 
-    async saveRating() {
-        if (!this.elements.ratingSlider || !this.elements.ratingComment) return;
-        if (!this.selectedMovie || !this.currentUser) return;
-        // One save at a time: a second click while the profile loads must not write twice
-        if (this.isSavingRating) return;
-        this.isSavingRating = true;
-        if (this.elements.saveRatingBtn) this.elements.saveRatingBtn.disabled = true;
+    /**
+     * The dialog's save: updates the card at once, then writes in the background and
+     * rolls only this card back if the write fails.
+     * @param {Object} movie
+     * @param {Object} request - from RatingDialog
+     */
+    async saveRating(movie, request) {
+        if (!movie || !this.currentUser) throw new Error('No film or user to save a rating for');
+        const { rating, comment } = request;
+        const ratingService = firebaseManager.getRatingService();
+        const uid = this.currentUser.uid;
 
-        try {
-            const rating = parseInt(this.elements.ratingSlider.value);
-            const comment = this.elements.ratingComment.value.trim();
+        // The signed-in user's profile is normally already loaded for the cards;
+        // only fetch it when it is not, instead of on every save.
+        let userProfile = this.userProfilesMap.get(String(uid)) || null;
+        if (!userProfile) {
+            userProfile = await firebaseManager.getUserService().getUserProfile(uid);
+            if (userProfile) this.userProfilesMap.set(String(uid), userProfile);
+        }
 
-            // Validation
-            if (rating < 1 || rating > 10) {
-                Utils.showToast(this.t('rating_invalid'), 'warning');
-                return;
+        // Get display name based on user preference
+        const displayName = typeof Utils !== 'undefined' && Utils.getDisplayName
+            ? Utils.getDisplayName(userProfile, this.currentUser)
+            : (userProfile?.displayName || this.currentUser.displayName || this.currentUser.email);
+
+        const photoURL = userProfile?.photoURL || this.currentUser.photoURL || '';
+        const movieId = Number(movie.kinopoiskId || movie.movieId);
+
+        let addedNew = false;
+        // Rollback restores only this card, so pages or live updates that arrive
+        // while the write is in flight are kept.
+        let backupItem = null;
+
+        // 1. Update this.movies
+        const movieIndex = this.movies.findIndex(m => Number(m.movie?.kinopoiskId || m.movieId) === movieId);
+        if (movieIndex > -1) {
+            const movieItem = this.movies[movieIndex];
+            backupItem = this.cloneMovieItem(movieItem);
+            // Mirrors aggregateMovieRatings: only a changed score moves the film's
+            // lastRatingUpdatedAt. A comment-only edit keeps the card in place, as it
+            // will be after a reload.
+            const scoreChanged = this.getMyRating(movieItem).rating !== rating;
+            // The saved rating becomes the card's featured rating
+            movieItem.userId = uid;
+            movieItem.userName = displayName;
+            movieItem.userDisplayName = displayName;
+            movieItem.userPhoto = photoURL;
+            movieItem.rating = rating;
+            movieItem.comment = comment;
+            movieItem.myRating = rating;
+            movieItem.myComment = comment;
+            movieItem.allRaters = movieItem.allRaters || [];
+            movieItem.updatedAt = new Date();
+            if (scoreChanged) {
+                movieItem.createdAt = new Date();
+                if (movieItem.movie) movieItem.movie.lastRatingUpdatedAt = new Date();
+                // The listener will report this change; the card is already up to date
+                this.recentLocalEdits.set(String(movieId), Date.now());
             }
 
-            const ratingService = firebaseManager.getRatingService();
-            const uid = this.currentUser.uid;
-
-            // The signed-in user's profile is normally already loaded for the cards;
-            // only fetch it when it is not, instead of on every save.
-            let userProfile = this.userProfilesMap.get(String(uid)) || null;
-            if (!userProfile) {
-                userProfile = await firebaseManager.getUserService().getUserProfile(uid);
-                if (userProfile) this.userProfilesMap.set(String(uid), userProfile);
+            let raterIndex = movieItem.allRaters.findIndex(r => r.userId === uid);
+            if (raterIndex > -1) {
+                movieItem.allRaters[raterIndex].rating = rating;
+                movieItem.allRaters[raterIndex].comment = comment;
+                movieItem.allRaters[raterIndex].updatedAt = new Date();
+            } else {
+                movieItem.allRaters.push({
+                    userId: uid,
+                    userName: displayName,
+                    userPhoto: photoURL,
+                    movieId: movieId,
+                    rating: rating,
+                    comment: comment,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                });
             }
-
-            // Get display name based on user preference
-            const displayName = typeof Utils !== 'undefined' && Utils.getDisplayName
-                ? Utils.getDisplayName(userProfile, this.currentUser)
-                : (userProfile?.displayName || this.currentUser.displayName || this.currentUser.email);
-
-            const photoURL = userProfile?.photoURL || this.currentUser.photoURL || '';
-            // closeRatingModal() clears this.selectedMovie before the background write below
-            const selectedMovie = this.selectedMovie;
-            const movieId = Number(selectedMovie.kinopoiskId || selectedMovie.movieId);
-
-            let addedNew = false;
-            // Rollback restores only this card, so pages or live updates that arrive
-            // while the write is in flight are kept.
-            let backupItem = null;
-
-            // 1. Update this.movies
-            const movieIndex = this.movies.findIndex(m => Number(m.movie?.kinopoiskId || m.movieId) === movieId);
-            if (movieIndex > -1) {
-                const movieItem = this.movies[movieIndex];
-                backupItem = this.cloneMovieItem(movieItem);
-                // Mirrors aggregateMovieRatings: only a changed score moves the film's
-                // lastRatingUpdatedAt. A comment-only edit keeps the card in place, as it
-                // will be after a reload.
-                const scoreChanged = this.getMyRating(movieItem).rating !== rating;
-                // The saved rating becomes the card's featured rating
-                movieItem.userId = uid;
-                movieItem.userName = displayName;
-                movieItem.userDisplayName = displayName;
-                movieItem.userPhoto = photoURL;
-                movieItem.rating = rating;
-                movieItem.comment = comment;
-                movieItem.myRating = rating;
-                movieItem.myComment = comment;
-                movieItem.allRaters = movieItem.allRaters || [];
-                movieItem.updatedAt = new Date();
-                if (scoreChanged) {
-                    movieItem.createdAt = new Date();
-                    if (movieItem.movie) movieItem.movie.lastRatingUpdatedAt = new Date();
-                    // The listener will report this change; the card is already up to date
-                    this.recentLocalEdits.set(String(movieId), Date.now());
-                }
-
-                let raterIndex = movieItem.allRaters.findIndex(r => r.userId === uid);
-                if (raterIndex > -1) {
-                    movieItem.allRaters[raterIndex].rating = rating;
-                    movieItem.allRaters[raterIndex].comment = comment;
-                    movieItem.allRaters[raterIndex].updatedAt = new Date();
-                } else {
-                    movieItem.allRaters.push({
+            const sum = movieItem.allRaters.reduce((acc, r) => acc + r.rating, 0);
+            movieItem.averageRating = Math.round((sum / movieItem.allRaters.length) * 10) / 10;
+            movieItem.ratingsCount = movieItem.allRaters.length;
+        } else {
+            addedNew = true;
+            this.recentLocalEdits.set(String(movieId), Date.now());
+            const newMovieItem = {
+                id: `opt_${Date.now()}`,
+                movieId: movieId,
+                rating: rating,
+                comment: comment,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                allRaters: [
+                    {
                         userId: uid,
                         userName: displayName,
                         userPhoto: photoURL,
@@ -2932,75 +2495,36 @@ class RatingsPageManager {
                         comment: comment,
                         createdAt: new Date(),
                         updatedAt: new Date()
-                    });
-                }
-                const sum = movieItem.allRaters.reduce((acc, r) => acc + r.rating, 0);
-                movieItem.averageRating = Math.round((sum / movieItem.allRaters.length) * 10) / 10;
-                movieItem.ratingsCount = movieItem.allRaters.length;
-            } else {
-                addedNew = true;
-                this.recentLocalEdits.set(String(movieId), Date.now());
-                const newMovieItem = {
-                    id: `opt_${Date.now()}`,
-                    movieId: movieId,
-                    rating: rating,
-                    comment: comment,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                    allRaters: [
-                        {
-                            userId: uid,
-                            userName: displayName,
-                            userPhoto: photoURL,
-                            movieId: movieId,
-                            rating: rating,
-                            comment: comment,
-                            createdAt: new Date(),
-                            updatedAt: new Date()
-                        }
-                    ],
-                    myRating: rating,
-                    myComment: comment,
-                    averageRating: rating,
-                    ratingsCount: 1,
-                    movie: selectedMovie
-                };
-                this.movies.unshift(newMovieItem);
-            }
-
-            // Close modal and apply filters immediately
-            this.closeRatingModal();
-            this.applyFilters();
-
-            if (typeof Utils !== 'undefined') {
-                Utils.showToast(movieIndex > -1 ? this.t('rating_updated') : this.t('rating_added'), 'success');
-            }
-
-            // Perform Firestore write in background
-            const savePromise = ratingService.addOrUpdateRating(uid, displayName, photoURL, movieId, rating, comment, selectedMovie);
-            savePromise.then((actualRating) => {
-                // Update temporary opt_ IDs with real ones
-                if (addedNew && actualRating?.id) {
-                    const freshIndex = this.movies.findIndex(m => Number(m.movie?.kinopoiskId || m.movieId) === movieId);
-                    if (freshIndex > -1) {
-                        this.movies[freshIndex].id = actualRating.id;
                     }
-                }
-            }).catch((err) => {
-                console.error('Optimistic rating failed:', err);
-                if (typeof Utils !== 'undefined') {
-                    Utils.showToast(this.t('rating_save_failed'), 'error');
-                }
-                this.rollbackRating(movieId, backupItem);
-            });
-
-        } catch (error) {
-            console.error('Error saving rating:', error);
-            Utils.showToast(this.t('rating_save_error'), 'error');
-        } finally {
-            this.isSavingRating = false;
-            if (this.elements.saveRatingBtn) this.elements.saveRatingBtn.disabled = false;
+                ],
+                myRating: rating,
+                myComment: comment,
+                averageRating: rating,
+                ratingsCount: 1,
+                movie
+            };
+            this.movies.unshift(newMovieItem);
         }
+
+        this.applyFilters();
+        if (typeof Utils !== 'undefined') Utils.showToast(i18n.get('rating_dialog.saved'), 'success');
+
+        // Perform Firestore write in background
+        window.RatingDialog.write(ratingService, { uid, displayName, photoURL, movie }, request).then((actualRating) => {
+            // Update temporary opt_ IDs with real ones
+            if (addedNew && actualRating?.id) {
+                const freshIndex = this.movies.findIndex(m => Number(m.movie?.kinopoiskId || m.movieId) === movieId);
+                if (freshIndex > -1) {
+                    this.movies[freshIndex].id = actualRating.id;
+                }
+            }
+        }).catch((err) => {
+            console.error('Optimistic rating failed:', err);
+            if (typeof Utils !== 'undefined') {
+                Utils.showToast(this.t('rating_save_failed'), 'error');
+            }
+            this.rollbackRating(movieId, backupItem);
+        });
     }
 
     /** Copy of a card item deep enough to undo the optimistic edit in saveRating(). */
@@ -3026,21 +2550,6 @@ class RatingsPageManager {
         }
         this.renderedMoviesState.delete(key);
         this.applyFilters();
-    }
-
-    openRatingModal() {
-        const modal = this.elements.ratingModal;
-        if (!modal) return;
-        // showModal() makes the page inert, keeps Tab inside the dialog, focuses the
-        // autofocus slider and returns focus to the opener on close
-        if (!modal.open) modal.showModal();
-    }
-
-    closeRatingModal() {
-        // Cleared synchronously: saveRating() reads the film before it closes the dialog
-        this.selectedMovie = null;
-        const modal = this.elements.ratingModal;
-        if (modal?.open) modal.close();
     }
 
     showEmptyState() {

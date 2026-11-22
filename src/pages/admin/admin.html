@@ -239,16 +239,6 @@
                                 </div>
                             </div>
 
-                            <div class="settings-section" style="margin-top: -10px; margin-bottom: 10px;">
-                                <span class="background-sync-indicator" id="backgroundSyncIndicator" style="display: none;">
-                                    <span class="app-loader app-loader--inline app-loader--compact" role="status" aria-label="Синхронизация">
-                                        <span class="app-loader__indicator" aria-hidden="true"></span>
-                                    </span>
-                                    <span>Синхронизация...</span>
-                                </span>
-                                <span class="data-updated-badge" id="dataUpdatedBadge" style="display: none;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Данные обновлены</span>
-                            </div>
-
                             <div class="settings-section">
                                 <!-- Filters -->
                                 <div class="ratings-filters">
@@ -294,14 +284,6 @@
                                         <button id="bulkDeleteBtn" class="btn-delete" disabled>
                                             <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></span> Удалить
                                         </button>
-                                    </div>
-                                </div>
-
-                                <!-- Progress Indicator -->
-                                <div class="progress-indicator" id="progressIndicator" style="display: none;">
-                                    <span id="loadedCount">Загружено: 0 из 0 фильмов</span>
-                                    <div class="progress-bar">
-                                        <div class="progress-bar-fill" id="progressBarFill" style="width: 0%"></div>
                                     </div>
                                 </div>
 
@@ -889,115 +871,6 @@
                     <button class="btn btn-primary" id="submitProviderKeyBtn" type="submit">Проверить и сохранить</button>
                 </div>
             </form>
-        </div>
-    </div>
-
-    <!-- Provider key revoke confirmation modal -->
-    <div class="modal-overlay provider-key-modal" id="providerKeyConfirmModal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="providerKeyConfirmTitle">
-        <div class="modal provider-key-dialog">
-            <div class="modal-header">
-                <h3 id="providerKeyConfirmTitle">Отозвать ключ?</h3>
-                <button class="modal-close" id="closeProviderKeyConfirmBtn" type="button" aria-label="Закрыть">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-            </div>
-            <div class="modal-body">
-                <p id="providerKeyConfirmText">Ключ будет отключён и удалён из Secret Manager. Это действие нельзя отменить.</p>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="cancelProviderKeyConfirmBtn" type="button">Отмена</button>
-                <button class="btn btn-danger" id="confirmProviderKeyBtn" type="button">Отозвать ключ</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Delete Confirmation Modal -->
-    <div class="modal-overlay" id="deleteModal" style="display: none;" role="dialog" aria-modal="true" aria-label="Подтверждение удаления пользователя">
-        <div class="modal delete-modal">
-            <div class="modal-header">
-                <h3>Удалить пользователя?</h3>
-                <button class="modal-close" id="closeDeleteModal" aria-label="Закрыть">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-            </div>
-            <div class="modal-body">
-                <p class="warning-text">Пользователь будет удалён навсегда:</p>
-                <div class="user-preview" id="userPreview">
-                    <!-- User info will be inserted here -->
-                </div>
-                <div class="deletion-stats">
-                    <p><strong>Будут удалены:</strong></p>
-                    <ul id="deletionStatsList">
-                        <!-- Stats will be inserted here -->
-                    </ul>
-                </div>
-                <p class="irreversible-warning">Действие <strong>необратимо</strong>. Все данные будут удалены.</p>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="cancelDeleteBtn">Отмена</button>
-                <button class="btn btn-danger" id="confirmDeleteBtn">Удалить пользователя</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Delete Rating Confirmation Modal -->
-    <div class="modal-overlay" id="deleteRatingModal" style="display: none;" role="dialog" aria-modal="true" aria-label="Подтверждение удаления оценки">
-        <div class="modal delete-modal">
-            <div class="modal-header">
-                <h3>Удалить оценку?</h3>
-                <button class="modal-close" id="closeDeleteRatingModal" aria-label="Закрыть">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-            </div>
-            <div class="modal-body">
-                <p class="warning-text">Оценка будет удалена навсегда:</p>
-                <div class="rating-preview" id="ratingPreview">
-                    <!-- Rating info will be inserted here -->
-                </div>
-                <div class="deletion-stats">
-                    <p><strong>Будет выполнено:</strong></p>
-                    <ul id="ratingDeletionStatsList">
-                        <li>Удалить оценку из базы данных</li>
-                        <li>Удалить фильм из коллекций пользователей</li>
-                    </ul>
-                </div>
-                <p class="irreversible-warning">Действие <strong>необратимо</strong>.</p>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="cancelDeleteRatingBtn">Отмена</button>
-                <button class="btn btn-danger" id="confirmDeleteRatingBtn">Удалить оценку</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Bulk Delete Confirmation Modal -->
-    <div class="modal-overlay" id="bulkDeleteModal" style="display: none;" role="dialog" aria-modal="true" aria-label="Подтверждение массового удаления">
-        <div class="modal delete-modal">
-            <div class="modal-header">
-                <h3>Подтверждение удаления</h3>
-                <button class="modal-close" id="closeBulkDeleteModal" aria-label="Закрыть">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-            </div>
-            <div class="modal-body">
-                <p class="warning-text">Вы собираетесь удалить выбранные фильмы и их оценки:</p>
-                <div class="bulk-delete-preview" id="bulkDeletePreview">
-                    <!-- Selected movies count will be inserted here -->
-                </div>
-                <div class="deletion-stats">
-                    <p><strong>Это действие:</strong></p>
-                    <ul>
-                        <li>Удалит все оценки для выбранных фильмов</li>
-                        <li>Удалит фильмы из кэша</li>
-                        <li>Очистит локальный кэш</li>
-                    </ul>
-                </div>
-                <p class="irreversible-warning">Это действие <strong>необратимо</strong>.</p>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="cancelBulkDeleteBtn">Отмена</button>
-                <button class="btn btn-danger" id="confirmBulkDeleteBtn">Удалить</button>
-            </div>
         </div>
     </div>
 

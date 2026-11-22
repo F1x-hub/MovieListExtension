@@ -26,9 +26,10 @@ globalThis.firebaseManager = { getCurrentUser: () => null };
 
 let currentUrl = 'https://ext.test/src/pages/ratings/ratings.html?collection=abc';
 const historyWrites = [];
+const redirects = [];
 Object.defineProperty(globalThis, 'location', {
     configurable: true,
-    get: () => ({ href: currentUrl, search: new URL(currentUrl).search })
+    get: () => ({ href: currentUrl, search: new URL(currentUrl).search, replace: url => redirects.push(url) })
 });
 globalThis.history = {
     state: null,
@@ -39,6 +40,8 @@ process.on('unhandledRejection', () => {}); // init() runs against the stub DOM;
 await import('../src/pages/ratings/ratings.js');
 domListeners.DOMContentLoaded();
 const RatingsPageManager = window.ratingsPage.constructor;
+// A legacy ?collection= link opens that collection in Bookmarks, replacing this entry.
+assert.deepEqual(redirects, ['src/pages/bookmarks/bookmarks.html?filter=collection:abc']);
 
 const defaults = () => ({ search: '', genre: '', year: '', avgRatingFrom: 1.0, avgRatingTo: 10.0, user: '', myRating: '', sort: 'date-desc' });
 function createPage(overrides = {}) {
@@ -135,24 +138,22 @@ const film = (id, myRating) => ({ movieId: id, myRating, movie: { name: `Film ${
     assert.equal(ranged.filters.avgRatingTo, 9);
 }
 
-// Every score has a word on the scale, and the slider announces it.
+// Every score has a word, which the shared rating dialog shows next to it.
 {
     const { i18n } = await import('../src/shared/i18n/I18n.js');
+    globalThis.i18n = i18n;
+    await import('../src/shared/components/RatingDialog.js');
+    const { RatingDialog } = globalThis;
     i18n.currentLocale = 'ru';
-    const page = createPage();
-    assert.equal(page.getRatingWord(10), 'Шедевр');
-    assert.equal(page.getRatingWord('3'), 'Плохо');
-    assert.equal(page.getRatingWord(0), '');
-    assert.equal(page.getRatingWord(11), '');
-    const words = new Set(Array.from({ length: 10 }, (_, index) => page.getRatingWord(index + 1)));
+    assert.equal(RatingDialog.scoreWord(10), 'Шедевр');
+    assert.equal(RatingDialog.scoreWord('3'), 'Плохо');
+    assert.equal(RatingDialog.scoreWord(0), '');
+    assert.equal(RatingDialog.scoreWord(11), '');
+    const words = new Set(Array.from({ length: 10 }, (_, index) => RatingDialog.scoreWord(index + 1)));
     assert.equal(words.size, 10, 'Each of the ten scores has its own word');
-    const attributes = {};
-    page.elements = { ratingWord: { textContent: '' }, ratingSlider: { setAttribute: (name, value) => { attributes[name] = value; } } };
-    page.updateRatingWord(8);
-    assert.equal(page.elements.ratingWord.textContent, 'Очень хорошо');
-    assert.equal(attributes['aria-valuetext'], '8 — Очень хорошо');
     i18n.currentLocale = 'en';
-    assert.equal(page.getRatingWord(10), 'Masterpiece');
+    assert.equal(RatingDialog.scoreWord(10), 'Masterpiece');
+    delete globalThis.i18n;
 }
 
 // The view switch toggles the list class and pressed state.
@@ -177,14 +178,9 @@ const film = (id, myRating) => ({ movieId: id, myRating, movie: { name: `Film ${
 // touches episode ratings (see ratingsPageContract.test.js).
 {
     const page = createPage();
-    const link = { hidden: true, href: '', removeAttribute(name) { if (name === 'href') this.href = ''; } };
-    page.elements = { episodeRatingLink: link };
-    page.updateEpisodeRatingLink({ movieId: 77, movie: { type: 'tv-series' } });
-    assert.equal(link.hidden, false);
-    assert.equal(link.href, 'src/pages/movie-details/movie-details.html?movieId=77');
-    page.updateEpisodeRatingLink({ movieId: 78, movie: { type: 'movie' } });
-    assert.equal(link.hidden, true, 'Films get no episode link');
-    assert.equal(link.href, '');
+    assert.equal(page.getEpisodeRatingLink({ movieId: 77, movie: { type: 'tv-series' } }),
+        'src/pages/movie-details/movie-details.html?movieId=77');
+    assert.equal(page.getEpisodeRatingLink({ movieId: 78, movie: { type: 'movie' } }), null, 'Films get no episode link');
 }
 
 console.log('Ratings my-rating filter, URL filters, scale words, view switch and episode link passed.');

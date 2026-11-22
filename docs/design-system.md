@@ -56,7 +56,7 @@ Color is allowed only when it carries content or an unavoidable semantic:
    colours and opacity only (no gradients, masks or clip paths, which need ids),
    and none reproduces a logo or wordmark. Collections cannot use uploaded
    pictures: that feature was removed, and an old picture shows the folder icon;
-7. franchise rating icons: in the film page's rating dialog, films of
+7. franchise rating icons: in the rating dialog (Movie Details and Ratings), films of
    Spider-Man, Star Wars, Iron Man, Avengers, Superman and Dune are rated with
    their own pictures instead of stars (`src/shared/assets/icons/ratings/`,
    chosen by `src/shared/config/franchiseRatingThemes.js`). The selected look is
@@ -88,7 +88,7 @@ IMDb's yellow `#f5c518` and Kinopoisk's orange `#ff5500` fall to about 1.6:1 and
 2.9:1 on a light surface. Provider text that sits on a light surface in the light
 theme uses a deep shade of its own family, `#7e5400` for IMDb and `#a03b02` for
 Kinopoisk, so it reads at 4.5:1 or more and looks the same on every page: the film
-page's tiles, cards, Rated's rating dialog and Random. Badges with a yellow or
+page's tiles, cards and Random. Badges with a yellow or
 orange fill keep the brand fill in both themes and carry near-black text: white
 on Kinopoisk's orange is only about 3.4:1.
 
@@ -482,6 +482,7 @@ Each generic visual primitive has one owner:
 | Buttons, modals, dropdowns, menus, tooltips, popovers | `src/shared/styles/components.css` |
 | Filter choices, ranges and discovery panels | `src/shared/components/FilterControls.js` and `src/shared/styles/filter-controls.css` |
 | Movie cards | `src/shared/styles/movie-card.css` and `MovieCard.js` |
+| Rating dialog (Movie Details and Ratings) | `src/shared/styles/rating-dialog.css` and `RatingDialog.js` |
 | Awards and nominations (film tab, person page) | `src/shared/styles/awards.css` and `AwardsList.js` |
 | Navigation | `src/shared/styles/navigation.css` and `Navigation.js` |
 | Player geometry and overlays | `src/shared/styles/player.css` |
@@ -493,9 +494,9 @@ Each generic visual primitive has one owner:
 `--popover-backdrop` must not be introduced or reused.
 
 Search styles must not become a shared catch-all. `search.css` is a temporary
-compatibility dependency for the Ratings rating dialog and for the other list
-pages that still link it; do not add new consumers or selectors to it. Removing
-a link requires a verified runtime pass on that page.
+compatibility dependency for the Ratings filters and results and for the other
+list pages that still link it; do not add new consumers or selectors to it.
+Removing a link requires a verified runtime pass on that page.
 
 ## Component behavior
 

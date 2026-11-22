@@ -1187,7 +1187,15 @@ export const locales = {
             },
             empty: {
                 title: "No bookmarks found",
-                message: "Add using the bookmarks menu on any movie."
+                message: "Add using the bookmarks menu on any movie.",
+                collection_title: "This collection is empty",
+                collection_message: "Open the menu on a movie card and pick this collection.",
+                signed_out_title: "Sign in to see bookmarks",
+                signed_out_message: "Sign in to your account to see your bookmarks and collections."
+            },
+            toast: {
+                removed: "Removed from bookmarks",
+                remove_error: "Couldn't remove the bookmark"
             }
         },
         settings: {
@@ -1995,45 +2003,8 @@ export const locales = {
                 message: "Failed to load movies",
                 retry: "Try Again"
             },
-            modal: {
-                rate_movie: "Rate This Movie",
-                rate_episodes: "Rate episodes on the series page",
-                words: {
-                    1: "Awful", 2: "Very bad", 3: "Bad", 4: "Weak", 5: "So-so",
-                    6: "Decent", 7: "Good", 8: "Very good", 9: "Excellent", 10: "Masterpiece"
-                },
-                your_rating: "Your Rating",
-                share_thoughts: "Share Your Thoughts",
-                placeholder: "What did you think about this movie? (Optional)",
-                cancel: "Cancel",
-                save: "Save Rating",
-                close: "Close",
-                current_rating: "Your current rating",
-                edit_title: "Edit rating: {title}",
-                no_comment: "No comment",
-                kp_label: "KP",
-                no_score: "n/a"
-            },
             toast: {
-                sign_in: "Please sign in",
-                favorite_added: "Added to Favorites",
-                favorite_removed: "Removed from Favorites",
-                favorites_limit: "Favorites limit reached (50 movies)",
-                watching_added: "Added to Watching",
-                watching_removed: "Removed from Watching",
-                watched_added: "Marked as watched",
-                watched_removed: "Removed from Watched",
-                watchlist_added: "Added to Plan to Watch",
-                watchlist_removed: "Removed from Plan to Watch",
-                status_error: "Couldn't update the status",
-                collection_added: "Added to collection",
-                collection_removed: "Removed from collection",
-                collection_error: "Couldn't update the collection",
-                rating_added: "Rating added",
-                rating_updated: "Rating updated",
-                rating_invalid: "Rating must be between 1 and 10",
-                rating_save_failed: "Couldn't save the rating. Changes were rolled back.",
-                rating_save_error: "Couldn't save the rating. Please try again."
+                rating_save_failed: "Couldn't save the rating. Changes were rolled back."
             }
         },
         movie_card: {
@@ -2057,6 +2028,22 @@ export const locales = {
             add_random_pool: "Add to Random pool",
             random_pool_added: "Already in Random pool",
             random_pool_error: "Couldn't update Random pool",
+            toast: {
+                sign_in: "Please sign in",
+                favorite_added: "Added to Favorites",
+                favorite_removed: "Removed from Favorites",
+                favorites_limit: "Favorites limit reached (50 movies)",
+                watching_added: "Added to Watching",
+                watching_removed: "Removed from Watching",
+                watched_added: "Marked as watched",
+                watched_removed: "Removed from Watched",
+                watchlist_added: "Added to Plan to Watch",
+                watchlist_removed: "Removed from Plan to Watch",
+                status_error: "Couldn't update the status",
+                collection_added: "Added to collection",
+                collection_removed: "Removed from collection",
+                collection_error: "Couldn't update the collection"
+            },
             edit_rating: "Edit Rating",
             add_collection: "Add to Collection",
             remove: "Remove",
@@ -2329,6 +2316,37 @@ export const locales = {
                 austria: "Austria"
             }
         },
+        rating_dialog: {
+            title: "Rate",
+            close: "Close",
+            stars_label: "Rating from 1 to 10",
+            star_aria: "Rate {rating} out of 10",
+            status_prompt: "Select a rating",
+            status_loading: "Loading your rating…",
+            status_preview: "Preview: {rating}/10",
+            status_selected: "Your rating: {rating}/10",
+            words: {
+                1: "Awful", 2: "Very bad", 3: "Bad", 4: "Weak", 5: "So-so",
+                6: "Decent", 7: "Good", 8: "Very good", 9: "Excellent", 10: "Masterpiece"
+            },
+            rate_episodes: "Rate episodes on the series page",
+            write_review: "Write a review",
+            comment_label: "Short opinion",
+            comment_placeholder: "What did you think about this movie?",
+            review_label: "Full review",
+            review_visibility: "Other users will see the review.",
+            review_placeholder: "Tell others what you think about the movie...",
+            review_too_long: "A review can be at most {max} characters.",
+            spoiler: "Spoiler",
+            spoiler_title: "Hide as a spoiler",
+            spoiler_aria: "Hide the selected text as a spoiler",
+            spoiler_too_long: "Adding a spoiler would go over the {max} character limit.",
+            choose_rating: "Select a rating",
+            saved: "Rating saved!",
+            save_error: "Couldn't save the rating. Please try again.",
+            cancel: "Cancel",
+            save: "Save"
+        },
         movie_details: {
             loading: "Loading movie info...",
             continue_action: "Continue",
@@ -2344,10 +2362,6 @@ export const locales = {
             back_to_search: "Back to Search",
             rate_title: "Rate",
             personal_rating: "Your rating: {rating}/10",
-            rating_prompt: "Select a rating",
-            rating_loading: "Loading your rating…",
-            rating_preview: "Preview: {rating}/10",
-            rating_selected: "Your rating: {rating}/10",
             series_rating_disabled_hint: "This series needs a Kinopoisk link before it can be rated.",
             series_episode_sign_in: "Sign in to rate episodes",
             series_episode_your_rating: "Your rating:",
@@ -2362,10 +2376,6 @@ export const locales = {
             series_episode_saved: "Episode rating saved.",
             series_episode_watched_error: "The rating is saved, but the episode could not be marked watched. Try the checkmark button.",
             series_episode_removed: "Episode rating removed.",
-            write_review: "Write a Review",
-            review_placeholder: "What did you think about this movie?",
-            save_rating: "Save Rating",
-            cancel: "Cancel",
             watch_movie: "Watch Movie",
             click_to_expand: "Click to expand",
             refresh_data: "Refresh Data",
@@ -2398,16 +2408,10 @@ export const locales = {
                 composer: "Composer:",
                 designer: "Designer:",
                 editor: "Editor:",
-                budget: "Budget:",
-                fees_usa: "Fees in USA:",
-                fees_world: "Fees in World:",
-                fees_russia: "Fees in Russia:",
                 premiere_russia: "Premiere in Russia:",
                 premiere_world: "Premiere in World:",
                 premiere_digital: "Digital Release:",
-                audience: "Audience",
                 age_rating: "Age Rating:",
-                rating_mpaa: "MPAA Rating",
                 duration: "Duration:",
                 hours: "h",
                 minutes: "min",
@@ -2463,11 +2467,7 @@ export const locales = {
                 actor: "Actor"
             },
             awards_tab: {
-                no_data: "No information about awards",
-                nomination: "Nomination",
-                winner: "Winner",
-                nominee: "Nominee",
-                show_all: "Show all awards ({count})"
+                no_data: "No information about awards"
             },
             actors_tab: {
                 no_data: "Actor information missing",
@@ -2505,10 +2505,7 @@ export const locales = {
             prev: "Previous",
             next: "Next",
             page_info: "Page {current} of {total}",
-            movie_details_modal: "Movie Details",
             rate_this: "Rate This Movie",
-            movie_detail_btn: "Movie Detail",
-            close: "Close",
             error_query: "Please enter a search query",
             error_login: "Please log in to search for movies",
             error_api: "Kinopoisk API key not configured. Please check the configuration.",
@@ -3927,7 +3924,15 @@ export const locales = {
             },
             empty: {
                 title: "Закладок нет",
-                message: "Добавьте их через меню закладок на карточке фильма."
+                message: "Добавьте их через меню закладок на карточке фильма.",
+                collection_title: "В коллекции пока нет фильмов",
+                collection_message: "Откройте меню на карточке фильма и выберите эту коллекцию.",
+                signed_out_title: "Войдите в аккаунт",
+                signed_out_message: "Для просмотра закладок необходимо войти в аккаунт."
+            },
+            toast: {
+                removed: "Удалено из закладок",
+                remove_error: "Не удалось удалить закладку"
             }
         },
         settings: {
@@ -4737,45 +4742,8 @@ export const locales = {
                 message: "Не удалось загрузить фильмы",
                 retry: "Повторить"
             },
-            modal: {
-                rate_movie: "Оценить",
-                rate_episodes: "Оценить серии на странице сериала",
-                words: {
-                    1: "Ужасно", 2: "Очень плохо", 3: "Плохо", 4: "Слабо", 5: "Так себе",
-                    6: "Неплохо", 7: "Хорошо", 8: "Очень хорошо", 9: "Отлично", 10: "Шедевр"
-                },
-                your_rating: "Ваша оценка",
-                share_thoughts: "Поделитесь мнением",
-                placeholder: "Что вы думаете об этом фильме? (Необязательно)",
-                cancel: "Отмена",
-                save: "Сохранить",
-                close: "Закрыть",
-                current_rating: "Ваша текущая оценка",
-                edit_title: "Изменить оценку: {title}",
-                no_comment: "Без комментария",
-                kp_label: "КП",
-                no_score: "н/д"
-            },
             toast: {
-                sign_in: "Войдите в систему",
-                favorite_added: "Добавлено в избранное",
-                favorite_removed: "Удалено из избранного",
-                favorites_limit: "Достигнут лимит избранного (50 фильмов)",
-                watching_added: "Добавлено в «Смотрю»",
-                watching_removed: "Удалено из «Смотрю»",
-                watched_added: "Отмечено как просмотренное",
-                watched_removed: "Удалено из просмотренных",
-                watchlist_added: "Добавлено в «Буду смотреть»",
-                watchlist_removed: "Удалено из «Буду смотреть»",
-                status_error: "Не удалось обновить статус",
-                collection_added: "Добавлено в коллекцию",
-                collection_removed: "Удалено из коллекции",
-                collection_error: "Не удалось обновить коллекцию",
-                rating_added: "Оценка добавлена",
-                rating_updated: "Оценка обновлена",
-                rating_invalid: "Оценка должна быть от 1 до 10",
-                rating_save_failed: "Не удалось сохранить оценку. Изменения отменены.",
-                rating_save_error: "Не удалось сохранить оценку. Попробуйте ещё раз."
+                rating_save_failed: "Не удалось сохранить оценку. Изменения отменены."
             }
         },
         movie_card: {
@@ -4799,6 +4767,22 @@ export const locales = {
             add_random_pool: "Добавить в пул рандома",
             random_pool_added: "Уже в пуле рандома",
             random_pool_error: "Не удалось обновить пул рандома",
+            toast: {
+                sign_in: "Войдите в систему",
+                favorite_added: "Добавлено в избранное",
+                favorite_removed: "Удалено из избранного",
+                favorites_limit: "Достигнут лимит избранного (50 фильмов)",
+                watching_added: "Добавлено в «Смотрю»",
+                watching_removed: "Удалено из «Смотрю»",
+                watched_added: "Отмечено как просмотренное",
+                watched_removed: "Удалено из просмотренных",
+                watchlist_added: "Добавлено в «Буду смотреть»",
+                watchlist_removed: "Удалено из «Буду смотреть»",
+                status_error: "Не удалось обновить статус",
+                collection_added: "Добавлено в коллекцию",
+                collection_removed: "Удалено из коллекции",
+                collection_error: "Не удалось обновить коллекцию"
+            },
             edit_rating: "Изменить оценку",
             add_collection: "В коллекцию",
             remove: "Удалить",
@@ -5071,6 +5055,37 @@ export const locales = {
                 austria: "Австрия"
             }
         },
+        rating_dialog: {
+            title: "Оценить",
+            close: "Закрыть",
+            stars_label: "Оценка от 1 до 10",
+            star_aria: "Оценить на {rating} из 10",
+            status_prompt: "Выберите оценку",
+            status_loading: "Загружаем вашу оценку…",
+            status_preview: "Будет: {rating}/10",
+            status_selected: "Ваша оценка: {rating}/10",
+            words: {
+                1: "Ужасно", 2: "Очень плохо", 3: "Плохо", 4: "Слабо", 5: "Так себе",
+                6: "Неплохо", 7: "Хорошо", 8: "Очень хорошо", 9: "Отлично", 10: "Шедевр"
+            },
+            rate_episodes: "Оценить серии на странице сериала",
+            write_review: "Написать отзыв",
+            comment_label: "Короткое мнение",
+            comment_placeholder: "Что вы думаете об этом фильме?",
+            review_label: "Подробная рецензия",
+            review_visibility: "Рецензия будет видна другим пользователям.",
+            review_placeholder: "Расскажите, что вы думаете о фильме...",
+            review_too_long: "Рецензия не должна превышать {max} символов.",
+            spoiler: "Спойлер",
+            spoiler_title: "Скрыть как спойлер",
+            spoiler_aria: "Скрыть выделенный текст как спойлер",
+            spoiler_too_long: "Добавление спойлера превысит лимит {max} символов.",
+            choose_rating: "Выберите оценку",
+            saved: "Оценка сохранена!",
+            save_error: "Не удалось сохранить оценку. Попробуйте ещё раз.",
+            cancel: "Отмена",
+            save: "Сохранить"
+        },
         movie_details: {
             loading: "Загрузка информации о фильме...",
             continue_action: "Продолжить",
@@ -5086,10 +5101,6 @@ export const locales = {
             back_to_search: "Вернуться к поиску",
             rate_title: "Оценить",
             personal_rating: "Ваша оценка: {rating}/10",
-            rating_prompt: "Выберите оценку",
-            rating_loading: "Загружаем вашу оценку…",
-            rating_preview: "Будет: {rating}/10",
-            rating_selected: "Ваша оценка: {rating}/10",
             series_rating_disabled_hint: "Чтобы оценить сериал, сначала нужна его привязка к Кинопоиску.",
             series_episode_sign_in: "Войдите, чтобы оценивать серии",
             series_episode_your_rating: "Ваша оценка:",
@@ -5104,10 +5115,6 @@ export const locales = {
             series_episode_saved: "Оценка серии сохранена.",
             series_episode_watched_error: "Оценка сохранена, но отметить серию просмотренной не удалось. Попробуйте кнопку ✓.",
             series_episode_removed: "Оценка серии удалена.",
-            write_review: "Написать отзыв",
-            review_placeholder: "Что вы думаете об этом фильме?",
-            save_rating: "Сохранить",
-            cancel: "Отмена",
             watch_movie: "Смотреть",
             click_to_expand: "Нажмите, чтобы развернуть",
             refresh_data: "Обновить данные",
@@ -5140,16 +5147,10 @@ export const locales = {
                 composer: "Композитор:",
                 designer: "Художник:",
                 editor: "Монтаж:",
-                budget: "Бюджет:",
-                fees_usa: "Сборы в США:",
-                fees_world: "Сборы в мире:",
-                fees_russia: "Сборы в России:",
                 premiere_russia: "Премьера в России:",
                 premiere_world: "Премьера в мире:",
                 premiere_digital: "Цифровой релиз:",
-                audience: "Зрители",
                 age_rating: "Возраст:",
-                rating_mpaa: "Рейтинг MPAA",
                 duration: "Время:",
                 hours: "ч",
                 minutes: "мин",
@@ -5205,11 +5206,7 @@ export const locales = {
                 actor: "Актер"
             },
             awards_tab: {
-                no_data: "Нет информации о наградах",
-                nomination: "Номинация",
-                winner: "Победитель",
-                nominee: "Номинация",
-                show_all: "Показать все награды ({count})"
+                no_data: "Нет информации о наградах"
             },
             actors_tab: {
                 no_data: "Информация об актерах отсутствует",
@@ -5247,10 +5244,7 @@ export const locales = {
             prev: "Назад",
             next: "Вперед",
             page_info: "Страница {current} из {total}",
-            movie_details_modal: "Детали фильма",
             rate_this: "Оценить",
-            movie_detail_btn: "Подробнее",
-            close: "Закрыть",
             error_query: "Пожалуйста, введите поисковый запрос",
             error_login: "Пожалуйста, войдите в систему для поиска фильмов",
             error_api: "Ключ Kinopoisk API не настроен. Пожалуйста, проверьте конфигурацию.",

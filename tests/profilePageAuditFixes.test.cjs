@@ -800,7 +800,7 @@ function createManager() {
         assert.match(firestoreSource, /async clearProfileCaches\(\)[\s\S]*profile_cache_index[\s\S]*storage\.remove/);
 
         const navigationSource = read('src/shared/components/Navigation.js');
-        assert.match(navigationSource, /photo = upload\.photoURL;/, 'Navigation stores the uploaded URL, not the result object');
+        assert.doesNotMatch(navigationSource, /showProfileModal|uploadAvatar\(/, 'the profile is edited on its own page, not in a Navigation pop-up');
     }
 
     // --- Localization, dead code, form hygiene, cropper keyboard -------------

@@ -8,7 +8,6 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const pairs = fields => fields.flatMap(field => [`${field}-desc`, `${field}-asc`]);
 const pages = [
     ['ratings', 'sortFilter', pairs(['date', 'rating', 'avg-rating', 'title', 'year'])],
-    ['collection', 'sortFilter', pairs(['date', 'title', 'rating', 'year'])],
     ['bookmarks', 'sortFilter', ['updatedAt-desc', 'createdAt-desc', 'movieTitle-asc', 'releaseYear-desc', 'avgRating-desc']],
     ['catalog', 'catalogSort', ['popularity.desc', 'vote_average.desc', 'primary_release_date.desc']],
     ['movie-details', 'torrentSourceSort', ['recommended', 'seeders', 'quality', 'size-asc', 'size-desc']]
@@ -62,35 +61,6 @@ function checkMarkupAndNativeContracts() {
             assert.equal(changes, 1, `${page} emits one native change`);
             control.syncFromNative();
             assert.equal(changes, 1, `${page} presentation sync is silent`);
-        } finally { dom.window.close(); }
-    }
-}
-
-function checkListManagers() {
-    for (const page of ['collection']) {
-        const dom = fixture(page);
-        try {
-            const className = `${page[0].toUpperCase()}${page.slice(1)}PageManager`;
-            const manager = loadManager(dom.window, page, className);
-            const select = dom.window.document.getElementById('sortFilter');
-            manager.elements = { sortFilter: select, collectionSearchInput: dom.window.document.getElementById('collectionSearchInput') };
-            manager.filters = { search: 'Alien', sort: select.value };
-            let renders = 0;
-            manager.applyFilters = () => renders++;
-            manager.initializeSortControl();
-            assert.equal(renders, 0, `${page} initialization does not reorder data`);
-            manager.sortControl.setValue(select.options[1].value, { emit: true });
-            assert.equal(manager.filters.sort, select.value);
-            assert.equal(renders, 1, `${page} manager handles selection once`);
-            manager.sortControl.setValue(select.value, { emit: true });
-            assert.equal(renders, 1, `${page} reselecting does not rerender`);
-            if (page === 'collection') {
-                manager.clearFilters();
-                assert.equal(manager.filters.sort, 'date-desc');
-                assert.equal(select.value, 'date-desc');
-                assert.equal(manager.filters.search, '');
-                assert.equal(renders, 2, 'Collection reset silently syncs control and applies once');
-            }
         } finally { dom.window.close(); }
     }
 }
@@ -231,49 +201,10 @@ async function checkCatalogRequestSupersession() {
     }
 }
 
-async function checkListLocaleSynchronization() {
-    for (const page of ['collection']) {
-        const dom = fixture(page);
-        try {
-            const { window } = dom;
-            window.eval(read('src/shared/i18n/locales.js').replace('export const locales', 'const locales') + '\nwindow.testLocales = locales;');
-            window.eval(read('src/shared/i18n/I18n.js')
-                .replace(/^import .*;\r?\n/gm, '')
-                .replace('export const i18n', 'const i18n')
-                .replace('export { I18n };', '')
-                .replace('this.locales = locales;', 'this.locales = window.testLocales;'));
-            const select = window.document.getElementById('sortFilter');
-            const control = window.SortControl.enhance(select);
-            let changes = 0;
-            select.addEventListener('change', () => changes++);
-            for (const locale of ['ru', 'en']) {
-                window.i18n.currentLocale = locale;
-                window.i18n.translatePage();
-                await new Promise(resolve => window.setTimeout(resolve, 0));
-                assert.equal(select.labels[0].textContent, window.i18n.get('ratings.filters.sort'));
-                for (const option of select.options) {
-                    const key = option.dataset.i18n;
-                    assert.ok(key, `${page}: every option is translated`);
-                    assert.notEqual(window.i18n.get(key), key, `${page}: ${key} exists in ${locale}`);
-                    assert.equal(option.textContent, window.i18n.get(key));
-                }
-                assert.equal(control.valueLabel.textContent, select.selectedOptions[0].textContent, `${page}: locale observer syncs selected presentation`);
-                if (locale === 'ru') {
-                    control.setValue(select.options[3].value, { emit: true });
-                    assert.equal(changes, 1);
-                }
-            }
-            assert.equal(changes, 1, `${page}: locale changes never emit sorting changes`);
-        } finally { dom.window.close(); }
-    }
-}
-
 (async () => {
     checkMarkupAndNativeContracts();
-    checkListManagers();
     checkRatingsLock();
     checkCatalogAdapter();
     await checkCatalogRequestSupersession();
-    await checkListLocaleSynchronization();
-    console.log('SortControl integrations passed: 5 native contracts, Collection manager callbacks/reset and RU/EN translation sync, Ratings range lock, Catalog options/URL and superseded request races (JSDOM fixtures).');
+    console.log('SortControl integrations passed: 4 native contracts (Bookmarks owns collection sorting), Ratings range lock, Catalog options/URL and superseded request races (JSDOM fixtures).');
 })().catch(error => { console.error(error); process.exitCode = 1; });

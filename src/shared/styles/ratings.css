@@ -527,164 +527,6 @@
     color: var(--ui-color-interactive);
 }
 
-.ratings-modal-overlay {
-    background: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(12px);
-}
-
-/* The rating dialog is a native <dialog> opened with showModal() that covers the
-   viewport and draws the overlay itself, so the shared .modal-overlay shell keeps
-   its look: reset the UA dialog box, leave ::backdrop clear, and hide it while
-   closed (.modal-overlay sets display: flex unconditionally). */
-dialog.ratings-modal-overlay {
-    width: auto;
-    height: auto;
-    max-width: none;
-    max-height: none;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    color: inherit;
-    overscroll-behavior: contain;
-}
-
-dialog.ratings-modal-overlay:not([open]) {
-    display: none;
-}
-
-dialog.ratings-modal-overlay::backdrop {
-    background: transparent;
-    overflow: hidden;
-    overscroll-behavior: contain;
-}
-
-/* Edit Rating Form Control styling */
-.form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 20px;
-}
-
-.form-group label {
-    font-size: var(--font-size-2xs);
-    font-weight: 600;
-    color: var(--theme-text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.rating-controls-modern {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    background: rgba(255, 255, 255, 0.01);
-    border: 1px solid rgba(255, 255, 255, 0.04);
-    padding: 16px;
-    border-radius: var(--radius-lg);
-}
-
-.rating-slider-container {
-    flex: 1;
-}
-
-.rating-slider-modern {
-    width: 100%;
-    height: 6px;
-    border-radius: var(--radius-sm);
-    background: var(--theme-bg-tertiary);
-    outline: none;
-    -webkit-appearance: none;
-    appearance: none;
-    cursor: grab;
-}
-
-.rating-slider-modern::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 18px;
-    height: 18px;
-    border-radius: var(--radius-circle);
-    background: #fafafa;
-    border: 2px solid var(--ui-color-interactive);
-    box-shadow: var(--elevation-1);
-    transition: transform var(--motion-duration-fast) var(--motion-ease-out);
-}
-
-.rating-slider-modern::-webkit-slider-thumb:hover {
-    transform: scale(1.15);
-}
-
-.rating-slider-modern:active {
-    cursor: grabbing;
-}
-
-.rating-scale {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 8px;
-    font-size: var(--font-size-2xs);
-    color: var(--theme-text-muted);
-    font-family: var(--font-data);
-}
-
-.rating-display {
-    display: flex;
-    align-items: baseline;
-    font-family: var(--font-data);
-}
-
-.rating-value-large {
-    font-size: var(--font-size-3xl);
-    font-weight: 700;
-    color: var(--ui-color-interactive);
-}
-
-.rating-value-suffix {
-    font-size: var(--font-size-base);
-    color: var(--theme-text-muted);
-    margin-left: 2px;
-}
-
-.comment-textarea {
-    background: var(--theme-input-bg);
-    border: 1px solid var(--theme-input-border);
-    border-radius: var(--radius-lg);
-    color: var(--theme-input-text);
-    padding: 12px 14px;
-    font-family: var(--font-family);
-    font-size: var(--font-size-md);
-    resize: none;
-    transition: var(--transition);
-    width: 100%;
-}
-
-.comment-textarea:focus {
-    outline: none;
-    border-color: rgba(255, 255, 255, 0.2);
-}
-
-.char-counter {
-    text-align: right;
-    font-size: var(--font-size-2xs);
-    color: var(--theme-text-muted);
-    font-family: var(--font-data);
-    margin-top: 4px;
-}
-
-#ratingModal [hidden] {
-    display: none !important;
-}
-
-.rating-modal .modal-footer {
-    display: flex;
-    gap: 12px;
-    justify-content: flex-end;
-    padding: 16px 24px;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-    background: rgba(0, 0, 0, 0.1);
-    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
-}
-
 /* Range Sliders for Filters */
 .range-slider-container {
     width: 100%;
@@ -829,16 +671,6 @@ dialog.ratings-modal-overlay::backdrop {
 .light-theme .movies-grid .mc-user-info {
     background: rgba(9, 9, 11, 0.03);
     border-color: rgba(9, 9, 11, 0.04);
-}
-
-.light-theme .rating-modal .modal-footer {
-    border-top-color: rgba(9, 9, 11, 0.05);
-    background: rgba(9, 9, 11, 0.02);
-}
-
-.light-theme .rating-controls-modern {
-    background: rgba(9, 9, 11, 0.01);
-    border-color: rgba(9, 9, 11, 0.03);
 }
 
 .light-theme .slider-track {
@@ -1121,14 +953,6 @@ dialog.ratings-modal-overlay::backdrop {
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* Word for the chosen score («Хорошо», «Шедевр») beside the number. */
-.rating-word {
-    min-width: 7em;
-    font-size: var(--font-size-base);
-    font-weight: 600;
-    color: var(--theme-text-secondary);
-}
-
 /* Grid / list switch beside the results count */
 .results-view-toggle {
     display: inline-flex;
@@ -1294,19 +1118,4 @@ dialog.ratings-modal-overlay::backdrop {
     .movies-grid--list .mc-ratings-row {
         justify-content: flex-start;
     }
-}
-
-/* Series: link to episode ratings on Movie Details */
-.episode-rating-link[hidden] {
-    display: none;
-}
-
-.episode-rating-link {
-    display: inline-block;
-    margin-top: 16px;
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    color: var(--theme-text-primary);
-    text-decoration: underline;
-    text-underline-offset: 3px;
 }

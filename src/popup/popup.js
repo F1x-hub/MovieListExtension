@@ -1871,11 +1871,6 @@ class PopupManager {
         }
     }
 
-    openMovieDetails(movieId) {
-        const url = this.movieDetailsUrl(movieId);
-        if (url) chrome.tabs.create({ url });
-    }
-
     openRatingsPage() {
         chrome.tabs.create({ 
             url: chrome.runtime.getURL('src/pages/ratings/ratings.html') 
@@ -2257,31 +2252,6 @@ class PopupManager {
 
     showLoading(show) {
         this.elements.loading.style.display = show ? 'flex' : 'none';
-    }
-
-    hideFeedContentWithFade() {
-        this.elements.feedContent.style.display = 'none';
-        this.elements.feedContent.classList.remove('fade-in', 'fade-out');
-        return Promise.resolve();
-    }
-
-    showFeedContentWithFade() {
-        this.elements.feedContent.style.display = '';
-        this.elements.feedContent.classList.remove('fade-in', 'fade-out');
-        Utils.revealContent?.(this.elements.feedContent);
-        return Promise.resolve();
-    }
-
-    showLoadingWithFade() {
-        this.elements.loading.style.display = 'flex';
-        this.elements.loading.classList.remove('fade-in', 'fade-out');
-        return Promise.resolve();
-    }
-
-    hideLoadingWithFade() {
-        this.elements.loading.style.display = 'none';
-        this.elements.loading.classList.remove('fade-in', 'fade-out');
-        return Promise.resolve();
     }
 
     showMainContent() {

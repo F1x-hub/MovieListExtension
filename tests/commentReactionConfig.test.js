@@ -18,7 +18,6 @@ const firebaseConfig = read('firebase.json');
 const functions = read('functions/index.js');
 // Comment reactions on Movie Details live in UserRatingsPanel.js, installed onto the page.
 const movieDetails = read('src/pages/movie-details/movie-details.js') + '\n' + read('src/pages/movie-details/UserRatingsPanel.js');
-const search = read('src/pages/search/search.js');
 
 assert.ok(service.includes("const COMMENT_REACTION_CONFIG_COLLECTION = 'settings';"));
 assert.ok(service.includes("const COMMENT_REACTION_CONFIG_ID = 'commentReactions';"));
@@ -84,7 +83,5 @@ assert.ok(functions.includes('async function getCommentReactionCatalog()'));
 assert.ok(functions.includes('const counts = Object.fromEntries(activeReactionTypes.map((type) => [type, 0]));'));
 assert.ok(movieDetails.includes('await reactionService.loadConfig?.();'));
 assert.ok(movieDetails.includes('reactionService.subscribeToConfig?.'));
-assert.ok(search.includes('await reactionService.loadConfig?.();'));
-assert.ok(search.includes('reactionService.subscribeToConfig?.'));
 
 console.log('commentReactionConfig.test.js: all tests passed');

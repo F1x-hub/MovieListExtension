@@ -225,8 +225,6 @@ function createElement(id = '') {
         assert.ok(frame, 'web URLs must still create a frame');
         assert.equal(frame.getAttribute('onload'), null, 'URL quotes must not create attributes');
         assert.equal(getPlayerFrameOrigin(frame), 'https://provider.example');
-        frame.dataset.playerSourceActive = 'true';
-        assert.equal(surface.getActiveFrame(), frame);
 
         surface.showPlaceholder('<img src=x onerror=alert(1)>');
         assert.equal(container.querySelector('img'), null, 'placeholder text must not be parsed as HTML');

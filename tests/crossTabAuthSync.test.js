@@ -36,7 +36,6 @@ console.log('\n--- 2. Testing Page authStateChanged Subscriptions ---');
 const pagesToCheck = [
     'src/pages/admin/admin.js',
     'src/pages/bookmarks/bookmarks.js',
-    'src/pages/collection/collection.js',
     'src/pages/profile/profile.js'
 ];
 

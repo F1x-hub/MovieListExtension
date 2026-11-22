@@ -64,7 +64,12 @@ assert.match(movieCardSource, /data-action="open-review"/);
 assert.doesNotMatch(movieCardSource, /data-review=/);
 
 const detailsHtml = fs.readFileSync(path.join(root, 'src/pages/movie-details/movie-details.html'), 'utf8');
-assert.match(detailsHtml, /ratingReview/);
+const ratingDialogSource = fs.readFileSync(path.join(root, 'src/shared/components/RatingDialog.js'), 'utf8');
+assert.match(ratingDialogSource, /id="ratingReview"/, 'the shared rating dialog has the review field');
+for (const page of ['movie-details/movie-details.html', 'ratings/ratings.html']) {
+    assert.match(fs.readFileSync(path.join(root, 'src/pages', page), 'utf8'), /shared\/components\/RatingDialog\.js/,
+        `${page} writes reviews through the shared rating dialog`);
+}
 assert.match(detailsHtml, /reviewReaderModal/);
 
 console.log('Rating review contract tests passed');
