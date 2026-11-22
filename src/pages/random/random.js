@@ -15,6 +15,9 @@ const RECENT_RESULTS_LIMIT = 30;
 // Kinopoisk draws per roll while looking for an unseen movie; each costs API quota.
 const SKIP_SEEN_MAX_ATTEMPTS = 3;
 const DEFAULT_ROLL_VOLUME_PERCENT = 100;
+// Page modes: the URL hash (#pick, #pool, #marathon) wins over the mode remembered on this device.
+const RANDOM_MODES = ['pick', 'pool', 'marathon'];
+const RANDOM_MODE_STORAGE_KEY = 'random_page_mode';
 function getSafePosterUrl(value) {
     return typeof PosterUrl !== 'undefined' ? PosterUrl.safe(value) : '';
 }
@@ -101,6 +104,9 @@ class RandomManager {
         this._marathonAuthRefreshId = 0;
         this._marathonPendingRemovals = new Set();
         this._marathonPendingAdds = new Map();
+        this.activeMode = 'pick';
+        // Until auth and the first round snapshot arrive, the Marathon mode says it is loading.
+        this._marathonLoading = true;
 
         this.init();
 
@@ -120,6 +126,8 @@ class RandomManager {
         this.loadPreferences();
         this._renderConfigSummary();
         this.setupEventListeners();
+        this._syncSearchLabels();
+        this._setupModeTabs();
         await this.loadPool();
         if (this._disposed) return;
         await this.initMarathon();
@@ -146,8 +154,9 @@ class RandomManager {
                 this._restoreTagFilters(filters);
                 this._renderConfigSummary();
                 // Marathon and pool text is rendered from the locale, not data-i18n.
+                this._syncSearchLabels();
                 this._renderMarathon();
-                this._refreshPoolModalIfOpen();
+                this._refreshPoolList();
                 this.setupSliders();
                 if (this.currentMovie && !this._findBusy && this.elements.movieResult.style.display !== 'none') {
                     const focused = document.activeElement;
@@ -705,6 +714,7 @@ class RandomManager {
         this._marathonUnsubscribe?.();
         for (const handler of this._modalKeyHandlers) document.removeEventListener('keydown', handler);
         if (this._rollShortcutHandler) document.removeEventListener('keydown', this._rollShortcutHandler);
+        if (this._modeHashHandler) window.removeEventListener('hashchange', this._modeHashHandler);
         if (this._poolStorageHandler) chrome.storage.onChanged?.removeListener(this._poolStorageHandler);
         if (this._marathonAuthHandler) window.removeEventListener('authStateChanged', this._marathonAuthHandler);
         if (this._settingsMessageHandler) chrome.runtime.onMessage.removeListener(this._settingsMessageHandler);
@@ -841,13 +851,14 @@ class RandomManager {
         reload.setAttribute('aria-keyshortcuts', 'R');
     }
 
-    /** "R" rolls again (any layout: matched by physical key) unless typing or a dialog is open. */
+    /** "R" rolls again in the Pick mode (any layout: matched by physical key) unless typing or a dialog is open. */
     _setupRollShortcut() {
         if (this._rollShortcutHandler) return;
         this._rollShortcutHandler = (event) => {
             if (event.code !== 'KeyR' || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
             const target = event.target;
             if (target?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
+            if (this.activeMode !== 'pick') return;
             if (this._activeModalId || this._hasForegroundDialog() || this._findBusy || this._disposed) return;
             event.preventDefault();
             this.findRandomMovie();
@@ -1038,7 +1049,7 @@ class RandomManager {
     async _mutatePool(action, button = null) {
         if (button?.disabled) return false;
         if (button) button.disabled = true;
-        const statuses = ['poolStatus', 'poolModalStatus'].map(id => document.getElementById(id)).filter(Boolean);
+        const statuses = ['poolStatus', 'poolListStatus'].map(id => document.getElementById(id)).filter(Boolean);
         for (const status of statuses) status.textContent = '';
         try {
             await action();
@@ -1063,7 +1074,7 @@ class RandomManager {
         const el = document.getElementById('poolCount');
         if (el) el.textContent = this.pool.length;
         this._syncPoolFab();
-        this._refreshPoolModalIfOpen();
+        this._refreshPoolList();
         for (const button of document.querySelectorAll('#poolSearchResults .pool-result-add')) {
             const added = this._isInPool(button.dataset.movieId);
             button.classList.toggle('added', added);
@@ -1153,31 +1164,6 @@ class RandomManager {
             }
         });
 
-        // Show pool modal
-        const showPoolBtn = document.getElementById('showPoolBtn');
-        if (showPoolBtn) {
-            showPoolBtn.addEventListener('click', () => {
-                this._renderPoolModal();
-                this._openModal('poolModal', 'closePoolModal');
-            });
-        }
-
-        // Close pool modal
-        const closePoolModal = document.getElementById('closePoolModal');
-        if (closePoolModal) {
-            closePoolModal.addEventListener('click', () => {
-                this._closeModal('poolModal');
-            });
-        }
-
-        // Close modal on backdrop click
-        const poolModal = document.getElementById('poolModal');
-        if (poolModal) {
-            poolModal.addEventListener('click', (e) => {
-                if (e.target === poolModal) this._closeModal('poolModal');
-            });
-        }
-
         // Clear pool
         const clearPoolBtn = document.getElementById('clearPoolBtn');
         if (clearPoolBtn) {
@@ -1193,35 +1179,16 @@ class RandomManager {
         const rollFromPoolBtn = document.getElementById('rollFromPoolBtn');
         if (rollFromPoolBtn) {
             rollFromPoolBtn.addEventListener('click', () => {
-                this._closeModal('poolModal');
                 this._showRollReady(this.pool, () => this._rollFromPool());
             });
         }
 
-        const showMarathonBtn = document.getElementById('showMarathonBtn');
-        if (showMarathonBtn) {
-            showMarathonBtn.addEventListener('click', () => {
-                this._renderMarathon();
-                this._openModal('marathonModal', 'closeMarathonModal');
-            });
-        }
-        const closeMarathonBtn = document.getElementById('closeMarathonModal');
-        if (closeMarathonBtn) {
-            closeMarathonBtn.addEventListener('click', () => this._closeModal('marathonModal'));
-        }
-        const marathonModal = document.getElementById('marathonModal');
-        if (marathonModal) {
-            marathonModal.addEventListener('click', (event) => {
-                if (event.target === marathonModal) this._closeModal('marathonModal');
-            });
-        }
-        document.addEventListener('keydown', (event) => {
-            if (event.key !== 'Escape') return;
-            if (this._hasForegroundDialog()) return;
-            if (this._activeModalId === 'rollAnimOverlay') return;
-            this._closeModal('marathonModal');
-            this._closeModal('poolModal');
+        // The empty pool offers a way back to the Pick mode.
+        document.getElementById('poolList')?.addEventListener('click', (event) => {
+            const go = event.target.closest?.('[data-random-mode]');
+            if (go) this._selectMode(go.dataset.randomMode, { focus: true });
         });
+
         const marathonSearchInput = document.getElementById('marathonSearchInput');
         if (marathonSearchInput) {
             marathonSearchInput.addEventListener('input', (event) => {
@@ -1237,6 +1204,87 @@ class RandomManager {
                 }
                 this._marathonSearchTimer = setTimeout(() => this._searchForMarathon(query, searchId), 500);
             });
+        }
+    }
+
+    /** Search fields have no visible label, so their translated placeholder names them. */
+    _syncSearchLabels() {
+        for (const id of ['poolSearchInput', 'marathonSearchInput']) {
+            const input = document.getElementById(id);
+            if (input?.placeholder) input.setAttribute('aria-label', input.placeholder.replace(/(\.{3}|…)$/, '').trim());
+        }
+    }
+
+    _readStoredMode() {
+        try {
+            return localStorage.getItem(RANDOM_MODE_STORAGE_KEY);
+        } catch {
+            return null;
+        }
+    }
+
+    _modeFromHash() {
+        const mode = String(window.location?.hash || '').replace(/^#/, '');
+        return RANDOM_MODES.includes(mode) ? mode : null;
+    }
+
+    /** Pick, Pool and Marathon tabs: the hash wins, then the mode remembered on this device. */
+    _setupModeTabs() {
+        const tabs = [...document.querySelectorAll('.random-mode-tab')];
+        if (!tabs.length) return;
+        tabs.forEach((tab, index) => {
+            tab.addEventListener('click', () => this._selectMode(tab.dataset.mode));
+            tab.addEventListener('keydown', (event) => {
+                const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+                const target = step ? (index + step + tabs.length) % tabs.length
+                    : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
+                if (target < 0) return;
+                event.preventDefault();
+                this._selectMode(tabs[target].dataset.mode, { focus: true });
+            });
+        });
+        this._modeHashHandler = () => {
+            const mode = this._modeFromHash();
+            if (mode && mode !== this.activeMode) this._selectMode(mode);
+        };
+        window.addEventListener('hashchange', this._modeHashHandler);
+        const stored = this._readStoredMode();
+        this._selectMode(this._modeFromHash() || (RANDOM_MODES.includes(stored) ? stored : 'pick'));
+    }
+
+    _selectMode(mode, { focus = false } = {}) {
+        if (!RANDOM_MODES.includes(mode)) mode = 'pick';
+        const previous = this.activeMode;
+        this.activeMode = mode;
+        for (const tab of document.querySelectorAll('.random-mode-tab')) {
+            const selected = tab.dataset.mode === mode;
+            tab.setAttribute('aria-selected', String(selected));
+            tab.tabIndex = selected ? 0 : -1;
+            const panel = document.getElementById(tab.getAttribute('aria-controls'));
+            if (panel) panel.hidden = !selected;
+            if (selected && focus) tab.focus();
+        }
+        if (previous === 'marathon' && mode !== 'marathon') {
+            this._marathonSearchId++;
+            clearTimeout(this._marathonSearchTimer);
+            document.getElementById('marathonSearchResults')?.classList.add('hidden');
+        }
+        if (previous === 'pool' && mode !== 'pool') document.getElementById('poolSearchResults')?.classList.add('hidden');
+        if (mode === 'pool') this._renderPoolList();
+        if (mode === 'marathon') this._renderMarathon();
+        try {
+            const url = new URL(window.location.href);
+            if (url.hash !== `#${mode}`) {
+                url.hash = mode;
+                window.history?.replaceState(window.history.state, '', url.href);
+            }
+        } catch {
+            // The mode still applies to this page view.
+        }
+        try {
+            localStorage.setItem(RANDOM_MODE_STORAGE_KEY, mode);
+        } catch {
+            // Remembering the mode is a convenience.
         }
     }
 
@@ -1282,15 +1330,7 @@ class RandomManager {
         const modal = document.getElementById(id);
         if (!modal || modal.classList.contains('hidden')) return;
         modal.classList.add('hidden');
-        if (this._activeModalId === id) this._activeModalId = ['rollAnimOverlay', 'marathonModal', 'poolModal']
-            .find(modalId => {
-                const remaining = document.getElementById(modalId);
-                return remaining && !remaining.classList.contains('hidden');
-            });
-        if (id === 'marathonModal') {
-            this._marathonSearchId++;
-            clearTimeout(this._marathonSearchTimer);
-        }
+        if (this._activeModalId === id) this._activeModalId = null;
         const previous = this._modalFocus.get(id);
         this._modalFocus.delete(id);
         if (previous?.isConnected && !previous.disabled && !previous.closest('[hidden], .hidden')) previous.focus();
@@ -1331,7 +1371,12 @@ class RandomManager {
     }
 
     async initMarathon() {
-        if (this._disposed || typeof RandomMarathonService === 'undefined' || typeof firebaseManager === 'undefined') return;
+        if (this._disposed) return;
+        if (typeof RandomMarathonService === 'undefined' || typeof firebaseManager === 'undefined') {
+            this._marathonLoading = false;
+            this._renderMarathon();
+            return;
+        }
         try {
             await firebaseManager.waitForAuthReady();
             if (this._disposed) return;
@@ -1339,6 +1384,7 @@ class RandomManager {
             this._marathonAuthHandler = () => this._refreshMarathonForAuth().catch((error) => {
                 if (this._disposed) return;
                 console.warn('RandomManager: marathon auth refresh failed', error);
+                this._marathonLoading = false;
                 this.marathonState = { round: null, items: [], error: this._formatMarathonError(error) };
                 this._renderMarathon();
             });
@@ -1347,6 +1393,7 @@ class RandomManager {
         } catch (error) {
             if (this._disposed) return;
             console.warn('RandomManager: marathon is unavailable', error);
+            this._marathonLoading = false;
             this.marathonState = { round: null, items: [], error: this._formatMarathonError(error) };
             this._renderMarathon();
         }
@@ -1362,6 +1409,7 @@ class RandomManager {
         const user = firebaseManager.getCurrentUser?.() || null;
         this.marathonIsAdmin = false;
         this.marathonState = { round: null, items: [] };
+        this._marathonLoading = Boolean(user);
         this._renderMarathon();
         if (!user) {
             return;
@@ -1372,12 +1420,14 @@ class RandomManager {
         this._marathonUnsubscribe = this.marathonService.subscribe(
             (state) => {
                 if (refreshId !== this._marathonAuthRefreshId) return;
+                this._marathonLoading = false;
                 this.marathonState = state;
                 this._renderMarathon();
             },
             (error) => {
                 if (refreshId !== this._marathonAuthRefreshId) return;
                 console.warn('RandomManager: marathon subscription failed', error);
+                this._marathonLoading = false;
                 this.marathonState = { round: null, items: [], error: this._formatMarathonError(error) };
                 this._renderMarathon();
             }
@@ -1455,181 +1505,320 @@ class RandomManager {
         return this._runMarathonAction(() => this.marathonService.addMovie(entry), { pendingAddKey: movieKey });
     }
 
+    /** Tab dot and its spoken text while a round collects movies or runs. */
+    _syncMarathonLiveMark(round) {
+        const live = Boolean(round) && ['collecting', 'active'].includes(round.status);
+        const dot = document.getElementById('marathonLiveDot');
+        const text = document.getElementById('marathonLiveText');
+        if (dot) dot.hidden = !live;
+        if (text) text.textContent = live ? `, ${this._t(round.status === 'active' ? 'live_active' : 'live_collecting')}` : '';
+    }
+
+    /**
+     * The Marathon mode mirrors functions/randomMarathon.js: collecting → (admin starts) → active →
+     * completed. While active, each movie is drawn by its own spin among the queued ones; the admin
+     * marks it watched or removes it and spins again. There is no preset order.
+     */
     _renderMarathon() {
         const summary = document.getElementById('marathonSummary');
         const list = document.getElementById('marathonList');
         const actions = document.getElementById('marathonActions');
         if (!summary || !list || !actions) return;
+        const current = document.getElementById('marathonCurrent');
+        const searchWrap = document.getElementById('marathonSearchWrap');
+        const listCard = list.closest('.marathon-card');
+        const marathonSearchInput = document.getElementById('marathonSearchInput');
         const { round, error } = this.marathonState || {};
         const user = typeof firebaseManager !== 'undefined' ? firebaseManager.getCurrentUser?.() : null;
-        if (error) {
-            summary.textContent = error;
-            list.innerHTML = `<div class="pool-list-empty">${this._escapeHtml(this._t('try_later'))}</div>`;
+        this._syncMarathonLiveMark(error ? null : round);
+        if (current) {
+            current.hidden = true;
+            current.replaceChildren();
+        }
+        if (listCard) listCard.hidden = false;
+
+        if (this._marathonLoading && !error) {
+            if (searchWrap) searchWrap.hidden = true;
+            summary.replaceChildren();
+            const notice = document.createElement('p');
+            notice.className = 'marathon-round-notice';
+            notice.textContent = this._t('loading_round');
+            summary.appendChild(notice);
+            list.innerHTML = '';
             actions.innerHTML = '';
-            this._refreshPoolModalIfOpen();
+            if (listCard) listCard.hidden = true;
             return;
         }
-        if (!round) {
-            const marathonSearchInput = document.getElementById('marathonSearchInput');
+
+        if (error || !round) {
+            if (searchWrap) searchWrap.hidden = true;
             if (marathonSearchInput) marathonSearchInput.disabled = true;
-            summary.textContent = user ? this._t('no_round') : this._t('sign_in');
-            list.innerHTML = `<div class="pool-list-empty">${this._escapeHtml(this._t('admin_can_create'))}</div>`;
-            actions.innerHTML = this.marathonIsAdmin
+            summary.replaceChildren();
+            const notice = document.createElement('p');
+            notice.className = 'marathon-round-notice';
+            notice.textContent = error || (user ? this._t('no_round') : this._t('sign_in'));
+            summary.appendChild(notice);
+            const listText = error ? this._t('try_later') : (user ? this._t('admin_can_create') : '');
+            list.innerHTML = listText ? `<div class="pool-list-empty">${this._escapeHtml(listText)}</div>` : '';
+            actions.innerHTML = !error && this.marathonIsAdmin
                 ? `<button class="btn-roll-from-pool" data-marathon-action="create">${this._escapeHtml(this._t('create_round'))}</button>` : '';
+            if (listCard) listCard.hidden = !listText && !actions.innerHTML;
             this._bindMarathonActions();
             this._syncMarathonActionState();
-            this._refreshPoolModalIfOpen();
+            this._refreshPoolList();
             return;
         }
 
         const displayItems = this._getMarathonDisplayItems().filter((item) => !this._marathonPendingRemovals.has(item.id));
         const ownCount = displayItems.filter((item) => item.addedBy === user?.uid && item.state !== 'removed').length;
-        const marathonSearchInput = document.getElementById('marathonSearchInput');
+        const collecting = round.status === 'collecting';
+        const active = round.status === 'active';
+        if (searchWrap) searchWrap.hidden = !collecting;
         if (marathonSearchInput) {
-            const canAdd = round.status === 'collecting'
+            const canAdd = collecting
                 && (this.marathonIsAdmin || ownCount < RandomMarathonService.maxMoviesPerUser);
             marathonSearchInput.disabled = !canAdd;
             marathonSearchInput.placeholder = canAdd
                 ? this._t('search_add')
-                : (round.status === 'collecting' ? this._t('limit_reached') : this._t('adding_closed'));
+                : (collecting ? this._t('limit_reached') : this._t('adding_closed'));
         }
-        const activeItems = displayItems.filter((item) => item.state !== 'removed');
-        const resolvedCount = activeItems.filter((item) => item.state === 'watched').length;
+
+        const selected = active && round.currentItemId
+            ? displayItems.find((item) => item.id === round.currentItemId) || null : null;
+        const queued = displayItems.filter((item) => item.state === 'queued' && item !== selected);
+        const watched = displayItems.filter((item) => item.state === 'watched');
+        const removed = displayItems.filter((item) => item.state === 'removed');
         const statusLabel = ['collecting', 'active', 'completed', 'cancelled'].includes(round.status) ? this._t(`status_${round.status}`) : round.status;
-        const ownCountLabel = this.marathonIsAdmin ? this._t('own_unlimited', { n: ownCount }) : `${ownCount}/3`;
+
+        // Round card: number, status, one-line counts and the stage track.
         summary.replaceChildren();
-        const status = document.createElement('strong');
+        const info = document.createElement('div');
+        info.className = 'marathon-round-info';
+        const title = document.createElement('h2');
+        title.className = 'marathon-round-title';
+        title.textContent = this._t('round_title', { n: Number(round.roundId) || 0 });
+        const status = document.createElement('span');
+        status.className = 'marathon-status';
         status.textContent = statusLabel;
-        summary.append(status, this._t('summary', { round: Number(round.roundId) || 0, done: resolvedCount, total: activeItems.length, own: ownCountLabel }));
+        title.append(' ', status);
+        const counts = document.createElement('p');
+        counts.className = 'marathon-round-sub';
+        counts.textContent = collecting
+            ? this._t('round_sub_collecting', { total: displayItems.filter((item) => item.state !== 'removed').length, max: RandomMarathonService.maxMoviesPerUser })
+            : active
+                ? this._t('round_sub_active', { done: watched.length, queued: queued.length })
+                : this._t('round_sub_completed', { done: watched.length });
+        const stage = collecting ? 0 : active ? 1 : 2;
+        const steps = document.createElement('ol');
+        steps.className = 'marathon-steps';
+        steps.setAttribute('aria-label', this._t('steps_label'));
+        ['step_collecting', 'step_active', 'step_completed'].forEach((key, index) => {
+            const step = document.createElement('li');
+            step.textContent = this._t(key);
+            step.classList.toggle('is-reached', index <= stage);
+            if (index === stage) step.setAttribute('aria-current', 'step');
+            steps.appendChild(step);
+        });
+        info.append(title, counts, steps);
+        summary.appendChild(info);
+        if (collecting) {
+            const own = document.createElement('div');
+            own.className = 'marathon-own';
+            const value = document.createElement('strong');
+            value.textContent = this.marathonIsAdmin ? this._t('own_unlimited', { n: ownCount }) : `${ownCount}/${RandomMarathonService.maxMoviesPerUser}`;
+            const label = document.createElement('span');
+            label.textContent = this._t('own_label');
+            own.append(value, label);
+            summary.appendChild(own);
+        }
+
+        // Spotlight: the movie the wheel picked, or the wheel waiting for the next spin.
+        if (current && active && (selected || queued.length)) {
+            current.hidden = false;
+            if (selected) {
+                current.classList.remove('marathon-spotlight--wait');
+                current.appendChild(this._createMarathonPoster(selected));
+                const body = document.createElement('div');
+                body.className = 'marathon-spotlight-body';
+                const eyebrow = document.createElement('span');
+                eyebrow.className = 'marathon-spotlight-eyebrow';
+                eyebrow.textContent = this._t('spotlight_picked');
+                const heading = document.createElement('h2');
+                heading.className = 'marathon-spotlight-title';
+                const currentLink = document.createElement('a');
+                currentLink.className = 'marathon-current-movie-link';
+                currentLink.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${selected.kpId}`);
+                currentLink.textContent = selected.title || this._t('untitled');
+                heading.appendChild(currentLink);
+                const meta = document.createElement('p');
+                meta.className = 'marathon-spotlight-meta';
+                meta.textContent = [selected.year, `${this._t('added_by')} ${selected.addedByName || selected.addedBy || this._t('participant')}`].filter(Boolean).join(' · ');
+                const row = document.createElement('div');
+                row.className = 'marathon-spotlight-actions';
+                row.innerHTML = this.marathonIsAdmin
+                    ? `<button class="btn-roll-from-pool" data-marathon-action="watched">${this._escapeHtml(this._t('mark_watched'))}</button><button class="btn btn-danger" data-marathon-action="removed">${this._escapeHtml(this._t('remove_picked'))}</button>`
+                    : `<p class="marathon-spotlight-note">${this._escapeHtml(this._t('current_viewer_hint'))}</p>`;
+                body.append(eyebrow, heading, meta, row);
+                current.appendChild(body);
+            } else {
+                current.classList.add('marathon-spotlight--wait');
+                const last = queued.length === 1;
+                const body = document.createElement('div');
+                body.className = 'marathon-spotlight-body';
+                const heading = document.createElement('h2');
+                heading.className = 'marathon-spotlight-title';
+                heading.textContent = this._t(last ? 'wait_last_title' : 'wait_title');
+                const text = document.createElement('p');
+                text.className = 'marathon-spotlight-meta';
+                text.textContent = last ? this._t('wait_last_text') : this._t('wait_text', { n: queued.length });
+                body.append(heading, text);
+                const side = document.createElement('div');
+                side.className = 'marathon-spotlight-actions';
+                side.innerHTML = this.marathonIsAdmin
+                    ? `<button class="btn-roll-from-pool" data-marathon-action="roll">${this._escapeHtml(last ? this._t('pick_last') : this._t('spin_wheel'))}</button>`
+                    : `<p class="marathon-spotlight-note">${this._escapeHtml(this._t('wait_admin_only'))}</p>`;
+                current.append(body, side);
+            }
+        }
+
+        // List: one flat list while collecting, groups once the marathon runs.
         list.innerHTML = '';
         if (!displayItems.length) list.innerHTML = `<div class="pool-list-empty">${this._escapeHtml(this._t('round_empty'))}</div>`;
-        displayItems.forEach((item) => {
-            const row = document.createElement('div');
-            row.className = 'pool-list-item marathon-list-item';
-            row.tabIndex = 0;
-            row.setAttribute('role', 'button');
-            row.setAttribute('aria-label', this._t('open_movie', { title: item.title || this._t('untitled') }));
-            const stateLabel = item.__pending
-                ? this._t('state_adding')
-                : (['queued', 'selected', 'watched', 'removed'].includes(item.state) ? this._t(`state_${item.state}`) : item.state);
-            const addedBy = item.addedByName || item.addedBy || this._t('participant');
-            const posterUrls = getMarathonPosterUrls(item.poster, item.kpId);
-            const poster = document.createElement('img');
-            poster.className = 'marathon-item-poster';
-            poster.alt = item.title ? this._t('open_poster_of', { title: item.title }) : this._t('open_poster_plain');
-            let posterUrlIndex = 0;
-            const markPosterUnavailable = () => {
-                poster.classList.add('marathon-item-poster--unavailable');
-                poster.removeAttribute('src');
-                poster.removeAttribute('role');
-                poster.removeAttribute('title');
-                poster.tabIndex = -1;
-            };
-            const loadNextPoster = () => {
-                if (posterUrlIndex >= posterUrls.length) {
-                    markPosterUnavailable();
-                    return;
-                }
-                poster.src = posterUrls[posterUrlIndex++];
-            };
-            poster.tabIndex = posterUrls.length ? 0 : -1;
-            if (posterUrls.length) {
-                poster.addEventListener('error', loadNextPoster);
-                poster.setAttribute('role', 'button');
-                poster.title = this._t('zoom_poster');
-                const openPoster = (event) => {
-                    event.stopPropagation();
-                    if (!poster.hasAttribute('src')) return;
-                    const currentPosterUrl = poster.currentSrc || poster.src;
-                    if (currentPosterUrl && typeof window.ImageLightbox !== 'undefined') window.ImageLightbox.show(currentPosterUrl);
-                };
-                poster.addEventListener('click', openPoster);
-                poster.addEventListener('keydown', (event) => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return;
-                    event.preventDefault();
-                    openPoster(event);
-                });
-                loadNextPoster();
-            } else {
-                markPosterUnavailable();
+        else if (collecting) {
+            displayItems.forEach((item) => list.appendChild(this._createMarathonRow(item, round, user)));
+        } else {
+            for (const [key, items] of [['group_queued', queued], ['group_watched', watched], ['group_removed', removed]]) {
+                if (!items.length) continue;
+                const group = document.createElement('section');
+                group.className = 'marathon-group';
+                const heading = document.createElement('h3');
+                heading.className = 'marathon-group-title';
+                heading.textContent = `${this._t(key)} · ${items.length}`;
+                const rows = document.createElement('div');
+                rows.className = 'marathon-group-rows';
+                items.forEach((item) => rows.appendChild(this._createMarathonRow(item, round, user)));
+                group.append(heading, rows);
+                list.appendChild(group);
             }
-            const meta = document.createElement('div');
-            meta.className = 'pool-list-item-meta';
-            const title = document.createElement('div');
-            title.className = 'pool-list-item-title';
-            title.textContent = item.title || this._t('untitled');
-            const sub = document.createElement('div');
-            sub.className = 'pool-list-item-sub';
-            sub.textContent = item.year || '';
-            const author = document.createElement('div');
-            author.className = 'marathon-item-author';
-            const authorLabel = document.createElement('span');
-            authorLabel.textContent = this._t('added_by');
-            author.append(authorLabel, ` ${addedBy}`);
-            meta.append(title, sub, author);
-            const state = document.createElement('span');
-            state.className = 'marathon-item-state';
-            state.textContent = stateLabel;
-            const rowActions = document.createElement('div');
-            rowActions.className = 'marathon-item-actions';
-            rowActions.appendChild(state);
-            row.append(poster, meta, rowActions);
-            row.addEventListener('click', () => {
-                window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${item.kpId}`);
-            });
-            row.addEventListener('keydown', (event) => {
-                if (event.target.closest?.('button')) return;
-                if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    row.click();
-                }
-            });
-            if (!item.__pending && ((round.status === 'collecting' && item.addedBy === user?.uid) || (this.marathonIsAdmin && item.state !== 'watched' && item.state !== 'removed'))) {
-                const remove = document.createElement('button');
-                remove.className = 'pool-list-item-remove';
-                remove.title = this._t('remove_from_marathon');
-                remove.setAttribute('aria-label', this._t('remove_title_from_marathon', { title: item.title || this._t('movie') }));
-                remove.textContent = '×';
-                remove.addEventListener('click', async (event) => {
-                    event.stopPropagation();
-                    this._marathonPendingRemovals.add(item.id);
-                    this._renderMarathon();
-                    await this._runMarathonAction(() => this.marathonService.removeMovie(item.id), { pendingRemovalId: item.id });
-                });
-                rowActions.appendChild(remove);
-            }
-            list.appendChild(row);
-        });
+        }
 
-        const current = round.currentItemId ? displayItems.find((item) => item.id === round.currentItemId) : null;
-        if (current) {
-            const currentLabel = document.createElement('div');
-            currentLabel.className = 'marathon-current-movie';
-            const currentLink = document.createElement('a');
-            currentLink.className = 'marathon-current-movie-link';
-            currentLink.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${current.kpId}`);
-            currentLink.textContent = current.title || this._t('untitled');
-            currentLabel.append(this._t('current_movie'), currentLink);
-            list.prepend(currentLabel);
-        }
         actions.innerHTML = '';
-        if (this.marathonIsAdmin && round.status === 'collecting') {
+        if (this.marathonIsAdmin && collecting) {
             actions.innerHTML += `<button class="btn-roll-from-pool" data-marathon-action="start">${this._escapeHtml(this._t('start_marathon'))}</button>`;
-        }
-        if (this.marathonIsAdmin && round.status === 'active' && !round.currentItemId) {
-            const queuedCount = displayItems.filter((item) => item.state !== 'watched' && item.state !== 'removed').length;
-            const rollLabel = this._escapeHtml(queuedCount === 1 ? this._t('pick_last') : this._t('spin_wheel'));
-            actions.innerHTML += `<button class="btn-roll-from-pool" data-marathon-action="roll">${rollLabel}</button>`;
-        }
-        if (this.marathonIsAdmin && round.status === 'active' && current) {
-            actions.innerHTML += `<button class="btn-roll-from-pool" data-marathon-action="watched">${this._escapeHtml(this._t('mark_watched'))}</button><button class="btn btn-danger" data-marathon-action="removed">${this._escapeHtml(this._t('remove_picked'))}</button>`;
         }
         if (this.marathonIsAdmin && ['completed', 'cancelled'].includes(round.status)) {
             actions.innerHTML += `<button class="btn-roll-from-pool" data-marathon-action="create">${this._escapeHtml(this._t('open_new_round'))}</button>`;
         }
         this._bindMarathonActions();
         this._syncMarathonActionState();
-        this._refreshPoolModalIfOpen();
+        this._refreshPoolList();
+    }
+
+    /** Marathon poster with the saved URL, then the Kinopoisk one; it opens in the lightbox. */
+    _createMarathonPoster(item) {
+        const posterUrls = getMarathonPosterUrls(item.poster, item.kpId);
+        const poster = document.createElement('img');
+        poster.className = 'marathon-item-poster';
+        poster.alt = item.title ? this._t('open_poster_of', { title: item.title }) : this._t('open_poster_plain');
+        let posterUrlIndex = 0;
+        const markPosterUnavailable = () => {
+            poster.classList.add('marathon-item-poster--unavailable');
+            // An empty frame, not the alt text spilling out of it; the row link names the movie.
+            poster.alt = '';
+            poster.removeAttribute('src');
+            poster.removeAttribute('role');
+            poster.removeAttribute('title');
+            poster.tabIndex = -1;
+        };
+        const loadNextPoster = () => {
+            if (posterUrlIndex >= posterUrls.length) {
+                markPosterUnavailable();
+                return;
+            }
+            poster.src = posterUrls[posterUrlIndex++];
+        };
+        poster.tabIndex = posterUrls.length ? 0 : -1;
+        if (posterUrls.length) {
+            poster.addEventListener('error', loadNextPoster);
+            poster.setAttribute('role', 'button');
+            poster.title = this._t('zoom_poster');
+            const openPoster = (event) => {
+                event.stopPropagation();
+                if (!poster.hasAttribute('src')) return;
+                const currentPosterUrl = poster.currentSrc || poster.src;
+                if (currentPosterUrl && typeof window.ImageLightbox !== 'undefined') window.ImageLightbox.show(currentPosterUrl);
+            };
+            poster.addEventListener('click', openPoster);
+            poster.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                openPoster(event);
+            });
+            loadNextPoster();
+        } else {
+            markPosterUnavailable();
+        }
+        return poster;
+    }
+
+    _createMarathonRow(item, round, user) {
+        const row = document.createElement('div');
+        row.className = 'pool-list-item marathon-list-item';
+        if (item.state === 'watched' || item.state === 'removed') row.classList.add('is-resolved');
+        row.tabIndex = 0;
+        row.setAttribute('role', 'button');
+        row.setAttribute('aria-label', this._t('open_movie', { title: item.title || this._t('untitled') }));
+        const addedBy = item.addedByName || item.addedBy || this._t('participant');
+        const poster = this._createMarathonPoster(item);
+        const meta = document.createElement('div');
+        meta.className = 'pool-list-item-meta';
+        const title = document.createElement('div');
+        title.className = 'pool-list-item-title';
+        title.textContent = item.title || this._t('untitled');
+        const sub = document.createElement('div');
+        sub.className = 'pool-list-item-sub';
+        sub.textContent = item.year || '';
+        const author = document.createElement('div');
+        author.className = 'marathon-item-author';
+        const authorLabel = document.createElement('span');
+        authorLabel.textContent = this._t('added_by');
+        author.append(authorLabel, ` ${addedBy}`);
+        meta.append(title, sub, author);
+        const rowActions = document.createElement('div');
+        rowActions.className = 'marathon-item-actions';
+        // Groups name the state; only an optimistic add still needs its own label.
+        if (item.__pending) {
+            const state = document.createElement('span');
+            state.className = 'marathon-item-state';
+            state.textContent = this._t('state_adding');
+            rowActions.appendChild(state);
+        }
+        row.append(poster, meta, rowActions);
+        row.addEventListener('click', () => {
+            window.location.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${item.kpId}`);
+        });
+        row.addEventListener('keydown', (event) => {
+            if (event.target.closest?.('button')) return;
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                row.click();
+            }
+        });
+        if (!item.__pending && ((round.status === 'collecting' && item.addedBy === user?.uid) || (this.marathonIsAdmin && item.state !== 'watched' && item.state !== 'removed'))) {
+            const remove = document.createElement('button');
+            remove.className = 'pool-list-item-remove';
+            remove.title = this._t('remove_from_marathon');
+            remove.setAttribute('aria-label', this._t('remove_title_from_marathon', { title: item.title || this._t('movie') }));
+            remove.textContent = '×';
+            remove.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                this._marathonPendingRemovals.add(item.id);
+                this._renderMarathon();
+                await this._runMarathonAction(() => this.marathonService.removeMovie(item.id), { pendingRemovalId: item.id });
+            });
+            rowActions.appendChild(remove);
+        }
+        return row;
     }
 
     async _rollMarathonWithAnimation() {
@@ -1708,17 +1897,17 @@ class RandomManager {
         this._setRollBusy(false);
     }
 
-    _refreshPoolModalIfOpen() {
-        const poolModal = document.getElementById('poolModal');
-        if (poolModal && !poolModal.classList.contains('hidden')) {
-            const focused = document.activeElement;
-            const itemId = focused?.closest('.pool-list-item')?.dataset.movieId;
-            const targetClass = ['pool-list-item-remove', 'pool-list-item-marathon-add', 'pool-list-item-title'].find(name => focused?.classList.contains(name));
-            this._renderPoolModal();
-            if (itemId && targetClass) {
-                const row = Array.from(poolModal.querySelectorAll('.pool-list-item')).find(item => item.dataset.movieId === itemId);
-                (row?.querySelector(`.${targetClass}`) || document.getElementById('closePoolModal')).focus();
-            }
+    /** Re-render the pool list and keep focus on the same control of the same movie. */
+    _refreshPoolList() {
+        const list = document.getElementById('poolList');
+        if (!list) return;
+        const focused = document.activeElement;
+        const itemId = list.contains(focused) ? focused?.closest('.pool-list-item')?.dataset.movieId : null;
+        const targetClass = ['pool-list-item-remove', 'pool-list-item-marathon-add', 'pool-list-item-title'].find(name => focused?.classList.contains(name));
+        this._renderPoolList();
+        if (itemId && targetClass) {
+            const row = Array.from(list.querySelectorAll('.pool-list-item')).find(item => item.dataset.movieId === itemId);
+            (row?.querySelector(`.${targetClass}`) || list.querySelector('.pool-list-item-title, [data-random-mode]') || document.getElementById('poolSearchInput'))?.focus();
         }
     }
 
@@ -1755,7 +1944,7 @@ class RandomManager {
             watched: this._t('pending_watched'),
             removed: this._t('pending_removed')
         };
-        const buttons = [...document.querySelectorAll('#marathonActions [data-marathon-action]')];
+        const buttons = [...document.querySelectorAll('#randomPanelMarathon [data-marathon-action]')];
         const loadingButton = this._marathonMutationRunning && this._marathonPendingAction
             ? buttons.find((button) => button.dataset.marathonAction === this._marathonPendingAction) || buttons[0]
             : null;
@@ -1956,12 +2145,24 @@ class RandomManager {
         });
     }
 
-    /** Render contents of the pool modal list */
-    _renderPoolModal() {
+    /** Render the Pool mode: its list, count, roll button and footer. */
+    _renderPoolList() {
         const list = document.getElementById('poolList');
+        if (!list) return;
         list.innerHTML = '';
+        const count = document.getElementById('poolTitleCount');
+        if (count) count.textContent = this.pool.length ? `· ${this.pool.length}` : '';
+        const rollButton = document.getElementById('rollFromPoolBtn');
+        if (rollButton) rollButton.disabled = !this.pool.length;
+        const foot = document.getElementById('poolFoot');
+        if (foot) foot.hidden = !this.pool.length;
         if (!this.pool.length) {
-            list.innerHTML = `<div class="pool-list-empty">${this._escapeHtml(this._t('pool_empty'))}</div>`;
+            list.innerHTML = `
+                <div class="random-empty">
+                    <h3>${this._escapeHtml(this._t('pool_empty_title'))}</h3>
+                    <p>${this._escapeHtml(this._t('pool_empty'))}</p>
+                    <button type="button" class="btn random-empty-action" data-random-mode="pick">${this._escapeHtml(this._t('go_to_pick'))}</button>
+                </div>`;
             return;
         }
 

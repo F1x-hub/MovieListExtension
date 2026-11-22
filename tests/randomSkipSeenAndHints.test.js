@@ -246,10 +246,16 @@ function drawsFrom(manager, movies) {
     press(h.document.body, { ctrlKey: true });
     press(h.document.body, { repeat: true });
     assert.equal(rolls, 2, 'Typing, modifiers and auto-repeat do not roll');
-    h.manager._activeModalId = 'poolModal';
+    h.manager._activeModalId = 'rollAnimOverlay';
     press(h.document.body);
-    assert.equal(rolls, 2, 'An open pool or marathon dialog blocks the shortcut');
+    assert.equal(rolls, 2, 'The open wheel dialog blocks the shortcut');
     h.manager._activeModalId = null;
+    for (const mode of ['pool', 'marathon']) {
+        h.manager.activeMode = mode;
+        press(h.document.body);
+        assert.equal(rolls, 2, `R does not roll by filters in the ${mode} mode`);
+    }
+    h.manager.activeMode = 'pick';
     h.manager._findBusy = true;
     press(h.document.body);
     assert.equal(rolls, 2, 'A roll in progress is not restarted');

@@ -95,9 +95,9 @@
 .movie-result button:focus-visible,
 .movie-result img[role="button"]:focus-visible,
 .pool-search-input:focus-visible,
-.pool-modal button:focus-visible,
-.pool-modal a:focus-visible,
-.pool-modal img[role="button"]:focus-visible,
+.random-panel button:focus-visible,
+.random-panel a:focus-visible,
+.random-panel img[role="button"]:focus-visible,
 .pool-search-wrap a:focus-visible,
 .pool-search-wrap button:focus-visible,
 .pool-search-wrap img[role="button"]:focus-visible {
@@ -1140,41 +1140,437 @@
     }
 }
 
+/* ── Page modes: Pick, Pool, Marathon ── */
+.random-modes {
+    align-self: center;
+    display: inline-grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 4px;
+    max-width: 100%;
+    padding: 4px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--radius-lg);
+    background: var(--ui-color-surface);
+    box-shadow: var(--elevation-1);
+}
+
+.random-mode-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 150px;
+    height: 40px;
+    padding: 0 18px;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--ui-color-content-muted);
+    font-family: var(--font-family);
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.random-mode-tab:hover {
+    color: var(--ui-color-content);
+    background: var(--theme-hover-bg);
+}
+
+.random-mode-tab[aria-selected="true"] {
+    background: var(--ui-color-content);
+    color: var(--ui-color-page);
+}
+
+.random-mode-tab:focus-visible {
+    outline: 3px solid var(--ui-color-interactive);
+    outline-offset: 3px;
+}
+
+.random-mode-count {
+    min-width: 20px;
+    padding: 1px 6px;
+    border: 1px solid var(--ui-color-border-hover);
+    border-radius: var(--radius-pill);
+    font-size: var(--font-size-2xs);
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.random-mode-tab[aria-selected="true"] .random-mode-count {
+    border-color: currentColor;
+}
+
+.random-mode-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: var(--radius-circle);
+    background: currentColor;
+}
+
+.random-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.random-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.random-panel[hidden] {
+    display: none;
+}
+
+/* Every mode uses the full content width, so the Pick result lines up with its settings card. */
+.random-panel .result-container {
+    max-width: none;
+}
+
+/* Cards of the Pool and Marathon modes */
+.random-card {
+    background: var(--theme-bg-card);
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--elevation-2);
+}
+
+.random-card[hidden] {
+    display: none;
+}
+
+.random-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px 12px;
+    padding: 18px 22px 0;
+}
+
+.random-card-title {
+    margin: 0;
+    font-family: var(--font-family);
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--ui-color-content);
+}
+
+.random-card-count {
+    color: var(--ui-color-content-muted);
+    font-weight: 500;
+}
+
+.random-card-note {
+    margin: 0;
+    color: var(--ui-color-content-subtle);
+    font-size: var(--font-size-xs);
+    line-height: 1.45;
+}
+
+.random-card-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 22px 16px;
+    border-top: 1px solid var(--theme-border);
+}
+
+.random-card-foot[hidden] {
+    display: none;
+}
+
+.random-card-foot .random-card-note {
+    flex: 1 1 280px;
+}
+
+#poolListStatus:empty {
+    display: none;
+}
+
+#poolListStatus {
+    margin: 0 22px 12px;
+    color: var(--ui-color-status-danger);
+    font-size: var(--font-size-sm);
+}
+
+.random-empty {
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+    padding: 40px 24px;
+    text-align: center;
+}
+
+.random-empty h3 {
+    margin: 0;
+    font-family: var(--font-family);
+    font-size: var(--font-size-lg);
+    color: var(--ui-color-content);
+}
+
+.random-empty p {
+    max-width: 420px;
+    margin: 0;
+    color: var(--ui-color-content-muted);
+    line-height: 1.5;
+}
+
+.random-empty-action {
+    margin-top: 6px;
+}
+
 /* ── Pool Toolbar ── */
 .pool-toolbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
-    max-width: 960px;
-    margin: -12px auto 4px;
-    padding: 0 4px;
+    gap: 12px;
     position: relative;
 }
 
-.pool-modal-inner.marathon-modal-inner {
-    width: 620px;
+.pool-toolbar .pool-search-wrap {
+    flex: 1 1 280px;
 }
 
-.marathon-summary {
-    padding: 0 20px 12px;
-    color: var(--theme-text-secondary);
+/* Search fields share the height of the roll button beside them. */
+.pool-toolbar .pool-search-input,
+.marathon-search-wrap .pool-search-input {
+    min-height: 44px;
+}
+
+/* ── Marathon round, spotlight and groups ── */
+.marathon-round {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 18px;
+    padding: 20px 22px;
+}
+
+.marathon-round-info {
+    flex: 1 1 320px;
+    min-width: 0;
+}
+
+.marathon-round-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 6px;
+    font-family: var(--font-family);
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--ui-color-content);
+}
+
+.marathon-status {
+    padding: 3px 8px;
+    border: 1px solid var(--ui-color-border-hover);
+    border-radius: var(--radius-sm);
+    color: var(--ui-color-content-muted);
+    font-size: var(--font-size-2xs);
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.marathon-round-sub,
+.marathon-round-notice {
+    margin: 0;
+    color: var(--ui-color-content-muted);
     font-size: var(--font-size-sm);
     line-height: 1.45;
 }
 
+.marathon-steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin: 14px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.marathon-steps li {
+    color: var(--ui-color-content-subtle);
+    font-size: var(--font-size-2xs);
+}
+
+.marathon-steps li::before {
+    content: '';
+    display: block;
+    height: 4px;
+    margin-bottom: 6px;
+    border-radius: var(--radius-pill);
+    background: var(--theme-active-bg);
+}
+
+.marathon-steps li.is-reached {
+    color: var(--ui-color-content);
+}
+
+.marathon-steps li.is-reached::before {
+    background: var(--ui-color-content);
+}
+
+.marathon-own {
+    display: grid;
+    justify-items: center;
+    padding: 10px 18px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-lg);
+    color: var(--ui-color-content-subtle);
+    font-size: var(--font-size-xs);
+}
+
+.marathon-own strong {
+    color: var(--ui-color-content);
+    font-size: var(--font-size-2xl);
+}
+
+.marathon-spotlight {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 20px;
+    padding: 20px 22px;
+    border-color: var(--ui-color-border-hover);
+}
+
+.marathon-spotlight > .marathon-item-poster {
+    width: 96px;
+    height: 138px;
+    flex-shrink: 0;
+    object-fit: cover;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--theme-border);
+    background: var(--theme-bg-secondary);
+}
+
+.marathon-spotlight-body {
+    flex: 1 1 240px;
+    min-width: 0;
+}
+
+.marathon-spotlight-eyebrow {
+    color: var(--ui-color-content-subtle);
+    font-size: var(--font-size-xs);
+}
+
+.marathon-spotlight-title {
+    margin: 4px 0;
+    font-family: var(--font-family);
+    font-size: var(--font-size-xl);
+    font-weight: 600;
+    color: var(--ui-color-content);
+}
+
+.marathon-spotlight-meta {
+    margin: 0;
+    color: var(--ui-color-content-muted);
+    font-size: var(--font-size-sm);
+}
+
+.marathon-spotlight-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.marathon-spotlight--wait .marathon-spotlight-actions {
+    margin-top: 0;
+}
+
+.marathon-spotlight-note {
+    margin: 0;
+    color: var(--ui-color-content-subtle);
+    font-size: var(--font-size-xs);
+}
+
 .marathon-search-wrap {
     position: relative;
-    padding: 0 20px 10px;
 }
 
-.marathon-search-wrap .pool-search-results {
-    left: 20px;
-    right: 20px;
+.marathon-search-wrap[hidden] {
+    display: none;
 }
 
-.marathon-list {
-    min-height: 100px;
-    max-height: 45vh;
+.marathon-group + .marathon-group {
+    border-top: 1px solid var(--theme-border);
+    padding-top: 14px;
+}
+
+.marathon-group-title {
+    margin: 0 0 10px;
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--ui-color-content);
+}
+
+.marathon-group-rows {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+    gap: 8px;
+}
+
+.marathon-list-item.is-resolved {
+    opacity: .6;
+}
+
+#marathonList:not(:has(.marathon-group, .pool-list-empty)) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+}
+
+#marathonList:empty {
+    display: none;
+}
+
+@media (width < 640px) {
+    .random-mode-tab {
+        min-width: 0;
+        gap: 6px;
+        padding: 0 12px;
+    }
+
+    .random-mode-tab svg {
+        display: none;
+    }
+
+    .pool-toolbar .btn-roll-from-pool {
+        flex: 1 1 100%;
+    }
+
+    .marathon-own {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .marathon-own strong {
+        font-size: var(--font-size-lg);
+    }
+
+    .marathon-spotlight > .marathon-item-poster {
+        width: 72px;
+        height: 104px;
+    }
 }
 
 .marathon-item-state {
@@ -1195,42 +1591,36 @@
     color: var(--theme-text-muted);
 }
 
-.marathon-current-movie {
-    padding: 10px 12px;
-    margin-bottom: 4px;
-    border: 1px solid var(--theme-border);
-    border-radius: var(--radius-md);
-    color: var(--theme-text-primary);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-}
-
 .marathon-current-movie-link {
-    color: var(--ui-color-interactive);
-    text-decoration: underline;
-    text-decoration-thickness: 1px;
-    text-underline-offset: 2px;
+    color: inherit;
+    text-decoration: none;
 }
 
 .marathon-current-movie-link:hover {
-    color: var(--ui-color-interactive-hover);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
 }
 
 .marathon-actions {
+    display: flex;
     flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 14px 22px;
+    border-top: 1px solid var(--theme-border);
 }
 
-.marathon-actions button {
-    flex: 1;
-    min-width: 145px;
+.marathon-actions:empty {
+    display: none;
 }
 
-.marathon-actions button:disabled:not(.marathon-action-loading) {
+#randomPanelMarathon [data-marathon-action]:disabled:not(.marathon-action-loading) {
     opacity: .55;
     cursor: not-allowed;
 }
 
-.marathon-actions .marathon-action-loading {
+#randomPanelMarathon .marathon-action-loading {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1238,7 +1628,7 @@
     cursor: progress;
 }
 
-.marathon-actions .marathon-action-loading::before {
+#randomPanelMarathon .marathon-action-loading::before {
     content: '';
     box-sizing: border-box;
     width: 14px;
@@ -1250,7 +1640,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .marathon-actions .marathon-action-loading::before { animation: none; }
+    #randomPanelMarathon .marathon-action-loading::before { animation: none; }
 }
 
 .pool-search-wrap {
@@ -1375,104 +1765,15 @@
     cursor: default;
 }
 
-/* Pool Button */
-.pool-btn-secondary {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--theme-border);
-    border-radius: var(--radius-md);
-    color: var(--theme-text-secondary);
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: var(--random-transition);
-    flex-shrink: 0;
-}
-
-.light-theme .pool-btn-secondary {
-    background: rgba(9, 9, 11, 0.02);
-}
-
-.pool-btn-secondary:hover {
-    background: rgba(255, 255, 255, 0.07);
-    border-color: var(--theme-border-hover);
-    color: var(--theme-text-primary);
-}
-
-/* FAB for movie card */
-
-/* ── Pool Modal (Obsidian-Zinc overlay & container) ── */
-.pool-modal {
-    position: fixed; inset: 0;
-    background: rgba(9, 9, 11, 0.65);
-    backdrop-filter: blur(15px);
-    -webkit-backdrop-filter: blur(15px);
-    z-index: var(--z-modal);
-    display: flex; align-items: center; justify-content: center;
-}
-.pool-modal.hidden { display: none; }
-
-.pool-modal-inner {
-    background: rgba(18, 18, 20, 0.85);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: var(--radius-xl);
-    width: 420px; max-width: 95vw;
-    max-height: 80vh;
-    display: flex; flex-direction: column;
-    overflow: hidden;
-    box-shadow: var(--elevation-3);
-}
-
-.light-theme .pool-modal-inner {
-    background: rgba(255, 255, 255, 0.9);
-    border-color: rgba(9, 9, 11, 0.08);
-    box-shadow: var(--elevation-1);
-}
-
-.pool-modal-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 20px 20px 12px;
-}
-.pool-modal-header span {
-    font-family: var(--font-family);
-    font-size: var(--font-size-2xs);
-    font-weight: 700;
-    letter-spacing: .5px;
-    text-transform: uppercase;
-    color: var(--theme-text-muted);
-}
-
-.pool-modal-close-btn {
-    background: transparent;
-    border: 1px solid transparent;
-    color: var(--theme-text-secondary);
-    width: 30px;
-    height: 30px;
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: var(--random-transition);
-    padding: 0;
-}
-
-.pool-modal-close-btn:hover {
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--theme-text-primary);
-    border-color: var(--theme-border-hover);
-}
-
-/* Pool Modal List */
+/* Pool and marathon lists */
 .pool-list {
-    flex: 1; overflow-y: auto;
-    padding: 6px 20px;
-    display: flex; flex-direction: column; gap: 6px;
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 16px 22px;
+}
+
+#poolList:not(:has(.random-empty)) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
 }
 
 .pool-list::-webkit-scrollbar {
@@ -1539,11 +1840,10 @@
     cursor: zoom-in;
 }
 
-.pool-list-item img.marathon-item-poster--unavailable {
+/* Chrome draws a broken-image glyph even for an img without src; keep the slot, hide the glyph, as the pool list does. */
+img.marathon-item-poster--unavailable {
     cursor: default;
-    object-fit: contain;
-    background: var(--theme-bg-secondary);
-    border-color: var(--theme-border);
+    visibility: hidden;
 }
 
 .marathon-item-poster:focus-visible {
@@ -1690,20 +1990,28 @@
     }
 }
 
-.pool-modal-footer {
-    display: flex; gap: 8px;
-    padding: 14px 20px 20px;
-    border-top: 1px solid var(--theme-border);
-}
-
 .btn-roll-from-pool {
-    flex: 1;
-    padding: 10px; border-radius: var(--radius-md); border: none;
-    background: var(--theme-text-primary); color: var(--theme-bg-primary);
-    font-size: var(--font-size-sm); font-weight: 600; cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 18px;
+    border: none;
+    border-radius: var(--radius-md);
+    background: var(--ui-color-content);
+    color: var(--ui-color-page);
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
     transition: var(--random-transition);
 }
-.btn-roll-from-pool:hover { opacity: .9; }
+.btn-roll-from-pool:hover:not(:disabled) { background: var(--ui-color-interactive-hover); }
+.btn-roll-from-pool:disabled { opacity: .5; cursor: not-allowed; }
+.btn-roll-from-pool:focus-visible { outline: 3px solid var(--ui-color-interactive); outline-offset: 3px; }
+.pool-toolbar .btn-roll-from-pool { min-height: 44px; padding: 0 22px; font-size: var(--font-size-md); }
 
 /* Poster wheel shared by the personal pool and the movie marathon. */
 .roll-modal-overlay {

@@ -524,6 +524,11 @@ checklist; `npm run test:visual-design` enforces much of it.
 - Random: the personal pool is device-local (`RandomPoolService`). The marathon round is Firestore
   `randomMarathons/current`, with admin actions in transactions; the function's `normalizePoster`
   matches the page's `PosterUrl` (`tests/randomMarathonFunction.test.cjs`).
+- Random modes: Pick, Pool and Marathon are tab panels on one page, not dialogs; only the wheel is a
+  modal (`_activeModalId` is the wheel or nothing). The hash (`#pick|#pool|#marathon`) wins over
+  `localStorage['random_page_mode']`. `R` rolls only in Pick. The Marathon render mirrors the server:
+  each movie is its own spin among `queued` items, so the list groups states and never numbers an
+  order; action buttons live in the panel (`#randomPanelMarathon [data-marathon-action]`).
 - What's new: draft entries never open by themselves, and release packaging checks that the
   catalog covers the manifest version.
 - Themes: `ThemeService` owns theme state, and `theme-init.js`, Navigation, the popup and Settings

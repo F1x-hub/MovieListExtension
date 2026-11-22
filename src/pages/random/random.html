@@ -25,6 +25,26 @@
 
     <div class="main-container fade-in">
 
+        <!-- Page modes: filter roll, personal pool, shared marathon -->
+        <div class="random-modes" role="tablist" aria-label="Режим страницы" data-i18n="[aria-label]random.modes.label">
+            <button type="button" class="random-mode-tab" role="tab" id="randomModeTabPick" data-mode="pick" aria-controls="randomPanelPick" aria-selected="true" tabindex="0">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"/></svg>
+                <span data-i18n="random.modes.pick">Подбор</span>
+            </button>
+            <button type="button" class="random-mode-tab" role="tab" id="randomModeTabPool" data-mode="pool" aria-controls="randomPanelPool" aria-selected="false" tabindex="-1">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                <span data-i18n="random.modes.pool">Пул</span>
+                <span class="random-mode-count" id="poolCount">0</span>
+            </button>
+            <button type="button" class="random-mode-tab" role="tab" id="randomModeTabMarathon" data-mode="marathon" aria-controls="randomPanelMarathon" aria-selected="false" tabindex="-1">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4h12l-2 4 2 4H5"/></svg>
+                <span data-i18n="random.modes.marathon">Марафон</span>
+                <span class="random-mode-dot" id="marathonLiveDot" aria-hidden="true" hidden></span>
+                <span class="random-visually-hidden" id="marathonLiveText"></span>
+            </button>
+        </div>
+
+        <section class="random-panel" id="randomPanelPick" role="tabpanel" aria-labelledby="randomModeTabPick">
         <!-- Configuration Section (Top) -->
         <div class="config-section">
             <div class="config-card filter-panel">
@@ -141,24 +161,6 @@
             </div>
         </div>
 
-        <!-- Pool Toolbar -->
-        <div class="pool-toolbar">
-            <div class="pool-search-wrap">
-                <input type="text" id="poolSearchInput" class="pool-search-input" placeholder="Найти фильм для пула..." data-i18n="[placeholder]random.pool_marathon.pool_search">
-                <div id="poolSearchResults" class="pool-search-results hidden"></div>
-            </div>
-            <button class="btn pool-btn-secondary" id="showPoolBtn">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-                    <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
-                </svg>
-                <span data-i18n="random.pool_marathon.pool_button">Пул</span> (<span id="poolCount">0</span>)
-            </button>
-            <button class="btn pool-btn-secondary" id="showMarathonBtn">
-                <span data-i18n="random.pool_marathon.marathon">Киномарафон</span>
-            </button>
-        </div>
-
         <!-- Result Section (Center) -->
         <div class="result-section">
             <div class="result-container" id="resultContainer">
@@ -218,50 +220,50 @@
                 </div>
             </div>
         </div>
+        </section>
+
+        <!-- Personal pool: device-local list rolled on the poster wheel -->
+        <section class="random-panel" id="randomPanelPool" role="tabpanel" aria-labelledby="randomModeTabPool" hidden>
+            <div class="pool-toolbar">
+                <div class="pool-search-wrap">
+                    <input type="text" id="poolSearchInput" class="pool-search-input" placeholder="Найти фильм для пула..." data-i18n="[placeholder]random.pool_marathon.pool_search" aria-label="Найти фильм для пула">
+                    <div id="poolSearchResults" class="pool-search-results hidden"></div>
+                </div>
+                <button type="button" class="btn-roll-from-pool" id="rollFromPoolBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="M12 3v7M12 14v7M3 12h7M14 12h7"/></svg>
+                    <span data-i18n="random.pool_marathon.roll_from_pool">Крутить из пула</span>
+                </button>
+            </div>
+            <div class="random-card pool-card">
+                <div class="random-card-head">
+                    <h2 class="random-card-title"><span data-i18n="random.pool_marathon.pool_title">Пул для рандомайзера</span> <span class="random-card-count" id="poolTitleCount"></span></h2>
+                    <span class="random-card-note" data-i18n="random.pool_marathon.pool_device_note">Хранится на этом устройстве</span>
+                </div>
+                <div id="poolList" class="pool-list"></div>
+                <p id="poolListStatus" role="status" aria-live="polite"></p>
+                <div class="random-card-foot" id="poolFoot">
+                    <p class="random-card-note" data-i18n="random.pool_marathon.pool_hint">Чем дольше фильм в пуле, тем выше шанс выпасть (+1% за день). «Смотреть» на колесе уберёт выпавший фильм из пула.</p>
+                    <button type="button" class="btn btn-danger" id="clearPoolBtn" data-i18n="random.pool_marathon.clear_pool">Очистить пул</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Shared authenticated marathon -->
+        <section class="random-panel" id="randomPanelMarathon" role="tabpanel" aria-labelledby="randomModeTabMarathon" hidden>
+            <div id="marathonSummary" class="random-card marathon-round" aria-live="polite"></div>
+            <div id="marathonCurrent" class="random-card marathon-spotlight" hidden></div>
+            <div class="marathon-search-wrap" id="marathonSearchWrap">
+                <input type="text" id="marathonSearchInput" class="pool-search-input" placeholder="Добавить фильм в киномарафон..." data-i18n="[placeholder]random.pool_marathon.search_add" aria-label="Добавить фильм в киномарафон">
+                <div id="marathonSearchResults" class="pool-search-results hidden"></div>
+            </div>
+            <div class="random-card marathon-card">
+                <div id="marathonList" class="pool-list marathon-list"></div>
+                <div id="marathonActions" class="marathon-actions"></div>
+            </div>
+        </section>
     </div>
 
     <p id="poolStatus" role="status" aria-live="polite"></p>
-
-    <!-- Pool Modal -->
-    <div id="poolModal" class="pool-modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolModalTitle">
-        <div class="pool-modal-inner">
-            <div class="pool-modal-header">
-                <span id="poolModalTitle" data-i18n="random.pool_marathon.pool_title">Пул для рандомайзера</span>
-                <button class="btn-icon pool-modal-close-btn" id="closePoolModal" aria-label="Закрыть пул" data-i18n="[aria-label]random.pool_marathon.close_pool">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>
-            </div>
-            <div id="poolList" class="pool-list"></div>
-            <p id="poolModalStatus" role="status" aria-live="polite"></p>
-            <div class="pool-modal-footer">
-            <button class="btn btn-danger" id="clearPoolBtn" data-i18n="random.pool_marathon.clear_pool">Очистить пул</button>
-                <button class="btn-roll-from-pool" id="rollFromPoolBtn" data-i18n="random.pool_marathon.roll_from_pool">Крутить из пула</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Shared authenticated marathon modal -->
-    <div id="marathonModal" class="pool-modal hidden" role="dialog" aria-modal="true" aria-labelledby="marathonModalTitle">
-        <div class="pool-modal-inner marathon-modal-inner">
-            <div class="pool-modal-header">
-                <span id="marathonModalTitle" data-i18n="random.pool_marathon.marathon">Киномарафон</span>
-                <button class="btn-icon pool-modal-close-btn" id="closeMarathonModal" aria-label="Закрыть" data-i18n="[aria-label]random.pool_marathon.close">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>
-            </div>
-            <div id="marathonSummary" class="marathon-summary" aria-live="polite"></div>
-            <div class="marathon-search-wrap">
-                <input type="text" id="marathonSearchInput" class="pool-search-input" placeholder="Добавить фильм в киномарафон..." data-i18n="[placeholder]random.pool_marathon.search_add">
-                <div id="marathonSearchResults" class="pool-search-results hidden"></div>
-            </div>
-            <div id="marathonList" class="pool-list marathon-list"></div>
-            <div id="marathonActions" class="pool-modal-footer marathon-actions"></div>
-        </div>
-    </div>
 
     <!-- Scripts -->
     <script src="../../../libs/firebase-app-compat.js"></script>

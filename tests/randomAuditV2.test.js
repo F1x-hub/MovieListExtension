@@ -400,7 +400,7 @@ for (const mode of ['Pool', 'Marathon']) {
     h.key(poster, 'Enter');
     assert.equal(h.element('shared-image-lightbox-image').src, poster.src, 'Keyboard can open a search poster');
     h.manager.pool = [{ kpId: 1, title: 'Unsafe poster', poster: 'https://attacker.test/x.jpg' }];
-    h.manager._renderPoolModal();
+    h.manager._renderPoolList();
     assert.ok(!h.element('poolList').innerHTML.includes('attacker.test'));
     assert.ok(h.element('poolList').querySelector('a[href*="movieId=1"]'));
     h.dispose();
@@ -444,7 +444,7 @@ for (const mode of ['Pool', 'Marathon']) {
     await flush();
     assert.deepEqual(h.storage.randomPool.map(movie => movie.kpId), [10, 20]);
     assert.equal(h.element('poolCount').textContent, '2');
-    h.manager._renderPoolModal();
+    h.manager._renderPoolList();
     h.element('poolList').querySelector('.pool-list-item-remove').click();
     await flush();
     assert.deepEqual(h.storage.randomPool.map(movie => movie.kpId), [20]);
@@ -463,7 +463,7 @@ for (const mode of ['Pool', 'Marathon']) {
     await h.manager.loadPool();
     h.manager.setupPoolListeners();
     await h.manager.displayMovie({ kinopoiskId: 4, name: 'External addition' });
-    h.element('showPoolBtn').click();
+    h.manager._selectMode('pool');
     assert.ok(h.storageListeners.size > 0);
     for (const listener of h.storageListeners) {
         listener({ randomPool: { newValue: [{ kpId: 4, title: 'External addition' }] } }, 'local');
@@ -486,15 +486,14 @@ for (const mode of ['Pool', 'Marathon']) {
     h.storage.randomPool = [{ kpId: 1, title: 'Keep me' }];
     await h.manager.loadPool();
     h.manager.setupPoolListeners();
-    h.element('showPoolBtn').focus();
-    h.element('showPoolBtn').click();
+    h.manager._selectMode('pool');
     h.element('clearPoolBtn').click();
     await flush();
     assert.equal(h.dom.window.ConfirmDialog.isOpen(), true);
     h.key(h.document.activeElement, 'Escape');
     await flush();
     assert.equal(h.dom.window.ConfirmDialog.isOpen(), false);
-    assert.equal(h.element('poolModal').classList.contains('hidden'), false, 'Escape in confirmation must preserve underlying pool dialog');
+    assert.equal(h.element('randomPanelPool').hidden, false, 'Escape in confirmation must keep the Pool mode open');
     assert.equal(h.writes.length, 0);
     h.element('clearPoolBtn').click();
     await flush();
@@ -505,51 +504,83 @@ for (const mode of ['Pool', 'Marathon']) {
     h.dispose();
 }
 
-// Pool dialog traps keyboard focus and respects the image lightbox above it.
+// Pick, Pool and Marathon are one accessible tablist; the hash wins over the remembered mode.
 {
     const h = harness();
-    h.manager.pool = [{ kpId: 1, title: 'Modal movie' }];
-    h.manager.setupPoolListeners();
-    h.element('showPoolBtn').focus();
-    h.element('showPoolBtn').click();
-    const modal = h.element('poolModal');
-    assert.equal(modal.getAttribute('role'), 'dialog');
-    assert.ok(h.element(modal.getAttribute('aria-labelledby')));
-    assert.equal(modal.contains(h.document.activeElement), true, 'Opening pool moves focus into its dialog');
-    const first = h.element('closePoolModal');
-    const last = h.element('rollFromPoolBtn');
-    last.focus();
-    assert.equal(h.key(last, 'Tab').defaultPrevented, true);
-    assert.equal(h.document.activeElement, first);
-    first.focus();
-    assert.equal(h.key(first, 'Tab', true).defaultPrevented, true);
-    assert.equal(h.document.activeElement, last);
-    last.blur();
-    assert.equal(h.document.activeElement, h.document.body);
-    assert.equal(h.key(h.document.body, 'Tab').defaultPrevented, true, 'Tab recovers focus after an asynchronous render removes the focused node');
-    assert.equal(h.document.activeElement, first);
-    h.dom.window.ImageLightbox.show('https://image.tmdb.org/t/p/w500/one.jpg');
-    while (h.frames.length) h.frames.shift()(0);
+    const tabs = [...h.document.querySelectorAll('[role="tab"]')];
+    assert.deepEqual(tabs.map(tab => tab.dataset.mode), ['pick', 'pool', 'marathon']);
+    assert.equal(h.document.querySelector('[role="tablist"]').contains(h.element('poolCount')), true, 'The pool count sits on its tab');
+    for (const tab of tabs) {
+        const panel = h.element(tab.getAttribute('aria-controls'));
+        assert.equal(panel.getAttribute('role'), 'tabpanel');
+        assert.equal(panel.getAttribute('aria-labelledby'), tab.id);
+    }
+    assert.equal(h.document.querySelector('#poolModal, #marathonModal, .pool-modal'), null, 'Pool and marathon are no longer dialogs');
+
+    h.dom.window.localStorage.setItem('random_page_mode', 'marathon');
+    h.manager._setupModeTabs();
+    assert.equal(h.manager.activeMode, 'marathon', 'Without a hash the remembered mode opens');
+    assert.equal(h.element('randomPanelMarathon').hidden, false);
+    assert.equal(h.element('randomPanelPick').hidden, true);
+    assert.equal(h.dom.window.location.hash, '#marathon');
+
+    const pick = h.element('randomModeTabPick');
+    const pool = h.element('randomModeTabPool');
+    const marathon = h.element('randomModeTabMarathon');
+    marathon.focus();
+    h.key(marathon, 'ArrowRight');
+    assert.equal(h.manager.activeMode, 'pick', 'Arrow keys wrap around');
+    assert.equal(h.document.activeElement, pick);
+    assert.equal(pick.tabIndex, 0);
+    assert.equal(pool.tabIndex, -1);
+    h.key(pick, 'End');
+    assert.equal(h.document.activeElement, marathon);
+    h.key(marathon, 'Home');
+    assert.equal(h.document.activeElement, pick);
+    pool.click();
+    assert.equal(pool.getAttribute('aria-selected'), 'true');
+    assert.equal(h.element('randomPanelPool').hidden, false);
+    assert.equal(h.dom.window.localStorage.getItem('random_page_mode'), 'pool');
+    assert.equal(h.dom.window.location.hash, '#pool');
+
+    h.dom.window.location.hash = '#marathon';
+    h.dom.window.dispatchEvent(new h.dom.window.HashChangeEvent('hashchange'));
+    assert.equal(h.manager.activeMode, 'marathon', 'Changing the hash switches the mode');
+
     h.key(h.document, 'Escape');
-    assert.equal(modal.classList.contains('hidden'), false);
-    assert.equal(h.element('shared-image-lightbox-overlay').classList.contains('visible'), false);
-    h.key(last, 'Escape');
-    assert.equal(modal.classList.contains('hidden'), true);
-    assert.equal(h.document.activeElement, h.element('showPoolBtn'));
+    assert.equal(h.element('randomPanelMarathon').hidden, false, 'Escape does not leave a mode');
     h.dispose();
 }
 
-// Escape on the foreground wheel keeps the underlying marathon dialog open.
+// The empty pool explains how to fill it and leads back to Pick.
+{
+    const h = harness();
+    h.manager.pool = [];
+    h.manager.setupPoolListeners();
+    h.manager._selectMode('pool');
+    assert.equal(h.element('rollFromPoolBtn').disabled, true);
+    assert.equal(h.element('poolFoot').hidden, true);
+    h.element('poolList').querySelector('[data-random-mode="pick"]').click();
+    assert.equal(h.manager.activeMode, 'pick');
+    assert.equal(h.document.activeElement, h.element('randomModeTabPick'));
+    h.manager.pool = [{ kpId: 1, title: 'Only one' }];
+    h.manager._selectMode('pool');
+    assert.equal(h.element('rollFromPoolBtn').disabled, false, 'One movie is enough for the wheel');
+    assert.equal(h.element('poolTitleCount').textContent, '· 1');
+    h.dispose();
+}
+
+// Escape on the foreground wheel closes only the wheel; the Marathon mode stays.
 {
     const h = harness();
     h.manager.setupPoolListeners();
-    h.manager._openModal('marathonModal', 'closeMarathonModal');
+    h.manager._selectMode('marathon');
     h.manager._buildRollOverlay();
     h.manager._showRollReady([{ kpId: 1, title: 'One' }], () => {});
     h.key(h.document.activeElement, 'Escape');
     assert.equal(h.element('rollAnimOverlay').classList.contains('hidden'), true);
-    assert.equal(h.element('marathonModal').classList.contains('hidden'), false);
-    assert.equal(h.manager._activeModalId, 'marathonModal');
+    assert.equal(h.element('randomPanelMarathon').hidden, false);
+    assert.equal(h.manager._activeModalId, null);
     h.dispose();
 }
 
@@ -559,7 +590,7 @@ for (const action of ['remove', 'clear']) {
     h.storage.randomPool = [{ kpId: 1, title: 'Write failed' }];
     await h.manager.loadPool();
     h.manager.setupPoolListeners();
-    h.element('showPoolBtn').click();
+    h.manager._selectMode('pool');
     h.failWrites(true);
     if (action === 'remove') h.element('poolList').querySelector('.pool-list-item-remove').click();
     else {
@@ -568,14 +599,14 @@ for (const action of ['remove', 'clear']) {
         h.document.querySelector('[data-confirm-dialog="confirm"]').click();
     }
     await flush();
-    const status = h.element('poolModalStatus');
-    assert.ok(status, 'The pool dialog owns visible mutation feedback');
-    assert.equal(h.element('poolModal').contains(status), true);
+    const status = h.element('poolListStatus');
+    assert.ok(status, 'The Pool mode owns visible mutation feedback');
+    assert.equal(h.element('randomPanelPool').contains(status), true);
     assert.equal(status.getAttribute('role'), 'status');
     assert.equal(status.hidden, false);
     assert.equal(status.closest('.hidden'), null);
     assert.equal(status.textContent, h.context.i18n.get('random.pool.save_error'));
-    assert.equal(h.element('poolModal').classList.contains('hidden'), false);
+    assert.equal(h.element('randomPanelPool').hidden, false);
     assert.deepEqual(Array.from(h.manager.pool, movie => movie.kpId), [1]);
     h.dispose();
 }
@@ -647,4 +678,57 @@ for (const action of ['remove', 'clear']) {
     h.dispose();
 }
 
-console.log('Random audit v2: real-page activation, preferences, cancellation, searches, safe posters, pool mutations, pending commits, modal focus and language refresh passed.');
+// The Marathon mode follows the server round: collecting, the wheel waiting, a picked movie, completed.
+{
+    const h = harness();
+    h.context.RandomMarathonService = { maxMoviesPerUser: 3 };
+    h.context.firebaseManager = { getCurrentUser: () => ({ uid: 'me' }) };
+    h.manager.marathonService = { removeMovie() {} };
+    const item = (id, state, addedBy = 'other') => ({ id: `4_${id}`, kpId: id, title: `Movie ${id}`, year: 1940, state, addedBy, addedByName: addedBy });
+    h.manager._renderMarathon();
+    assert.equal(h.element('marathonSummary').textContent, h.context.i18n.get('random.pool_marathon.loading_round'), 'Before auth and the first snapshot the mode says it is loading, not "sign in"');
+    assert.equal(h.element('marathonSearchWrap').hidden, true);
+    const render = (round, items, admin) => {
+        h.manager._marathonLoading = false;
+        h.manager.marathonIsAdmin = admin;
+        h.manager.marathonState = { round: { roundId: 4, ...round }, items };
+        h.manager._renderMarathon();
+    };
+    const panel = h.element('randomPanelMarathon');
+    const actions = () => [...panel.querySelectorAll('[data-marathon-action]')].map(button => button.dataset.marathonAction);
+
+    render({ status: 'collecting' }, [item(1, 'queued', 'me'), item(2, 'queued')], false);
+    assert.equal(h.element('marathonSearchWrap').hidden, false, 'Movies can be added while collecting');
+    assert.equal(h.element('marathonCurrent').hidden, true);
+    assert.ok(h.element('marathonSummary').textContent.includes('1/3'), 'The round card shows the own limit');
+    assert.equal(h.element('marathonLiveDot').hidden, false, 'The tab marks a live round');
+    assert.ok(h.element('marathonLiveText').textContent.length > 2, 'The live mark is spoken too');
+    assert.deepEqual(actions(), []);
+    render({ status: 'collecting' }, [item(1, 'queued', 'me')], true);
+    assert.deepEqual(actions(), ['start']);
+
+    const running = [item(1, 'watched'), item(2, 'queued'), item(3, 'queued'), item(5, 'removed')];
+    render({ status: 'active', currentItemId: null }, running, true);
+    assert.equal(h.element('marathonSearchWrap').hidden, true, 'Adding is closed once the marathon runs');
+    assert.equal(h.element('marathonCurrent').hidden, false);
+    assert.deepEqual(actions(), ['roll'], 'The admin spins the wheel for the next movie');
+    assert.deepEqual([...panel.querySelectorAll('.marathon-group-title')].map(title => title.textContent.split(' · ')[1]), ['2', '1', '1']);
+    assert.doesNotMatch(h.element('marathonList').textContent, /\b1\.\s|\b2\.\s/, 'No preset order is numbered');
+    render({ status: 'active', currentItemId: null }, running, false);
+    assert.deepEqual(actions(), [], 'Viewers see who spins instead of a button');
+
+    render({ status: 'active', currentItemId: '4_3' }, [item(1, 'watched'), item(2, 'queued'), item(3, 'selected')], true);
+    const spotlight = h.element('marathonCurrent');
+    assert.ok(spotlight.querySelector('.marathon-current-movie-link').href.includes('movieId=3'));
+    assert.deepEqual(actions(), ['watched', 'removed']);
+    assert.ok(!h.element('marathonList').textContent.includes('Movie 3'), 'The picked movie is shown once, in the spotlight');
+
+    render({ status: 'completed', currentItemId: null }, [item(1, 'watched'), item(2, 'watched')], true);
+    assert.equal(h.element('marathonCurrent').hidden, true);
+    assert.deepEqual(actions(), ['create']);
+    assert.equal(h.element('marathonLiveDot').hidden, true);
+    assert.equal(h.element('marathonLiveText').textContent, '');
+    h.dispose();
+}
+
+console.log('Random audit v2: real-page activation, preferences, cancellation, searches, safe posters, pool mutations, pending commits, mode tabs, marathon states and language refresh passed.');
