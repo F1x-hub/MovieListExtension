@@ -1,5 +1,13 @@
 export const whatsNew = [
     {
+        id: '1.5.9', version: '1.5.9', date: '2026-11-22',
+        highlights: [
+            { id: 'random-modes', title: { ru: 'Три режима «Случайного»', en: 'Three Random modes' }, text: { ru: 'Подбор, Пул и Марафон теперь вкладки вверху страницы, а не всплывающие окна. Страница открывается в том режиме, где вы были в прошлый раз.', en: 'Pick, Pool and Marathon are now tabs at the top of the page instead of pop-up windows. The page opens in the mode you used last time.' } },
+            { id: 'pool-page', title: { ru: 'Пул на всю страницу', en: 'The pool gets a whole page' }, text: { ru: 'Список фильмов с бонусом за дни в пуле и шансом выпасть. Колесо крутится уже с одного фильма.', en: 'A list of movies with each one’s bonus for days in the pool and its chance to be picked. The wheel spins from a single movie.' } },
+            { id: 'marathon-clear', title: { ru: 'Понятный марафон', en: 'A clearer marathon' }, text: { ru: 'Видно этап раунда, какой фильм выбрало колесо или сколько фильмов ещё ждут броска, и списки «В колесе», «Просмотрены», «Убраны».', en: 'You see the round’s stage, the movie the wheel picked or how many are still waiting for a spin, and lists of movies on the wheel, watched and removed.' } }
+        ]
+    },
+    {
         id: '1.5.8', version: '1.5.8', date: '2026-11-21',
         highlights: [
             { id: 'salvo', title: { ru: 'Залп', en: 'Salvo' }, text: { ru: 'Пошаговая артиллерия на островах, которые разрушает каждый взрыв: одиннадцать видов оружия, ветер, ящики с припасами и боты трёх уровней. Играйте одни или онлайн с другими пользователями расширения.', en: 'Turn-based artillery on islands that every explosion carves: eleven weapons, wind, supply crates and bots at three levels. Play alone or online with other extension users.' } },
