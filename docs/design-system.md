@@ -196,7 +196,12 @@ the player is open and in fullscreen, sheds snow on a machine that cannot keep u
 draws a single still frame under reduced motion. The live broadcast page keeps the
 forest and a still sky, but no falling snow or moving aurora, because the video is
 part of that page. A page root that paints the theme background hides the sky, so such
-a root goes on the transparent list in `seasonal-newyear.css`.
+a root goes on the transparent list in `seasonal-newyear.css`. Text never lies on the
+bright aurora: surfaces with a translucent tint go on the solid list there, the profile
+lies on one sheet, and in the dark theme the aurora dims to a quarter over the first
+320px of scrolling, because the sky stays in place while the page moves over it. Side art
+is sized from the page content: 1440px, and 1552px on Bookmarks and Downloads, where it is
+hidden below 1752px.
 `npm run test:new-year-browser` runs the built extension with a pinned clock. To look
 at a season out of its dates, run `localStorage.setItem('movieExtensionSeasonPreviewDate', '2026-12-20')`
 on any extension page and reload; `removeItem` returns to the real date.

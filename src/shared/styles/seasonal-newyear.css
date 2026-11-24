@@ -264,31 +264,63 @@ html.season-newyear .popup-logo-img {
     visibility: hidden;
 }
 
-/* Some pages paint the theme background on their root: the sky has to show through. */
-.season-newyear .catalog-page,
-.season-newyear .movie-details-page-container,
-.season-newyear .search-container,
-.season-newyear .ratings-main,
-.season-newyear .main-content,
-.season-newyear .profile-main {
+/*
+ * The sky stays in place while the page scrolls, so past the first screen headings and
+ * lists pass over the aurora. It is bright at the top of a page and calm below it. The
+ * light theme's aurora is pale enough to read on as it is.
+ */
+.season-newyear:not(.light-theme) .ny-sky__aurora {
+    animation: ny-aurora-dim linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 320px;
+}
+
+@keyframes ny-aurora-dim {
+    to { opacity: 0.25; }
+}
+
+/*
+ * Some pages paint the theme background on their root: the sky has to show through.
+ * `:root` outranks a page's own `.light-theme` rule for the same root.
+ */
+:root.season-newyear .catalog-page,
+:root.season-newyear .movie-details-page-container,
+:root.season-newyear .search-container,
+:root.season-newyear .ratings-main,
+:root.season-newyear .main-content,
+:root.season-newyear .profile-main {
     background: transparent;
 }
 
 /*
  * Tinted surfaces were drawn for a flat page and turn into coloured glass over the
- * aurora, so in the season they get the solid color they had on that page.
+ * aurora, so in the season they get the solid color they had on that page. The theme
+ * class is on <body> too and declares the token there again.
  */
-:root.season-newyear {
+:root.season-newyear,
+:root.season-newyear body {
     --theme-bg-card: var(--theme-bg-secondary);
 }
 
+:root.season-newyear .movie-card-component:not(.anime-style),
+:root.season-newyear body:not(.popup-page) :is(.empty-state, .error-state),
+:root.season-newyear .home-cta-card,
+:root.season-newyear .catalog-tabs,
 :root.season-newyear .results-info,
-:root.season-newyear .pool-btn-secondary {
-    background: var(--theme-bg-secondary);
+:root.season-newyear .initial-loading-content,
+:root.season-newyear .infinite-scroll-trigger .app-loader--compact,
+:root.season-newyear .search-section :is(.search-hero-badge, .search-input, .filters),
+:root.season-newyear .bookmarks-sidebar,
+:root.season-newyear .bookmarks-content :is(.search-wrapper input, .custom-select) {
+    background-color: var(--theme-bg-secondary);
+    background-image: none;
 }
 
-:root.season-newyear .pool-btn-secondary:hover {
-    background: var(--theme-bg-tertiary);
+/* The profile's header, tabs and statistics are text without cards: one sheet under all of it. */
+:root.season-newyear .profile-content {
+    background: var(--theme-bg-primary);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 0 0 20px var(--theme-bg-primary);
 }
 
 /* ---------- Forest in the page margins; it fades toward the content ---------- */

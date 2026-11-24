@@ -485,6 +485,7 @@ keeps npm-compatible three-component semver metadata.
 - Native parts such as select lists and autofill match the theme (`color-scheme`). Frames of other sites are kept as they were.
 - The toolbar icon follows Chrome's mode instead of the extension's theme: with a light theme in dark Chrome it was black on a dark toolbar.
 - Light theme: Catalog's empty and error panels are light (they were a dark grey, with text at 2.03:1), and the «Выпущен» badge on the film page is readable (it was at 2.75:1).
+- New Year season: text no longer gets lost in the northern lights. The profile lies on one sheet (its numbers were at 1.8:1), empty states, cards, the search field and the Bookmarks sidebar are solid in both themes, and in the dark theme the aurora calms down as the page scrolls. Bookmarks show the sky in the light theme too, and on Bookmarks and Downloads the side art of both seasons no longer reaches the content.
 
 ### Refactor
 

@@ -221,11 +221,16 @@ html[data-season] .placeholder-icon-animated {
 
 /*
  * Side art fills the empty page margins. It sizes itself from the widest page
- * content (1440px) and is hidden when the margins are too narrow, so it never
- * reaches posters or text.
+ * content (1440px; Bookmarks and Downloads are wider) and is hidden when the
+ * margins are too narrow, so it never reaches posters or text.
  */
 .seasonal-decor {
-    --season-side-art: min(calc((100vw - 1440px) / 2 - 16px), 280px);
+    --season-content: 1440px;
+    --season-side-art: min(calc((100vw - var(--season-content)) / 2 - 16px), 280px);
+}
+
+body:has(.bookmarks-container, .downloads-layout) > .seasonal-decor {
+    --season-content: 1552px;
 }
 
 .seasonal-side {
@@ -541,6 +546,12 @@ html[data-season] .placeholder-icon-animated {
 
 @media (max-width: 1639px) {
     .seasonal-side {
+        display: none;
+    }
+}
+
+@media (max-width: 1751px) {
+    body:has(.bookmarks-container, .downloads-layout) > .seasonal-decor :is(.seasonal-side, .ny-wing) {
         display: none;
     }
 }

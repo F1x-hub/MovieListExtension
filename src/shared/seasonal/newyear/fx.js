@@ -478,7 +478,7 @@
         function dumpSnow() {
             if (dead) return;
             const wing = layer.querySelector('.ny-wing');
-            if (W >= 1640 && wing && !isPaused()) {
+            if (W >= 1640 && wing?.offsetWidth && !isPaused()) {
                 const side = R() < 0.5 ? 'left' : 'right';
                 const k = (wing.offsetWidth + 48) / 272;
                 const fir = WING_DUMPS[side][R() * 3 | 0];
@@ -789,13 +789,13 @@
             for (let i = 0; i < flakes.length; i++) if (flakes[i].kind !== 0) drawFlake(flakes[i]);
 
             /* Snow banks in the margins glitter. */
-            if (W >= 1640) {
+            const side = W >= 1640 ? layer.querySelector('.ny-wing').offsetWidth : 0;
+            if (side) {
                 const count = 46;
                 for (let i = 0; i < count; i++) {
                     const v = Math.sin(t * (0.5 + (i * 37 % 14) / 10) + i * 1.7);
                     if (v > 0.965) {
                         const z = (v - 0.965) / 0.035, size = 3 + z * 9;
-                        const side = layer.querySelector('.ny-wing').offsetWidth;
                         const sx = ((i * 53) % side);
                         const x = i % 2 ? sx : W - sx;
                         const y = H - 8 - ((i * 29) % 44);

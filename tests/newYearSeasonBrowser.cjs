@@ -494,7 +494,12 @@ async function main() {
             'bookmarks/bookmarks.html', 'calendar/calendar.html', 'profile/profile.html',
             'settings/settings.html', 'person-details/person-details.html?id=1', 'movie-details/movie-details.html?movieId=656',
             'admin/admin.html', 'live/live.html'];
-        for (const target of pages) {
+        const visits = ['light', 'dark'].flatMap(theme => pages.map(target => [theme, target]));
+        for (const [theme, target] of visits) {
+            if (target === pages[0]) {
+                await page.goto(url(HOME));
+                await page.evaluate(id => localStorage.setItem('movieExtensionTheme', id), theme);
+            }
             await page.goto(url(`src/pages/${target}`));
             await page.waitForTimeout(1800);
             const state = await page.evaluate(() => {
@@ -509,10 +514,51 @@ async function main() {
                     const box = el.getBoundingClientRect();
                     return box.width >= innerWidth * 0.8 && box.height >= 240 && opaque(style.backgroundColor);
                 }).map(el => `${el.tagName.toLowerCase()}.${el.className}`);
-                return { sky: !!document.querySelector('.ny-sky'), wings: document.querySelectorAll('.ny-wing').length, covers };
+                const isLight = document.documentElement.classList.contains('light-theme');
+                return { theme: isLight ? 'light' : 'dark', sky: !!document.querySelector('.ny-sky'), wings: document.querySelectorAll('.ny-wing').length, covers };
             });
-            assert.deepEqual(state, { sky: true, wings: 2, covers: [] }, `the sky must show through on ${target}`);
+            assert.deepEqual(state, { theme, sky: true, wings: 2, covers: [] }, `the sky must show through on ${target} (${theme})`);
         }
+
+        // Text never lies on the aurora itself: surfaces are solid, and the sky calms down as
+        // the page scrolls. The theme class on <body> must not bring the glass back.
+        for (const theme of ['light', 'dark']) {
+            const alphaOf = (target, selector) => page.evaluate(([path, query]) => {
+                const el = document.querySelector(query);
+                if (!el) return `no ${query} on ${path}`;
+                const parts = getComputedStyle(el).backgroundColor.match(/[\d.]+/g).map(Number);
+                return parts.length > 3 ? parts[3] : 1;
+            }, [target, selector]);
+            await page.evaluate(id => localStorage.setItem('movieExtensionTheme', id), theme);
+            for (const [target, selectors] of [
+                ['search/search.html', ['.search-input', '.search-hero-badge', '.empty-state']],
+                ['bookmarks/bookmarks.html', ['.bookmarks-sidebar', '.search-wrapper input']],
+                ['profile/profile.html', ['.profile-content']],
+                // In the light theme the guest card is an opaque gradient of its own.
+                ['home/home.html', theme === 'dark' ? ['.home-cta-card'] : []],
+                ['catalog/catalog.html', ['.catalog-tabs']]
+            ]) {
+                await page.goto(url(`src/pages/${target}`));
+                for (const selector of selectors) {
+                    await page.waitForSelector(selector, { state: 'attached', timeout: 8000 });
+                    assert.equal(await alphaOf(target, selector), 1, `${selector} must be solid (${theme})`);
+                }
+                assert.equal(await page.evaluate(() => {
+                    const style = getComputedStyle(document.body);
+                    return style.getPropertyValue('--theme-bg-card') === style.getPropertyValue('--theme-bg-secondary');
+                }), true, `cards must be solid on ${target} (${theme})`);
+            }
+        }
+        await page.goto(url(HOME));
+        await page.waitForSelector('.ny-sky__aurora');
+        const auroraOpacity = () => page.evaluate(() => Number(getComputedStyle(document.querySelector('.ny-sky__aurora')).opacity));
+        await page.waitForFunction(() => document.documentElement.scrollHeight > innerHeight + 400);
+        assert.equal(await auroraOpacity(), 1, 'the aurora is bright at the top of a page');
+        await page.evaluate(() => scrollTo({ top: 400, behavior: 'instant' }));
+        await page.waitForTimeout(300);
+        assert.equal(await auroraOpacity(), 0.25, 'the aurora calms down past the first screen');
+        await page.goto(url('src/pages/live/live.html'));
+        await page.waitForTimeout(1800);
         assert.deepEqual(errors, []);
 
         // The broadcast page keeps a sky that holds still, with nothing falling across the video.
