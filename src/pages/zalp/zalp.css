@@ -129,7 +129,7 @@
     height: 56px;
     display: grid;
     place-items: center;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-lg);
     background: var(--ui-color-surface);
     border: 2px solid var(--ui-color-content);
     box-shadow: var(--elevation-2);

@@ -151,7 +151,7 @@
     font-size: var(--font-size-xs);
     font-weight: 800;
     background: var(--bs-hit);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-sm);
 }
 
 @keyframes bs-toast-in {
@@ -494,7 +494,7 @@
     font-size: var(--font-size-xs);
     font-weight: 800;
     background: var(--bs-hit);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-sm);
 }
 
 .bs-challenge .bs-hint {
@@ -602,7 +602,7 @@
     margin-right: 6px;
     vertical-align: 1px;
     border: 1.5px solid var(--ui-color-content-subtle);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-xs);
 }
 
 .bs-status-dot.is-active {
@@ -1462,7 +1462,7 @@
     font-size: var(--font-size-xs);
     font-weight: 800;
     background: var(--bs-hit);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-sm);
 }
 
 .bs-ready-btn {

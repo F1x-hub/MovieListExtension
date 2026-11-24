@@ -475,7 +475,7 @@
 .empty-icon {
     width: 64px;
     height: 64px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-xl);
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
     display: flex;

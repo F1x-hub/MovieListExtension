@@ -755,25 +755,6 @@
 .search-history-list {
     max-height: 250px;
     overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
-}
-
-.search-history-list::-webkit-scrollbar {
-    width: 6px;
-}
-
-.search-history-list::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.search-history-list::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: var(--radius-sm);
-}
-
-.search-history-list::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.3);
 }
 
 .search-history-item {
@@ -1019,7 +1000,7 @@ html:not(.light-theme) #searchBtn:hover {
     align-items: center;
     gap: 12px;
     padding: 10px 20px;
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-md);
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
     backdrop-filter: blur(12px);

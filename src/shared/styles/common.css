@@ -2,6 +2,7 @@
 
 @import url('./back-to-top.css');
 @import url('./tokens.css');
+@import url('./scrollbars.css');
 @import url('./seasonal.css');
 @import url('./seasonal-newyear.css');
 
@@ -70,6 +71,7 @@ details[open] > .disclosure-summary::after { transform: translateY(2px) rotate(2
     --shadow-glow: 0 0 20px rgba(255, 255, 255, 0.08);
     
     /* Border Radius — shape follows role (see docs/design-system.md, "Corner radius") */
+    --radius-xs: 2px;      /* tiny marks: status dots, page dots, small knobs */
     --radius-sm: 4px;      /* text labels: status, studio, genre chips */
     --radius-md: 8px;      /* anything clickable: buttons, inputs, tabs, menu items */
     --radius-lg: 12px;     /* cards, posters, panels, banners, popovers */
@@ -347,25 +349,6 @@ a:hover {
 *:focus-visible {
     outline: 2px solid var(--ui-color-interactive);
     outline-offset: 2px;
-}
-
-/* Scrollbar styling */
-::-webkit-scrollbar {
-    width: 6px;
-    height: 5px;
-}
-
-::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: var(--radius-pill);
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.3);
 }
 
 /* Emil Kowalski active state click feedback */

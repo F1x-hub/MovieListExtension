@@ -584,7 +584,7 @@
     pointer-events: auto;
     width: 16px;
     height: 16px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-sm);
     background: #ffffff;
     border: 1px solid rgba(0, 0, 0, 0.15);
     cursor: grab;
@@ -606,7 +606,7 @@
     pointer-events: auto;
     width: 16px;
     height: 16px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-sm);
     background: #ffffff;
     border: 1px solid rgba(0, 0, 0, 0.15);
     cursor: grab;
@@ -703,7 +703,7 @@
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.08);
     padding: 3px 8px;
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-sm);
     margin-left: auto;
     cursor: pointer;
     transition: var(--transition);

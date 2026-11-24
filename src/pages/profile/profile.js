@@ -34,7 +34,7 @@ class ProfilePageManager {
     // e-mail, admin/approval flags and preferences are never written to disk.
     static CACHED_PROFILE_FIELDS = [
         'uid', 'firstName', 'lastName', 'displayName', 'username', 'bio', 'photoURL',
-        'bannerURL', 'displayNameFormat', 'topGenres', 'socialLinks', 'stats', 'pinnedMovies', 'achievements', 'showRankFrame', 'rankFrameLevel', 'achievementPoints'
+        'bannerURL', 'displayNameFormat', 'socialLinks', 'stats', 'pinnedMovies', 'achievements', 'showRankFrame', 'rankFrameLevel', 'achievementPoints'
     ];
     static OWN_CACHED_PROFILE_FIELDS = ['photoPath', 'bannerPath'];
 
@@ -52,6 +52,14 @@ class ProfilePageManager {
         const createdAt = ProfilePageManager.toDate(profile?.createdAt);
         if (createdAt) cached.createdAt = createdAt.toISOString();
         return cached;
+    }
+
+    /** Month and year after «Участник с»: the day asks Russian for the genitive («октября 2025»). */
+    static formatJoinDate(date) {
+        if (!date) return '';
+        const parts = new Intl.DateTimeFormat(i18n.currentLocale === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' }).formatToParts(date);
+        const part = type => parts.find(item => item.type === type)?.value || '';
+        return `${part('month')} ${part('year')}`;
     }
 
     /** Date from a Firestore Timestamp, a cached {seconds} object, a string or a number. */
@@ -131,7 +139,8 @@ class ProfilePageManager {
             safeImageUrl,
             escapeHtml: value => Utils.escapeHtml(value),
             movieUrl: movieId => chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${encodeURIComponent(movieId)}`),
-            onPinnedChange: pinned => this.savePinnedMovies(pinned)
+            onPinnedChange: pinned => this.savePinnedMovies(pinned),
+            onWatchTime: watch => this.displayWatchTime(watch)
         });
 
         this.init();
@@ -268,26 +277,25 @@ class ProfilePageManager {
             profileBio: document.getElementById('profileBio'),
             profileJoinDate: document.getElementById('profileJoinDate'),
             joinDateText: document.getElementById('joinDateText'),
-            profileTopGenres: document.getElementById('profileTopGenres'),
-            topGenresContainer: document.getElementById('topGenresContainer'),
             profileMenu: document.getElementById('profileMenu'),
 profileCover: document.querySelector('.profile-cover'),
 
             // Statistics
             statTotalRatings: document.getElementById('statTotalRatings'),
+            statWatchTime: document.getElementById('statWatchTime'),
+            profileFacts: document.getElementById('profileStats'),
+            profileStart: document.getElementById('profileStart'),
+            recentRatingsSection: document.getElementById('recentRatingsSection'),
+            ratingFilterStatus: document.getElementById('ratingFilterStatus'),
             statAverageRating: document.getElementById('statAverageRating'),
             statFavorites: document.getElementById('statFavorites'),
             statWatchlist: document.getElementById('statWatchlist'),
 
-            statCards: Array.from(document.querySelectorAll('#profileStats .stat-card')),
+            statCards: Array.from(document.querySelectorAll('#profileStats .profile-fact--link')),
 
             // Personal dashboard
-            profileDashboard: document.getElementById('profileDashboard'),
-            tasteTitle: document.getElementById('tasteTitle'),
-            tasteSubtitle: document.getElementById('tasteSubtitle'),
             continueWatchingSection: document.getElementById('continueWatchingSection'),
             continueWatchingContent: document.getElementById('continueWatchingContent'),
-            profileTasteGenres: document.getElementById('profileTasteGenres'),
             ratingDistribution: document.getElementById('ratingDistribution'),
 
             // Recent ratings
@@ -625,6 +633,10 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
                 return;
             }
 
+            // Hours need every film's length; until those arrive the last known value stays.
+            if (this.userProfile?.uid === targetUserId && this.userProfile.stats?.watchTime) {
+                stats.watchTime = this.userProfile.stats.watchTime;
+            }
             this.userProfile = { ...profile, stats, uid: targetUserId };
             this.displayProfile();
             this.displayStatistics(stats);
@@ -634,7 +646,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
             await Promise.allSettled([
                 this.loadRecentRatings(targetUserId),
                 this.viewingOtherUser ? Promise.resolve() : this.loadPersonalDashboard(targetUserId),
-                this.insightsView?.load({ targetUid: targetUserId, viewerUid: this.currentUser.uid, isOther: this.viewingOtherUser }),
+                this.insightsView?.load({ targetUid: targetUserId, viewerUid: this.currentUser.uid, isOther: this.viewingOtherUser, displayName: this.displayName }),
                 this.viewingOtherUser ? Promise.resolve() : this.syncAchievements(targetUserId, loadId)
             ]);
             if (loadId !== this.profileLoadId) return;
@@ -650,6 +662,9 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
 
             if (hasFallback) {
                 Utils.showToast(i18n.get('profile.offline_cache'), 'info');
+                // Parts that only the network fills must not stay as loading placeholders.
+                this.insightsView?.showUnavailable?.();
+                this.elements.continueWatchingSection?.setAttribute('hidden', '');
                 // Replaces the list spinner with the failure message and its retry button.
                 this.loadRecentRatings(targetUserId);
             } else {
@@ -754,9 +769,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         if (this.elements.profileJoinDate && profile.createdAt) {
             // Check if profileService is ready for date formatting
             const createdDate = ProfilePageManager.toDate(profile.createdAt);
-            const joinDate = createdDate
-                ? createdDate.toLocaleDateString(i18n.currentLocale === 'ru' ? 'ru-RU' : 'en-US', { month: 'long', year: 'numeric' })
-                : '';
+            const joinDate = ProfilePageManager.formatJoinDate(createdDate);
             if (joinDate) {
                 this.elements.joinDateText.textContent = `${i18n.get('profile.joined')} ${joinDate}`;
                 this.elements.profileJoinDate.style.display = 'flex';
@@ -765,18 +778,6 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
             }
         } else if (this.elements.profileJoinDate) {
             this.elements.profileJoinDate.style.display = 'none';
-        }
-
-        if (this.elements.profileTopGenres && this.elements.topGenresContainer) {
-            const topGenres = Array.isArray(profile.topGenres) ? profile.topGenres : [];
-            if (topGenres.length > 0) {
-                this.elements.topGenresContainer.innerHTML = topGenres
-                    .map(genre => `<span class="profile-genre-badge">${Utils.escapeHtml(genre)}</span>`)
-                    .join('');
-                this.elements.profileTopGenres.style.display = 'flex';
-            } else {
-                this.elements.profileTopGenres.style.display = 'none';
-            }
         }
 
         this.applyViewerMode(isUsernameFirst ? username : fullName);
@@ -818,7 +819,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
     /**
      * Own profile and another user's profile share the markup; everything addressed
      * to the viewer (edit action, continue watching, links to the viewer's own
-     * lists, "my taste" copy) is switched here for both cached and network renders.
+     * lists) is switched here for both cached and network renders.
      */
     applyViewerMode(displayName = '') {
         const isOther = Boolean(this.viewingOtherUser);
@@ -828,17 +829,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         }
 
         this.elements.continueWatchingSection?.toggleAttribute('hidden', isOther);
-        this.elements.profileDashboard?.classList.toggle('profile-dashboard--single', isOther);
-
-        const tasteKeys = isOther
-            ? ['profile.taste.title_other', 'profile.taste.subtitle_other']
-            : ['profile.taste.title', 'profile.taste.subtitle'];
-        [this.elements.tasteTitle, this.elements.tasteSubtitle].forEach((element, index) => {
-            if (!element) return;
-            // translatePage() re-reads data-i18n, so the key has to change too.
-            element.setAttribute('data-i18n', tasteKeys[index]);
-            element.textContent = i18n.get(tasteKeys[index]);
-        });
+        this.displayName = displayName;
 
         // Ratings and Bookmarks only show the signed-in user's own data, so another
         // user's counters are not links there.
@@ -848,12 +839,10 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
                     card.dataset.href = card.getAttribute('href');
                     card.removeAttribute('href');
                 }
-                card.classList.replace('stat-card--link', 'stat-card--static');
             } else {
                 if (!card.hasAttribute('href') && card.dataset.href) {
                     card.setAttribute('href', card.dataset.href);
                 }
-                card.classList.replace('stat-card--static', 'stat-card--link');
             }
         });
 
@@ -891,12 +880,20 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
 
     displayStatistics(stats) {
         if (!stats) return;
+        const locale = i18n.currentLocale === 'ru' ? 'ru-RU' : 'en-US';
+        const total = stats.totalRatings || 0;
 
         if (this.elements.statTotalRatings) {
-            this.elements.statTotalRatings.textContent = stats.totalRatings || 0;
+            this.elements.statTotalRatings.textContent = total.toLocaleString(locale);
+            const label = this.elements.statTotalRatings.parentElement?.querySelector('.profile-fact__label');
+            if (label) {
+                // translatePage() re-reads data-i18n, so the key carries the noun form.
+                label.setAttribute('data-i18n', `profile.stats.rated_${new Intl.PluralRules(locale).select(total)}`);
+                label.textContent = i18n.get(label.getAttribute('data-i18n'));
+            }
         }
         if (this.elements.statAverageRating) {
-            this.elements.statAverageRating.textContent = parseFloat((stats.averageRating || 0).toFixed(1));
+            this.elements.statAverageRating.textContent = (stats.averageRating || 0).toLocaleString(locale, { maximumFractionDigits: 1 });
         }
         if (this.elements.statFavorites) {
             this.elements.statFavorites.textContent = stats.favoritesCount || 0;
@@ -904,8 +901,27 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         if (this.elements.statWatchlist) {
             this.elements.statWatchlist.textContent = stats.watchlistCount || 0;
         }
+        if (stats.watchTime) this.displayWatchTime(stats.watchTime);
 
-        this.renderTasteProfile(stats);
+        this.renderRatingDistribution(stats.ratingDistribution || []);
+        this.applyEmptyState(total === 0);
+    }
+
+    /** Hours in the header; kept with the statistics, so the cached profile shows them at once. */
+    displayWatchTime(watch) {
+        if (this.userProfile?.stats) this.userProfile.stats.watchTime = watch;
+        if (this.elements.statWatchTime) {
+            this.elements.statWatchTime.textContent = this.insightsView.formatWatchTime(watch);
+        }
+    }
+
+    /** A profile without ratings shows one next step (its owner) instead of empty sections. */
+    applyEmptyState(isEmpty) {
+        const isOwnEmpty = isEmpty && !this.viewingOtherUser;
+        this.elements.profileFacts?.toggleAttribute('hidden', isEmpty);
+        this.elements.profileStart?.toggleAttribute('hidden', !isOwnEmpty);
+        this.elements.recentRatingsSection?.toggleAttribute('hidden', isOwnEmpty);
+        document.getElementById('profileTabOverview')?.classList.toggle('is-empty', isOwnEmpty);
     }
 
     async loadPersonalDashboard(userId) {
@@ -991,15 +1007,27 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         return parts.join(' · ');
     }
 
+    /** «Осталось 1 ч 12 мин» while something is being watched, or an empty string. */
+    static getTimeLeft(progress = {}) {
+        if (ProfilePageManager.getProgressPercent(progress) === null) return '';
+        const minutes = Math.ceil((Number(progress.duration) - Number(progress.timestamp)) / 60);
+        if (!(minutes > 0)) return '';
+        const key = minutes < 60 ? 'left_minutes' : 'left_hours';
+        const time = i18n.get(`profile.continue_watching.${key}`)
+            .replace('{h}', Math.floor(minutes / 60))
+            .replace('{m}', minutes % 60);
+        return i18n.get('profile.continue_watching.left').replace('{time}', time);
+    }
+
     createContinueWatchingHTML(item) {
         const movieId = encodeURIComponent(item.movieId);
         const title = item.movieTitleRu || item.movieTitle || item.name || i18n.get('profile.unknown_title');
         const posterUrl = safeImageUrl(item.posterPath || item.posterUrl || '');
         const progress = item.progress || {};
         const percent = ProfilePageManager.getProgressPercent(progress);
-        const episodeLabel = ProfilePageManager.getEpisodeLabel(progress);
-        const metaParts = [episodeLabel];
+        const metaParts = [ProfilePageManager.getEpisodeLabel(progress)];
         if (progress.completed) metaParts.push(i18n.get('profile.continue_watching.completed'));
+        else metaParts.push(ProfilePageManager.getTimeLeft(progress));
         const meta = metaParts.filter(Boolean).join(' · ') || i18n.get('profile.continue_watching.start_here');
         const safeTitle = Utils.escapeHtml(title);
         const safePoster = Utils.escapeHtml(posterUrl);
@@ -1010,14 +1038,12 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         const progressLabel = Utils.escapeHtml(i18n.get('profile.continue_watching.progress'));
         const progressMarkup = percent === null
             ? ''
-            : `<div class="continue-watching-progress" role="progressbar" aria-label="${progressLabel}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><span style="width: ${percent}%"></span></div>
-                    <span class="continue-watching-percent" aria-hidden="true">${percent}%</span>`;
+            : `<div class="continue-watching-progress" role="progressbar" aria-label="${progressLabel}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><span style="width: ${percent}%"></span></div>`;
 
         return `
             <a class="continue-watching-item" href="${Utils.escapeHtml(chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${movieId}`))}" data-movie-id="${Utils.escapeHtml(movieId)}">
                 <div class="poster">${poster}</div>
                 <div class="continue-watching-info">
-                    <span class="continue-watching-eyebrow">${Utils.escapeHtml(i18n.get('profile.continue_watching.eyebrow'))}</span>
                     <h3 class="continue-watching-title">${safeTitle}</h3>
                     <p class="continue-watching-meta">${Utils.escapeHtml(meta)}</p>
                     ${progressMarkup}
@@ -1028,42 +1054,28 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
             </a>`;
     }
 
-    renderTasteProfile(stats = {}) {
-        const genresContainer = this.elements.profileTasteGenres;
-        const topGenres = Array.isArray(this.userProfile?.topGenres) ? this.userProfile.topGenres : [];
-
-        if (genresContainer) {
-            genresContainer.innerHTML = topGenres.length > 0
-                ? topGenres.slice(0, 4).map(genre => `<span class="taste-genre-chip">${Utils.escapeHtml(genre)}</span>`).join('')
-                : `<span class="taste-empty">${Utils.escapeHtml(i18n.get(this.viewingOtherUser ? 'profile.taste.empty_other' : 'profile.taste.empty'))}</span>`;
-        }
-
-        this.renderRatingDistribution(stats.ratingDistribution || []);
-    }
-
     renderRatingDistribution(distribution = []) {
         const container = this.elements.ratingDistribution;
         if (!container) return;
 
         const values = Array.isArray(distribution) ? distribution : [];
-        const maxCount = Math.max(...values.map(item => Number(item.count || 0)), 0);
+        this.ratingCounts = new Map(values.map(item => [Number(item.rating || 0), Number(item.count || 0)]));
+        const maxCount = Math.max(...this.ratingCounts.values(), 0);
+        container.hidden = maxCount === 0;
+        this.updateRatingFilterStatus();
         if (maxCount === 0) {
-            const emptyKey = this.viewingOtherUser ? 'profile.taste.distribution_empty_other' : 'profile.taste.distribution_empty';
-            container.innerHTML = `<span class="taste-empty">${Utils.escapeHtml(i18n.get(emptyKey))}</span>`;
+            container.replaceChildren();
             return;
         }
 
-        container.innerHTML = values.slice().reverse().map(item => {
-            const rating = Number(item.rating || 0);
-            const count = Number(item.count || 0);
-            const width = count > 0 ? Math.max(8, Math.round((count / maxCount) * 100)) : 0;
+        container.innerHTML = [...this.ratingCounts].reverse().map(([rating, count]) => {
             const active = this.ratingFilter === rating;
             const label = i18n.get('profile.taste.filter_by_rating').replace('{rating}', rating).replace('{count}', count);
             return `
-                <button type="button" class="rating-distribution__row${active ? ' is-active' : ''}" data-rating="${rating}"
+                <button type="button" class="rating-distribution__row${active ? ' is-active' : ''}${count === maxCount ? ' is-top' : ''}" data-rating="${rating}"
                     aria-pressed="${active}" aria-label="${Utils.escapeHtml(label)}"${count === 0 ? ' disabled' : ''}>
                     <span>${rating}</span>
-                    <div class="rating-distribution__bar"><span style="width: ${width}%"></span></div>
+                    <span class="rating-distribution__bar"><i style="width: ${(count / maxCount) * 100}%"></i></span>
                     <span class="rating-distribution__count">${count}</span>
                 </button>`;
         }).join('');
@@ -1088,23 +1100,36 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
             row.classList.toggle('is-active', active);
             row.setAttribute('aria-pressed', String(active));
         });
-        this.updateRatingFilterReset();
+        this.updateRatingFilterStatus();
+        // The list is about to get shorter: a reader deep in it would land past its end.
+        const section = this.elements.recentRatingsSection;
+        if (section?.getBoundingClientRect().top < 0) section.scrollIntoView({ block: 'start' });
         if (this.ratingsUserId) {
             this.loadRecentRatings(this.ratingsUserId);
         }
     }
 
-    updateRatingFilterReset() {
-        const button = this.elements.ratingFilterReset;
-        if (!button) return;
+    /** Says what the list shows; the reset button leaves with its own focus kept on the filter. */
+    updateRatingFilterStatus() {
+        const { ratingFilterStatus: status, ratingFilterReset: button, ratingFilterResetLabel: label } = this.elements;
         const active = this.ratingFilter != null;
-        button.hidden = !active;
-        if (active && this.elements.ratingFilterResetLabel) {
-            this.elements.ratingFilterResetLabel.textContent = i18n.get('profile.taste.filter_reset').replace('{rating}', this.ratingFilter);
+        const count = this.ratingCounts?.get(this.ratingFilter) || 0;
+        const hasRatings = [...(this.ratingCounts?.values() || [])].some(Boolean);
+        if (status) {
+            status.textContent = active
+                ? i18n.get('profile.taste.filter_active').replace('{rating}', this.ratingFilter).replace('{count}', count)
+                : hasRatings ? i18n.get('profile.taste.filter_hint') : '';
         }
+        if (!button) return;
+        button.hidden = !active;
+        if (label) label.textContent = i18n.get('profile.taste.filter_reset');
         if (!button.dataset.bound) {
             button.dataset.bound = 'true';
-            button.addEventListener('click', () => this.setRatingFilter(null));
+            button.addEventListener('click', () => {
+                const row = this.elements.ratingDistribution?.querySelector('.rating-distribution__row.is-active');
+                this.setRatingFilter(null);
+                row?.focus({ preventScroll: true });
+            });
         }
     }
 
@@ -1114,7 +1139,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
 
         if (this.ratingsUserId !== targetUserId && this.ratingFilter != null) {
             this.ratingFilter = null;
-            this.updateRatingFilterReset();
+            this.updateRatingFilterStatus();
         }
         this.ratingsUserId = targetUserId;
         // Filter switches reload the list; only the latest request may render.
@@ -1327,9 +1352,11 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         this.elements.recentRatingsList.appendChild(fragment);
     }
 
-    /** «Обзор» / «Достижения» tabs under the profile header; ?tab=achievements opens the second. */
+    static TABS = Object.freeze(['overview', 'statistics', 'achievements']);
+
+    /** Tabs under the profile header; ?tab=statistics and ?tab=achievements open theirs. */
     setupTabs() {
-        this.activeTab = new URLSearchParams(window.location.search).get('tab') === 'achievements' ? 'achievements' : 'overview';
+        this.activeTab = new URLSearchParams(window.location.search).get('tab');
         const tabs = Array.from(document.querySelectorAll('[data-profile-tab]'));
         tabs.forEach(tab => {
             tab.addEventListener('click', () => this.setTab(tab.dataset.profileTab));
@@ -1354,24 +1381,23 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
     }
 
     setTab(name, { updateUrl = true } = {}) {
-        this.activeTab = name === 'achievements' ? 'achievements' : 'overview';
+        this.activeTab = ProfilePageManager.TABS.includes(name) ? name : 'overview';
         document.querySelectorAll('[data-profile-tab]').forEach(tab => {
             const active = tab.dataset.profileTab === this.activeTab;
             tab.classList.toggle('is-active', active);
             tab.setAttribute('aria-selected', String(active));
             tab.tabIndex = active ? 0 : -1;
+            const panel = document.getElementById(tab.getAttribute('aria-controls'));
+            if (panel) panel.hidden = !active;
         });
-        const overview = document.getElementById('profileTabOverview');
-        const achievements = document.getElementById('profileTabAchievements');
-        if (overview) overview.hidden = this.activeTab !== 'overview';
-        if (achievements) achievements.hidden = this.activeTab !== 'achievements';
         if (updateUrl) {
             const url = new URL(window.location.href);
-            if (this.activeTab === 'achievements') url.searchParams.set('tab', 'achievements');
-            else url.searchParams.delete('tab');
+            if (this.activeTab === 'overview') url.searchParams.delete('tab');
+            else url.searchParams.set('tab', this.activeTab);
             history.replaceState(history.state, '', url);
         }
         if (this.activeTab === 'achievements') this.showAchievementsTab();
+        if (this.activeTab === 'statistics') this.insightsView?.showStatistics();
     }
 
     showAchievementsTab() {

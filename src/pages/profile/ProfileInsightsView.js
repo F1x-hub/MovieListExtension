@@ -2,9 +2,10 @@ import {
     PINNED_LIMIT,
     computeDecades,
     computeFavoritePeople,
-    computeDailyActivity,
+    computeGenres,
     computeTasteMatch,
     computeWatchTime,
+    fillDecades,
     normalizePinned,
     reactableRatingIds,
     summarizeMarathon,
@@ -12,6 +13,7 @@ import {
     swapPinned,
     togglePinned
 } from './ProfileInsights.js';
+import { ProfileActivityCalendar } from './ProfileActivityCalendar.js';
 
 // Firestore `in` queries accept at most 30 values; only existing documents are billed.
 const IN_QUERY_CHUNK = 30;
@@ -23,14 +25,15 @@ function chunk(values, size) {
 }
 
 /**
- * Profile statistics, taste match, received reactions, marathon history and
+ * The ratings calendar and taste match of «Обзор», the whole «Статистика» tab and
  * pinned favorites. Reads stay bounded: the user's ratings come from the
  * ProfileService snapshot the page already loaded, movie metadata from one
- * batched cache read, reaction summaries and marathon items from `in`/equality
- * queries that bill only for documents that exist.
+ * batched cache read. Reaction summaries and marathon items are read when the
+ * statistics tab first opens, by `in`/equality queries that bill only for
+ * documents that exist.
  */
 export class ProfileInsightsView {
-    constructor({ db, profileService, userService, i18n, safeImageUrl, escapeHtml, movieUrl, onPinnedChange }) {
+    constructor({ db, profileService, userService, i18n, safeImageUrl, escapeHtml, movieUrl, onPinnedChange, onWatchTime }) {
         this.db = db;
         this.profileService = profileService;
         this.userService = userService;
@@ -39,7 +42,10 @@ export class ProfileInsightsView {
         this.escape = escapeHtml;
         this.movieUrl = movieUrl;
         this.onPinnedChange = onPinnedChange;
+        this.onWatchTime = onWatchTime;
         this.loadId = 0;
+        this.data = null;
+        this.statisticsRequested = false;
         this.reactionMeta = null;
         this.pinned = [];
         this.pinSaving = false;
@@ -47,6 +53,8 @@ export class ProfileInsightsView {
             favorites: document.getElementById('profileFavorites'),
             favoritesList: document.getElementById('profileFavoritesList'),
             favoritesHint: document.getElementById('profileFavoritesHint'),
+            activity: document.getElementById('profileActivity'),
+            match: document.getElementById('profileMatch'),
             insights: document.getElementById('profileInsights')
         };
     }
@@ -57,27 +65,50 @@ export class ProfileInsightsView {
         return text;
     }
 
+    /** A text whose noun form follows the number: `key_one`, `key_few`, `key_many`, `key_other`. */
+    tn(key, n, params = {}) {
+        let category;
+        try { category = new Intl.PluralRules(this.locale).select(n); } catch { category = 'other'; }
+        return this.t(`${key}_${category}`, { n: n.toLocaleString(this.locale), ...params });
+    }
+
     get locale() {
         return this.i18n.currentLocale === 'ru' ? 'ru-RU' : 'en-US';
     }
 
+    /** Clears everything that belonged to the previous profile or load. */
     reset() {
         this.loadId++;
-        if (this.elements.insights) {
-            this.elements.insights.replaceChildren();
-            this.elements.insights.hidden = true;
+        this.data = null;
+        const { activity, match, insights } = this.elements;
+        if (activity) {
+            activity.replaceChildren();
+            activity.hidden = false;
+            activity.classList.add('is-loading');
+            activity.setAttribute('aria-busy', 'true');
         }
+        if (match) {
+            match.replaceChildren();
+            match.hidden = true;
+        }
+        if (insights) insights.innerHTML = this.loader();
+    }
+
+    loader() {
+        return `
+            <div class="app-loader app-loader--inline app-loader--compact" role="status" aria-label="${this.escape(this.i18n.get('profile.loading'))}">
+                <div class="app-loader__indicator" aria-hidden="true"></div>
+            </div>`;
     }
 
     /**
-     * Loads and renders every insight card for one profile. Cards appear as their
-     * data arrives; a failed source hides only its own card.
+     * Loads one profile's ratings and movie metadata and renders what «Обзор»
+     * shows; the statistics tab renders now if it is open, otherwise on opening.
      */
-    async load({ targetUid, viewerUid, isOther }) {
-        const loadId = ++this.loadId;
-        const container = this.elements.insights;
-        if (!container || !targetUid) return;
-        container.replaceChildren();
+    async load({ targetUid, viewerUid, isOther, displayName = '' }) {
+        if (!targetUid) return;
+        this.reset();
+        const loadId = this.loadId;
         const stale = () => loadId !== this.loadId;
 
         let ratings;
@@ -85,6 +116,7 @@ export class ProfileInsightsView {
             ratings = await this.profileService.getSortedUniqueRatings(targetUid);
         } catch (error) {
             console.warn('ProfileInsights: ratings unavailable', error);
+            if (!stale()) this.showUnavailable();
             return;
         }
         if (stale()) return;
@@ -104,20 +136,30 @@ export class ProfileInsightsView {
             .filter(rating => rating.movieId != null && titles.has(String(rating.movieId)))
             .map(rating => ({ movieId: String(rating.movieId), score: Number(rating.rating) || 0, ...titles.get(String(rating.movieId)) }))
             .sort((a, b) => b.score - a.score);
-        container.hidden = false;
-        container.append(this.renderStatsCard(ratings, movies, isOther));
+        this.data = { targetUid, isOther, ratings, movies, titles, watch: computeWatchTime(ratings, movies) };
 
-        const tasks = [
-            this.loadReactions(ratings, titles).then(card => card && !stale() && container.append(card)),
-            this.loadMarathon(targetUid, isOther).then(card => card && !stale() && container.append(card))
-        ];
-        if (isOther && viewerUid) {
-            tasks.unshift(this.loadTasteMatch(viewerUid, ratings, titles).then(card => {
-                // The match is the most personal card on someone else's profile: keep it first.
-                if (card && !stale()) container.prepend(card);
-            }));
+        this.onWatchTime?.(this.data.watch);
+        this.renderActivity();
+        if (this.statisticsRequested) this.renderStatistics();
+        if (isOther && viewerUid) await this.loadTasteMatch(viewerUid, displayName, stale);
+    }
+
+    /** Opening the «Статистика» tab; the first time it also reads reactions and marathons. */
+    showStatistics() {
+        this.statisticsRequested = true;
+        const { insights } = this.elements;
+        if (!this.data) {
+            if (insights && !insights.childElementCount) insights.innerHTML = this.loader();
+            return;
         }
-        await Promise.allSettled(tasks);
+        if (!this.data.statisticsRendered) this.renderStatistics();
+    }
+
+    showUnavailable() {
+        const { activity, insights } = this.elements;
+        this.finishActivity(true);
+        if (insights) insights.innerHTML = `<p class="taste-empty">${this.escape(this.i18n.get('profile.recent_ratings_failed'))}</p>`;
+        activity?.replaceChildren();
     }
 
     buildTitleIndex(ratings, movies) {
@@ -135,190 +177,214 @@ export class ProfileInsightsView {
         return index;
     }
 
-    card(className, title, subtitle = '') {
-        const section = document.createElement('section');
-        section.className = `profile-dashboard-card insight-card ${className}`;
-        section.innerHTML = `
-            <div class="dashboard-section-header">
-                <div>
-                    <h2 class="section-title">${this.escape(title)}</h2>
-                    ${subtitle ? `<p class="dashboard-section-subtitle">${this.escape(subtitle)}</p>` : ''}
-                </div>
-            </div>
-            <div class="insight-card__body"></div>`;
-        return { section, body: section.querySelector('.insight-card__body') };
+    // ---- Ratings by day ------------------------------------------------------------
+
+    finishActivity(hidden) {
+        const { activity } = this.elements;
+        if (!activity) return;
+        activity.hidden = hidden;
+        activity.classList.remove('is-loading');
+        activity.removeAttribute('aria-busy');
     }
 
-    // ---- Statistics ------------------------------------------------------------
+    renderActivity() {
+        const { activity } = this.elements;
+        const { ratings, titles } = this.data;
+        if (!activity) return;
+        this.finishActivity(!ratings.length);
+        if (!ratings.length) return;
+        new ProfileActivityCalendar({
+            container: activity,
+            t: (key, params) => this.t(key, params),
+            tn: (key, n, params) => this.tn(key, n, params),
+            locale: this.locale,
+            escape: this.escape,
+            titleOf: rating => titles.get(String(rating.movieId)) || { title: this.i18n.get('profile.unknown_title'), posterUrl: '' },
+            movieUrl: this.movieUrl
+        }).render(ratings);
+    }
 
-    renderStatsCard(ratings, movies, isOther) {
-        const { section, body } = this.card('insight-card--stats', this.t('stats_title'), this.t(isOther ? 'stats_subtitle_other' : 'stats_subtitle'));
-        if (!ratings.length) {
-            body.innerHTML = `<span class="taste-empty">${this.escape(this.t('stats_empty'))}</span>`;
-            return section;
+    // ---- Statistics tab --------------------------------------------------------------
+
+    section(className, title, subtitle = '') {
+        const section = document.createElement('section');
+        section.className = `profile-section ${className}`;
+        section.innerHTML = `
+            <div class="profile-section__header profile-section__header--text">
+                <h2 class="section-title">${this.escape(title)}</h2>
+                <p class="dashboard-section-subtitle">${this.escape(subtitle)}</p>
+            </div>
+            <div class="insight-body"></div>`;
+        return { section, subtitle: section.querySelector('.dashboard-section-subtitle'), body: section.querySelector('.insight-body') };
+    }
+
+    renderStatistics() {
+        const { insights } = this.elements;
+        const data = this.data;
+        if (!insights || !data) return;
+        data.statisticsRendered = true;
+        if (!data.ratings.length) {
+            insights.innerHTML = `<p class="taste-empty">${this.escape(this.t('stats_empty'))}</p>`;
+            return;
         }
+        // The slots are in place before their data, so sections never swap or jump.
+        const marathon = this.section('insight-marathon', this.t('marathon_title'));
+        const reactions = this.section('insight-reactions-card', this.t('reactions_title'));
+        marathon.body.innerHTML = this.loader();
+        reactions.body.innerHTML = this.loader();
+        const pair = document.createElement('div');
+        pair.className = 'insight-columns insight-columns--wide';
+        pair.append(marathon.section, reactions.section);
+        insights.replaceChildren(this.renderTaste(data), this.renderPeople(data), pair);
+        const stale = () => data !== this.data;
+        return Promise.allSettled([
+            this.loadMarathon(data.targetUid, data.isOther, marathon, stale),
+            this.loadReactions(data.ratings, data.titles, reactions, stale)
+        ]);
+    }
 
-        const watch = computeWatchTime(ratings, movies);
-        const decades = computeDecades(ratings, movies);
-        const topDecade = decades.slice().sort((a, b) => b.count - a.count)[0];
-        const hours = Math.round(watch.minutes / 60);
-        const watchValue = watch.minutes >= 60 ? this.t('hours', { n: hours.toLocaleString(this.locale) }) : this.t('minutes', { n: watch.minutes });
-        const watchNote = watch.films
-            ? this.t('watch_note', { films: watch.films }) + (watch.series ? ` · ${this.t('watch_series_note')}` : '')
-            : this.t('watch_unknown');
-        const days = watch.minutes >= 24 * 60 ? ` <span class="insight-metric__aside">${this.escape(this.t('days', { n: (watch.minutes / 1440).toFixed(1) }))}</span>` : '';
+    formatWatchTime({ minutes, films }) {
+        if (!films) return '—';
+        return minutes >= 60
+            ? this.t('hours', { n: Math.round(minutes / 60).toLocaleString(this.locale) })
+            : this.t('minutes', { n: minutes });
+    }
 
+    watchNote(watch) {
+        if (!watch.films) return this.t('watch_unknown');
+        const days = Math.round(watch.minutes / 1440);
+        return [
+            this.tn('watch_note', watch.films, { time: this.formatWatchTime(watch) }),
+            days > 1 ? this.tn('watch_days', days) : ''
+        ].filter(Boolean).join(', ') + (watch.series ? `. ${this.t('watch_series_note')}` : '');
+    }
+
+    renderTaste({ ratings, movies, isOther, watch }) {
+        const { section, body } = this.section('insight-taste', this.t(isOther ? 'taste_title_other' : 'taste_title'), this.watchNote(watch));
         body.innerHTML = `
-            <div class="insight-metrics">
-                <div class="insight-metric">
-                    <span class="insight-metric__label">${this.escape(this.t('watch_time'))}</span>
-                    <strong class="insight-metric__value">${this.escape(watch.films ? watchValue : '—')}${days}</strong>
-                    <span class="insight-metric__note">${this.escape(watchNote)}</span>
+            <div class="insight-columns">
+                <div>
+                    <h3 class="insight-subtitle">${this.escape(this.t('genres_title'))}</h3>
+                    ${this.renderGenres(computeGenres(ratings, movies))}
                 </div>
-                <div class="insight-metric">
-                    <span class="insight-metric__label">${this.escape(this.t('top_decade'))}</span>
-                    <strong class="insight-metric__value">${this.escape(topDecade ? this.t('decade', { n: topDecade.decade }) : '—')}</strong>
-                    <span class="insight-metric__note">${this.escape(topDecade ? this.t('decade_note', { n: topDecade.count }) : this.t('decades_empty'))}</span>
+                <div>
+                    <h3 class="insight-subtitle">${this.escape(this.t('decades_title'))}</h3>
+                    ${this.renderDecades(fillDecades(computeDecades(ratings, movies)))}
                 </div>
-            </div>
-            <div class="insight-block">
-                <h3 class="insight-block__title">${this.escape(this.t('activity_title'))}</h3>
-                ${this.renderActivity(computeDailyActivity(ratings))}
-            </div>
-            <div class="insight-block">
-                <h3 class="insight-block__title">${this.escape(this.t('decades_title'))}</h3>
-                ${this.renderDecades(decades)}
-            </div>
-            <div class="insight-block">
-                <h3 class="insight-block__title">${this.escape(this.t('people_title'))}</h3>
-                ${this.renderPeople(computeFavoritePeople(ratings, movies))}
             </div>`;
         return section;
     }
 
-    renderActivity({ weeks, max, total }) {
-        if (total === 0) return `<span class="taste-empty">${this.escape(this.t('activity_empty'))}</span>`;
-        const monthName = new Intl.DateTimeFormat(this.locale, { month: 'short' });
-        const dayName = new Intl.DateTimeFormat(this.locale, { weekday: 'short' });
-        const fullDate = new Intl.DateTimeFormat(this.locale, { day: 'numeric', month: 'long', year: 'numeric' });
-        const level = count => (count ? Math.min(4, Math.ceil((count / max) * 4)) : 0);
-        // A month label sits above the first week that starts in that month.
-        const months = weeks.map((days, index) => {
-            const first = days.find(Boolean);
-            const previous = index ? weeks[index - 1].find(Boolean) : null;
-            const label = first && (!previous || previous.date.getMonth() !== first.date.getMonth())
-                ? monthName.format(first.date).replace('.', '') : '';
-            return `<span>${this.escape(label)}</span>`;
-        }).join('');
-        const dayLabels = [0, 1, 2, 3, 4, 5, 6].map(day => {
-            const date = new Date(2024, 0, 1 + day);
-            return `<span>${day % 2 === 0 ? this.escape(dayName.format(date)) : ''}</span>`;
-        }).join('');
-        const cells = weeks.map(days => days.map(entry => entry
-            ? `<span class="insight-calendar__cell" data-level="${level(entry.count)}" title="${this.escape(this.t('activity_bar', { month: fullDate.format(entry.date), n: entry.count }))}"></span>`
-            : '<span class="insight-calendar__cell insight-calendar__cell--empty"></span>').join('')).join('');
-        const legend = [0, 1, 2, 3, 4].map(value => `<span class="insight-calendar__cell" data-level="${value}"></span>`).join('');
-        return `
-            <div class="insight-calendar" role="img" aria-label="${this.escape(this.t('activity_title'))}" style="--weeks: ${weeks.length}">
-                <div class="insight-calendar__months">${months}</div>
-                <div class="insight-calendar__days">${dayLabels}</div>
-                <div class="insight-calendar__grid">${cells}</div>
-            </div>
-            <div class="insight-calendar__legend">
-                <span>${this.escape(this.t('activity_less'))}</span>${legend}<span>${this.escape(this.t('activity_more'))}</span>
-            </div>`;
+    renderGenres(genres) {
+        if (!genres.length) return `<p class="taste-empty">${this.escape(this.t('genres_empty'))}</p>`;
+        const max = genres[0].count;
+        const score = new Intl.NumberFormat(this.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+        return `<ul class="insight-genres">${genres.map((genre, index) => `
+            <li class="insight-genres__row${index ? '' : ' is-top'}">
+                <span class="insight-genres__name">${this.escape(genre.name)}</span>
+                <span class="insight-genres__bar" aria-hidden="true"><i style="width: ${(genre.count / max) * 100}%"></i></span>
+                <span class="insight-genres__count">${this.escape(genre.count)}</span>
+                <span class="insight-genres__average">${this.escape(this.t('genre_average', { n: score.format(genre.average) }))}</span>
+            </li>`).join('')}</ul>`;
     }
 
     renderDecades(decades) {
-        if (!decades.length) return `<span class="taste-empty">${this.escape(this.t('decades_empty'))}</span>`;
+        if (!decades.length) return `<p class="taste-empty">${this.escape(this.t('decades_empty'))}</p>`;
         const max = Math.max(...decades.map(item => item.count));
-        return `<div class="insight-bars">${decades.map(item => `
-            <div class="insight-bars__row">
-                <span>${this.escape(this.t('decade', { n: item.decade }))}</span>
-                <div class="rating-distribution__bar"><span style="width: ${Math.max(6, Math.round((item.count / max) * 100))}%"></span></div>
-                <span class="rating-distribution__count">${item.count}</span>
-            </div>`).join('')}</div>`;
+        return `<ul class="insight-decades">${decades.map(({ decade, count }) => `
+            <li class="insight-decades__item${count === max ? ' is-top' : ''}">
+                <span class="insight-decades__count">${count || ''}</span>
+                <span class="insight-decades__bar" aria-hidden="true"><i style="height: ${(count / max) * 100}%"></i></span>
+                <span class="insight-decades__label">${this.escape(decade)}<span>${this.escape(this.t('decade_suffix'))}</span></span>
+            </li>`).join('')}</ul>`;
     }
 
-    renderPeople({ actors, directors, basis }) {
+    renderPeople({ ratings, movies }) {
+        const { actors, directors, basis } = computeFavoritePeople(ratings, movies);
+        const { section, body } = this.section('insight-people-section', this.t('people_title'), this.t('people_note'));
         if (!actors.length && !directors.length) {
-            return `<span class="taste-empty">${this.escape(this.t(basis ? 'people_few' : 'people_empty'))}</span>`;
+            body.innerHTML = `<p class="taste-empty">${this.escape(this.t(basis ? 'people_few' : 'people_empty'))}</p>`;
+            return section;
         }
         const person = entry => {
             const photo = this.safeImageUrl(entry.photo);
-            const initials = this.escape(entry.name.charAt(0).toUpperCase());
-            const label = this.t('people_count', { n: entry.count });
+            const label = this.tn('films_count', entry.count);
             return `
-                <a class="insight-person" href="../person-details/person-details.html?personKey=kp:${encodeURIComponent(entry.id)}" title="${this.escape(`${entry.name} · ${label}`)}">
-                    <span class="insight-person__photo">${photo ? `<img src="${this.escape(photo)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : initials}</span>
-                    <span class="insight-person__name">${this.escape(entry.name)}</span>
-                    <span class="insight-person__count">${this.escape(label)}</span>
-                </a>`;
+                <li>
+                    <a class="insight-person" href="../person-details/person-details.html?personKey=kp:${encodeURIComponent(entry.id)}">
+                        <span class="insight-person__photo" aria-hidden="true">${photo ? `<img src="${this.escape(photo)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : this.escape(entry.name.charAt(0).toUpperCase())}</span>
+                        <span class="insight-person__name">${this.escape(entry.name)}</span>
+                        <span class="insight-person__count">${this.escape(label)}</span>
+                    </a>
+                </li>`;
         };
-        const group = (titleKey, list) => list.length ? `
-            <div class="insight-people__group">
-                <span class="insight-people__label">${this.escape(this.t(titleKey))}</span>
-                <div class="insight-people">${list.map(person).join('')}</div>
+        const group = (titleKey, list, modifier) => list.length ? `
+            <div class="insight-people__group insight-people__group--${modifier}">
+                <h3 class="insight-subtitle">${this.escape(this.t(titleKey))}</h3>
+                <ul class="insight-people">${list.map(person).join('')}</ul>
             </div>` : '';
-        return group('actors', actors) + group('directors', directors);
+        body.innerHTML = `<div class="insight-people__groups">${group('actors', actors, 'actors')}${group('directors', directors, 'directors')}</div>`;
+        return section;
+    }
+
+    poster({ movieId, title, posterUrl, caption }) {
+        return `
+            <a class="insight-poster" href="${this.escape(this.movieUrl(movieId))}" title="${this.escape(title)}">
+                <span class="insight-poster__image">${posterUrl ? `<img src="${this.escape(posterUrl)}" alt="${this.escape(title)}" loading="lazy" decoding="async">` : `<span class="insight-poster__fallback">${this.escape(title)}</span>`}</span>
+                ${caption ? `<span class="insight-poster__caption">${this.escape(caption)}</span>` : ''}
+            </a>`;
     }
 
     // ---- Taste match -------------------------------------------------------------
 
-    async loadTasteMatch(viewerUid, otherRatings, titles) {
+    async loadTasteMatch(viewerUid, displayName, stale) {
+        const { match: container } = this.elements;
+        if (!container) return;
+        const { ratings, titles } = this.data;
         let ownRatings;
         try {
             ownRatings = await this.profileService.getSortedUniqueRatings(viewerUid);
         } catch (error) {
             console.warn('ProfileInsights: own ratings unavailable for the match', error);
-            return null;
+            return;
         }
-        const match = computeTasteMatch(ownRatings, otherRatings);
-        const { section, body } = this.card('insight-card--match', this.t('match_title'), this.t('match_subtitle'));
+        if (stale()) return;
+        const match = computeTasteMatch(ownRatings, ratings);
+        const title = `<h2 class="section-title">${this.escape(this.t('match_title'))}</h2>`;
+        container.hidden = false;
         if (match.score === null) {
-            body.innerHTML = `<span class="taste-empty">${this.escape(this.t(match.common ? 'match_few' : 'match_none', { n: match.common }))}</span>`;
-            return section;
+            container.innerHTML = `<div>${title}<p class="taste-empty">${this.escape(match.common ? this.tn('match_few', match.common) : this.t('match_none'))}</p></div>`;
+            return;
         }
         const poster = pair => {
             const info = titles.get(pair.movieId) || {};
-            const title = info.title || '';
-            return `
-                <a class="insight-poster" href="${this.escape(this.movieUrl(pair.movieId))}" title="${this.escape(title)}">
-                    ${info.posterUrl ? `<img src="${this.escape(info.posterUrl)}" alt="${this.escape(title)}" loading="lazy">` : `<span class="insight-poster__fallback">${this.escape(title)}</span>`}
-                    <span class="insight-poster__scores">${pair.mine} · ${pair.theirs}</span>
-                </a>`;
+            return this.poster({ movieId: pair.movieId, title: info.title || '', posterUrl: info.posterUrl, caption: this.t('match_scores', { mine: pair.mine, theirs: pair.theirs }) });
         };
-        const disagreement = pair => {
-            const info = titles.get(pair.movieId) || {};
-            return `
-                <li>
-                    <a href="${this.escape(this.movieUrl(pair.movieId))}">${this.escape(info.title || '')}</a>
-                    <span class="insight-diff">${this.escape(this.t('you'))} ${pair.mine} · ${this.escape(this.t('them'))} ${pair.theirs}</span>
-                </li>`;
-        };
-        body.innerHTML = `
-            <div class="insight-match">
-                <div class="insight-match__score" style="--match: ${match.score}%">
-                    <strong>${match.score}%</strong>
-                </div>
-                <div>
-                    <strong class="insight-match__label">${this.escape(this.t('match_label', { n: match.score }))}</strong>
-                    <span class="insight-metric__note">${this.escape(this.t('match_common', { n: match.common }))}</span>
-                </div>
+        const disagreement = pair => `
+            <li>
+                <a class="insight-list__link" href="${this.escape(this.movieUrl(pair.movieId))}">
+                    <span class="insight-list__title">${this.escape(titles.get(pair.movieId)?.title || '')}</span>
+                    <span class="insight-list__note">${this.escape(this.t('match_difference', { mine: pair.mine, theirs: pair.theirs, name: displayName || this.t('them') }))}</span>
+                </a>
+            </li>`;
+        container.innerHTML = `
+            <div class="profile-match__score">
+                ${title}
+                <strong class="profile-match__value">${match.score}%</strong>
+                <p class="dashboard-section-subtitle">${this.escape(this.tn('match_common', match.common))}</p>
             </div>
-            <div class="insight-block">
-                <h3 class="insight-block__title">${this.escape(this.t('both_liked'))}</h3>
+            <div>
+                <h3 class="insight-subtitle">${this.escape(this.t('both_liked'))}</h3>
                 ${match.bothLiked.length
                     ? `<div class="insight-posters">${match.bothLiked.map(poster).join('')}</div>`
-                    : `<span class="taste-empty">${this.escape(this.t('both_liked_empty'))}</span>`}
+                    : `<p class="taste-empty">${this.escape(this.t('both_liked_empty'))}</p>`}
             </div>
-            <div class="insight-block">
-                <h3 class="insight-block__title">${this.escape(this.t('disagreements'))}</h3>
+            <div>
+                <h3 class="insight-subtitle">${this.escape(this.t('disagreements'))}</h3>
                 ${match.disagreements.length
-                    ? `<ul class="insight-list">${match.disagreements.map(disagreement).join('')}</ul>`
-                    : `<span class="taste-empty">${this.escape(this.t('disagreements_empty'))}</span>`}
+                    ? `<ul class="insight-list">${match.disagreements.slice(0, 3).map(disagreement).join('')}</ul>`
+                    : `<p class="taste-empty">${this.escape(this.t('disagreements_empty'))}</p>`}
             </div>`;
-        return section;
     }
 
     // ---- Received reactions --------------------------------------------------------
@@ -337,7 +403,7 @@ export class ProfileInsightsView {
         return meta;
     }
 
-    async loadReactions(ratings, titles) {
+    async loadReactions(ratings, titles, { section, subtitle, body }, stale) {
         const ids = reactableRatingIds(ratings);
         let summaries = [];
         try {
@@ -347,90 +413,76 @@ export class ProfileInsightsView {
             snapshots.forEach(snapshot => snapshot.forEach(doc => summaries.push({ id: doc.id, ...doc.data() })));
         } catch (error) {
             console.warn('ProfileInsights: reaction summaries unavailable', error);
-            return null;
+            if (!stale()) section.remove();
+            return;
         }
+        if (stale()) return;
         const summary = summarizeReactions(summaries);
-        const { section, body } = this.card('insight-card--reactions', this.t('reactions_title'), this.t('reactions_subtitle'));
         if (!summary.total) {
-            body.innerHTML = `<span class="taste-empty">${this.escape(this.t('reactions_empty'))}</span>`;
-            return section;
+            body.innerHTML = `<p class="taste-empty">${this.escape(this.t('reactions_empty'))}</p>`;
+            return;
         }
         const meta = await this.loadReactionMeta();
+        if (stale()) return;
         const icon = type => {
             const reaction = meta[type];
             if (!reaction) return '';
             const image = reaction.renderType === 'image' ? this.safeImageUrl(reaction.imageUrl) : '';
             return image
                 ? `<img src="${this.escape(image)}" alt="${this.escape(reaction.label)}" title="${this.escape(reaction.label)}">`
-                : `<span title="${this.escape(reaction.label)}">${this.escape(reaction.emoji)}</span>`;
+                : `<span role="img" aria-label="${this.escape(reaction.label)}" title="${this.escape(reaction.label)}">${this.escape(reaction.emoji)}</span>`;
         };
         const byRating = new Map(ratings.map(rating => [String(rating.id), rating]));
         const types = summary.byType.filter(item => meta[item.type]).slice(0, 6);
+        subtitle.textContent = `${this.tn('reactions_count', summary.total)} ${this.tn('reactions_reviews', summary.reviews)}`;
         body.innerHTML = `
-            <div class="insight-metrics insight-metrics--single">
-                <div class="insight-metric">
-                    <span class="insight-metric__label">${this.escape(this.t('reactions_total'))}</span>
-                    <strong class="insight-metric__value">${summary.total.toLocaleString(this.locale)}</strong>
-                    <span class="insight-metric__note">${this.escape(this.t('reactions_reviews', { n: summary.reviews }))}</span>
-                </div>
-            </div>
             ${types.length ? `<div class="insight-reactions">${types.map(item => `<span class="insight-reaction">${icon(item.type)}<b>${item.count}</b></span>`).join('')}</div>` : ''}
-            <div class="insight-block">
-                <h3 class="insight-block__title">${this.escape(this.t('reactions_top'))}</h3>
-                <ul class="insight-list">${summary.top.map(item => {
-                    const rating = byRating.get(item.ratingId);
-                    const movieId = String(rating?.movieId ?? item.movieId ?? '');
-                    const title = titles.get(movieId)?.title || this.i18n.get('profile.unknown_title');
-                    return `<li>
-                        <a href="${this.escape(this.movieUrl(movieId))}">${this.escape(title)}</a>
-                        <span class="insight-diff">${this.escape(this.t('reactions_count', { n: item.total }))}</span>
-                    </li>`;
-                }).join('')}</ul>
-            </div>`;
-        return section;
+            <ul class="insight-list" aria-label="${this.escape(this.t('reactions_top'))}">${summary.top.map(item => {
+                const rating = byRating.get(item.ratingId);
+                const movieId = String(rating?.movieId ?? item.movieId ?? '');
+                const title = titles.get(movieId)?.title || this.i18n.get('profile.unknown_title');
+                return `<li>
+                    <a class="insight-list__link" href="${this.escape(this.movieUrl(movieId))}">
+                        <span class="insight-list__title">${this.escape(title)}</span>
+                        <span class="insight-list__note">${this.escape(this.tn('reactions_count', item.total))}</span>
+                    </a>
+                </li>`;
+            }).join('')}</ul>`;
     }
 
     // ---- Marathon history ------------------------------------------------------------
 
-    async loadMarathon(targetUid, isOther) {
+    async loadMarathon(targetUid, isOther, { section, subtitle, body }, stale) {
         let items = [];
         try {
             const snapshot = await this.db.collection('randomMarathons').doc('current')
                 .collection('items').where('addedBy', '==', targetUid).get();
             snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
         } catch (error) {
-            // Unapproved accounts cannot read the marathon; the card is simply absent.
+            // Unapproved accounts cannot read the marathon; the section is simply absent.
             console.warn('ProfileInsights: marathon history unavailable', error?.code || error);
-            return null;
+            if (!stale()) section.remove();
+            return;
         }
+        if (stale()) return;
         const summary = summarizeMarathon(items);
-        const { section, body } = this.card('insight-card--marathon', this.t('marathon_title'), this.t(isOther ? 'marathon_subtitle_other' : 'marathon_subtitle'));
         if (!summary.added) {
-            body.innerHTML = `<span class="taste-empty">${this.escape(this.t(isOther ? 'marathon_empty_other' : 'marathon_empty'))}</span>`;
-            return section;
+            body.innerHTML = `<p class="taste-empty">${this.escape(this.t(isOther ? 'marathon_empty_other' : 'marathon_empty'))}</p>`;
+            return;
         }
-        const metric = (label, value) => `
-            <div class="insight-metric">
-                <span class="insight-metric__label">${this.escape(label)}</span>
-                <strong class="insight-metric__value">${value}</strong>
-            </div>`;
-        body.innerHTML = `
-            <div class="insight-metrics insight-metrics--three">
-                ${metric(this.t('marathon_rounds'), summary.rounds)}
-                ${metric(this.t('marathon_added'), summary.added)}
-                ${metric(this.t('marathon_selected'), summary.selected)}
-            </div>
-            <div class="insight-block">
-                <h3 class="insight-block__title">${this.escape(this.t('marathon_watched'))}</h3>
-                ${summary.watched.length ? `<div class="insight-posters">${summary.watched.map(item => {
-                    const poster = this.safeImageUrl(item.posterUrl);
-                    return `<a class="insight-poster" href="${this.escape(this.movieUrl(item.movieId))}" title="${this.escape(item.title)}">
-                        ${poster ? `<img src="${this.escape(poster)}" alt="${this.escape(item.title)}" loading="lazy">` : `<span class="insight-poster__fallback">${this.escape(item.title)}</span>`}
-                        ${item.roundId ? `<span class="insight-poster__scores">${this.escape(this.t('marathon_round', { n: item.roundId }))}</span>` : ''}
-                    </a>`;
-                }).join('')}</div>` : `<span class="taste-empty">${this.escape(this.t('marathon_watched_empty'))}</span>`}
-            </div>`;
-        return section;
+        subtitle.textContent = [
+            this.tn('marathon_rounds', summary.rounds),
+            this.tn('marathon_added', summary.added),
+            this.t('marathon_selected', { n: summary.selected })
+        ].join(', ');
+        body.innerHTML = summary.watched.length
+            ? `<div class="insight-posters">${summary.watched.map(item => this.poster({
+                movieId: item.movieId,
+                title: item.title,
+                posterUrl: this.safeImageUrl(item.posterUrl),
+                caption: item.roundId ? this.t('marathon_round', { n: item.roundId }) : ''
+            })).join('')}</div>`
+            : `<p class="taste-empty">${this.escape(this.t('marathon_watched_empty'))}</p>`;
     }
 
     // ---- Favorite picker ------------------------------------------------------------
@@ -557,7 +609,7 @@ export class ProfileInsightsView {
         }
         favoritesList.innerHTML = cards.join('');
         if (favoritesHint) {
-            favoritesHint.hidden = !isOwn;
+            favoritesHint.hidden = !isOwn || !this.pinned.length;
             favoritesHint.textContent = this.t(this.pinned.length >= PINNED_LIMIT ? 'pinned_full' : 'pinned_hint');
         }
         if (!favoritesList.dataset.bound) {

@@ -44,7 +44,7 @@ body.live-page { overflow-x: clip; overflow-y: visible; }
 .live-badge__dot {
     width: 8px;
     height: 8px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-xs);
     background: var(--danger);
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 60%, transparent);
     animation: live-dot-pulse 1.8s ease-out infinite;

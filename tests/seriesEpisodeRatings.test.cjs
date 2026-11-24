@@ -78,7 +78,7 @@ class FakeFirestore {
 
 function createHarness() {
     const db = new FakeFirestore();
-    const sideEffects = { ratingsCache: 0, averageCache: 0, personalCache: 0, topGenres: 0, movieCache: 0 };
+    const sideEffects = { ratingsCache: 0, averageCache: 0, personalCache: 0, movieCache: 0 };
     const ratingService = {
         db,
         getRatingDocumentId: (uid, movieId) => `${uid}_${movieId}`,
@@ -91,8 +91,7 @@ function createHarness() {
         normalizeCommentForWrite: value => String(value || '').trim(),
         normalizeReviewForWrite: value => String(value || '').trim(),
         invalidateAverageRatingsCache: async () => { sideEffects.averageCache += 1; },
-        invalidateRatingsCache: async () => { sideEffects.personalCache += 1; },
-        recalculateUserTopGenres: async () => { sideEffects.topGenres += 1; }
+        invalidateRatingsCache: async () => { sideEffects.personalCache += 1; }
     };
     const manager = {
         db,

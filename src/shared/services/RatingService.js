@@ -350,11 +350,6 @@ class RatingService {
             // Invalidate cache
             await this.invalidateRatingsCache(userId);
 
-            // Recalculate top-3 genres for user asynchronously
-            this.recalculateUserTopGenres(userId).catch(err => {
-                console.warn('RatingService: Non-critical failure in topGenres recalculation:', err);
-            });
-
             this.syncExternalRating(movieId, resolvedMovieData || movieData, ratingVal);
 
             return result;
@@ -1009,84 +1004,10 @@ class RatingService {
             await this.invalidateRatingsCache(userId);
             await this.invalidateAverageRatingsCache(movieId);
 
-            // Recalculate top-3 genres for user asynchronously
-            this.recalculateUserTopGenres(userId).catch(err => {
-                console.warn('RatingService: Non-critical failure in topGenres recalculation:', err);
-            });
-
             return true;
         } catch (error) {
             console.error('Error deleting rating:', error);
             throw new Error(`Failed to delete rating: ${error.message}`, { cause: error });
-        }
-    }
-
-    /**
-     * Recalculate user's top-3 genres from all their ratings and update users/{userId}.topGenres
-     * @param {string} userId - Firebase Auth user ID
-     * @returns {Promise<Array<string>>} - Array of top 0-3 genre names
-     */
-    async recalculateUserTopGenres(userId) {
-        try {
-            if (!userId) return [];
-
-            const ratingsQuery = this.db.collection('ratings')
-                .where('userId', '==', userId);
-
-            const snapshot = await ratingsQuery.get();
-            const userRef = this.db.collection('users').doc(userId);
-
-            if (snapshot.empty) {
-                await userRef.update({
-                    topGenres: [],
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                return [];
-            }
-
-            const movieIdsSet = new Set();
-            snapshot.forEach(doc => {
-                const data = doc.data();
-                if (data.movieId) {
-                    movieIdsSet.add(data.movieId.toString());
-                }
-            });
-
-            const movieIds = Array.from(movieIdsSet);
-            if (movieIds.length === 0) {
-                await userRef.update({
-                    topGenres: [],
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                return [];
-            }
-
-            const movieCacheService = window.firebaseManager?.getMovieCacheService();
-            let cachedMovies = {};
-            if (movieCacheService) {
-                cachedMovies = await movieCacheService.getBatchCachedMovies(movieIds);
-            }
-
-            const allGenres = [];
-            Object.values(cachedMovies).forEach(movie => {
-                if (Array.isArray(movie?.genres)) {
-                    allGenres.push(...movie.genres);
-                }
-            });
-
-            const topGenres = typeof calculateTopGenres === 'function'
-                ? calculateTopGenres(allGenres, 3)
-                : [];
-
-            await userRef.update({
-                topGenres,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-
-            return topGenres;
-        } catch (error) {
-            console.warn('RatingService: Failed to recalculate top genres:', error);
-            return [];
         }
     }
 

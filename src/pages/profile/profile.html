@@ -48,7 +48,6 @@
     <script src="../../shared/services/ProfileService.js"></script>
     <script src="../../shared/services/CommentReactionService.js"></script>
     <script src="../../shared/utils/Utils.js"></script>
-    <script src="../../shared/utils/genreStats.js"></script>
     <script src="../../shared/utils/IconUtils.js"></script>
     <script src="../../shared/utils/Icons.js"></script>
     
@@ -76,8 +75,8 @@
                     <div class="profile-cover-gradient"></div>
                 </div>
                 
-                <!-- Action & Avatar row directly below cover -->
-                <div class="profile-nav-bar">
+                <!-- Avatar, name and the main numbers below the cover -->
+                <div class="profile-identity">
                     <!-- Floating Avatar -->
                     <div class="profile-photo-wrapper">
                         <span class="profile-rank-frame" id="profileRankFrame" hidden></span>
@@ -89,50 +88,80 @@
                         </div>
                     </div>
 
-                    <!-- Header Actions -->
-                    <div class="profile-actions-wrapper" id="profileMenu" style="display: none;">
-                        <button class="btn-profile-action" id="headerEditBtn" type="button">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                            <span data-i18n="profile.edit_profile">Edit Profile</span>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- User Information (Cleanly positioned below cover, no border intersection!) -->
-                <div class="profile-details">
-                    <div class="profile-titles">
+                    <div class="profile-details">
                         <h1 class="profile-name primary-name" id="profileName">Loading...</h1>
                         <p class="profile-username secondary-name" id="profileUsername">@username</p>
-                    </div>
-
-                    <!-- Bio Description -->
-                    <p class="profile-bio" id="profileBio" style="display: none;"></p>
-
-                    <!-- Metadata Badges -->
-                    <div class="profile-meta" id="profileMeta">
-                        <span class="meta-item" id="profileRank" hidden>
-                            <span class="meta-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path></svg></span>
-                            <span id="profileRankText"></span>
-                        </span>
-                        <span class="meta-item" id="profileJoinDate" style="display: none;">
-                            <span class="meta-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg></span>
-                            <span id="joinDateText"></span>
-                        </span>
-                        <div class="meta-item top-genres-meta-item" id="profileTopGenres" style="display: none;">
-                            <span class="meta-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
-                            <div class="top-genres-container" id="topGenresContainer"></div>
+                        <div class="profile-meta" id="profileMeta">
+                            <span class="meta-item" id="profileRank" hidden><span id="profileRankText"></span></span>
+                            <span class="meta-item" id="profileJoinDate" style="display: none;"><span id="joinDateText"></span></span>
                         </div>
                     </div>
+
+                    <div class="profile-facts" id="profileStats">
+                        <a class="profile-fact profile-fact--link" data-stat="ratings" href="../ratings/ratings.html">
+                            <span class="profile-fact__value" id="statTotalRatings">0</span>
+                            <span class="profile-fact__label" data-i18n="profile.stats.rated">ratings</span>
+                        </a>
+                        <a class="profile-fact profile-fact--link" data-stat="average" href="../ratings/ratings.html">
+                            <span class="profile-fact__value" id="statAverageRating">0</span>
+                            <span class="profile-fact__label" data-i18n="profile.stats.average">average</span>
+                        </a>
+                        <span class="profile-fact" data-stat="time">
+                            <span class="profile-fact__value" id="statWatchTime">—</span>
+                            <span class="profile-fact__label" data-i18n="profile.stats.time">watched</span>
+                        </span>
+                        <a class="profile-fact profile-fact--link" data-stat="favorites" href="../bookmarks/bookmarks.html?filter=watching">
+                            <span class="profile-fact__value" id="statFavorites">0</span>
+                            <span class="profile-fact__label" data-i18n="profile.stats.favorites">watching</span>
+                        </a>
+                        <a class="profile-fact profile-fact--link" data-stat="watchlist" href="../bookmarks/bookmarks.html?filter=plan_to_watch">
+                            <span class="profile-fact__value" id="statWatchlist">0</span>
+                            <span class="profile-fact__label" data-i18n="profile.stats.watchlist">planned</span>
+                        </a>
+                    </div>
                 </div>
+                <p class="profile-bio" id="profileBio" style="display: none;"></p>
             </div>
 
-            <!-- Profile tabs: overview and achievements -->
-            <div class="profile-tabs" role="tablist" id="profileTabs">
-                <button type="button" class="profile-tab is-active" role="tab" id="profileTabOverviewBtn" data-profile-tab="overview" aria-selected="true" aria-controls="profileTabOverview" data-i18n="achievements.tab_overview">Обзор</button>
-                <button type="button" class="profile-tab" role="tab" id="profileTabAchievementsBtn" data-profile-tab="achievements" aria-selected="false" aria-controls="profileTabAchievements" tabindex="-1" data-i18n="achievements.tab_achievements">Достижения</button>
+            <!-- Profile tabs: overview, statistics and achievements -->
+            <div class="profile-tabs-bar">
+                <div class="profile-tabs" role="tablist" id="profileTabs" aria-label="Profile sections" data-i18n="[aria-label]profile.tabs_label">
+                    <button type="button" class="profile-tab is-active" role="tab" id="profileTabOverviewBtn" data-profile-tab="overview" aria-selected="true" aria-controls="profileTabOverview" data-i18n="achievements.tab_overview">Обзор</button>
+                    <button type="button" class="profile-tab" role="tab" id="profileTabStatisticsBtn" data-profile-tab="statistics" aria-selected="false" aria-controls="profileTabStatistics" tabindex="-1" data-i18n="profile.insights.stats_title">Статистика</button>
+                    <button type="button" class="profile-tab" role="tab" id="profileTabAchievementsBtn" data-profile-tab="achievements" aria-selected="false" aria-controls="profileTabAchievements" tabindex="-1" data-i18n="achievements.tab_achievements">Достижения</button>
+                </div>
+                <div class="profile-actions-wrapper" id="profileMenu" style="display: none;">
+                    <button class="btn-profile-action" id="headerEditBtn" type="button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        <span data-i18n="profile.edit_profile">Edit Profile</span>
+                        </button>
+                </div>
             </div>
 
             <div class="profile-tab-panel" id="profileTabOverview" role="tabpanel" aria-labelledby="profileTabOverviewBtn">
+            <!-- The owner has no ratings yet: one step instead of empty sections -->
+            <section class="profile-start" id="profileStart" hidden>
+                <h2 class="section-title" data-i18n="profile.start.title">Rate your first movie</h2>
+                <p data-i18n="profile.start.text">Your calendar and favorites appear after the first rating.</p>
+                <div class="profile-start__actions">
+                    <a class="profile-start__link profile-start__link--main" href="../search/search.html" data-i18n="profile.start.search">Find a movie</a>
+                    <a class="profile-start__link" href="../random/random.html" data-i18n="profile.start.random">Random movie</a>
+                </div>
+            </section>
+
+            <!-- Taste match: only on another user's profile -->
+            <section class="profile-match" id="profileMatch" hidden></section>
+
+            <section class="profile-section continue-watching" id="continueWatchingSection">
+                <div class="profile-section__header">
+                    <h2 class="section-title" data-i18n="profile.continue_watching.title">Продолжить просмотр</h2>
+                    <a class="dashboard-section-link" href="../bookmarks/bookmarks.html?filter=watching" data-i18n="profile.open_list">Открыть список</a>
+                </div>
+                <div class="continue-watching-content" id="continueWatchingContent">
+                    <div class="continue-watching-items" aria-hidden="true"><div class="continue-watching-item continue-watching-item--loading"></div><div class="continue-watching-item continue-watching-item--loading"></div><div class="continue-watching-item continue-watching-item--loading"></div></div>
+                </div>
+            </section>
+
             <!-- Pinned favorites (top 5) -->
             <section class="profile-favorites" id="profileFavorites" hidden>
                 <div class="profile-favorites__header">
@@ -142,127 +171,31 @@
                 <div class="profile-favorites__list" id="profileFavoritesList"></div>
             </section>
 
+            <!-- Ratings by day -->
+            <section class="profile-section profile-activity is-loading" id="profileActivity" aria-busy="true"></section>
+
             <!-- Achievements showcase -->
             <section class="profile-achievements" id="profileAchievements" hidden></section>
 
-            <!-- Statistics Grid -->
-            <div class="profile-stats" id="profileStats">
-                <!-- Stat 1: Total Ratings -->
-                <a class="stat-card stat-card--link" data-stat="ratings" href="../ratings/ratings.html">
-                    <div class="stat-card-glow"></div>
-                    <div class="stat-header">
-                        <span class="stat-icon ratings-icon">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                        </span>
-                        <span class="stat-label" data-i18n="profile.stats.rated">Movies Rated</span>
-                    </div>
-                    <span class="stat-value" id="statTotalRatings">0</span>
-                </a>
-
-                <!-- Stat 2: Average Rating -->
-                <a class="stat-card stat-card--link" data-stat="average" href="../ratings/ratings.html">
-                    <div class="stat-card-glow"></div>
-                    <div class="stat-header">
-                        <span class="stat-icon average-icon">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-                        </span>
-                        <span class="stat-label" data-i18n="profile.stats.average">Average Rating</span>
-                    </div>
-                    <span class="stat-value" id="statAverageRating">0.0</span>
-                </a>
-
-                <!-- Stat 3: Watching / Favorites -->
-                <a class="stat-card stat-card--link" data-stat="favorites" href="../bookmarks/bookmarks.html?filter=watching">
-                    <div class="stat-card-glow"></div>
-                    <div class="stat-header">
-                        <span class="stat-icon favorites-icon">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-                        </span>
-                        <span class="stat-label" data-i18n="profile.stats.favorites">Watching</span>
-                    </div>
-                    <span class="stat-value" id="statFavorites">0</span>
-                </a>
-
-                <!-- Stat 4: Watchlist -->
-                <a class="stat-card stat-card--link" data-stat="watchlist" href="../bookmarks/bookmarks.html?filter=plan_to_watch">
-                    <div class="stat-card-glow"></div>
-                    <div class="stat-header">
-                        <span class="stat-icon watchlist-icon">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
-                        </span>
-                        <span class="stat-label" data-i18n="profile.stats.watchlist">Watchlist</span>
-                    </div>
-                    <span class="stat-value" id="statWatchlist">0</span>
-                </a>
-            </div>
-
-            <!-- Personal Dashboard -->
-            <div class="profile-dashboard" id="profileDashboard">
-                <section class="profile-dashboard-card continue-watching-card" id="continueWatchingSection">
-                    <div class="dashboard-section-header">
-                        <div class="section-header-title-group">
-                            <span class="section-header-icon dashboard-section-icon dashboard-section-icon--watching">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                            </span>
-                            <div>
-                                <h2 class="section-title" data-i18n="profile.continue_watching.title">Продолжить просмотр</h2>
-                                <p class="dashboard-section-subtitle" data-i18n="profile.continue_watching.subtitle">Вернитесь к тому, что уже начали.</p>
-                            </div>
-                        </div>
-                        <a class="dashboard-section-link" href="../bookmarks/bookmarks.html?filter=watching" data-i18n="profile.open_list">Открыть список</a>
-                    </div>
-                    <div class="continue-watching-content" id="continueWatchingContent">
-                        <div class="dashboard-empty-state">
-                            <span class="dashboard-empty-state__mark">+</span>
-                            <div>
-                                <strong data-i18n="profile.continue_watching.empty_title">Здесь появится ваш текущий просмотр</strong>
-                                <span data-i18n="profile.continue_watching.empty_text">Добавьте фильм или сериал в список «Смотрю».</span>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="profile-dashboard-card taste-card" id="profileTasteSection">
-                    <div class="dashboard-section-header">
-                        <div class="section-header-title-group">
-                            <span class="section-header-icon dashboard-section-icon dashboard-section-icon--taste">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
-                            </span>
-                            <div>
-                                <h2 class="section-title" id="tasteTitle" data-i18n="profile.taste.title">Мой вкус</h2>
-                                <p class="dashboard-section-subtitle" id="tasteSubtitle" data-i18n="profile.taste.subtitle">Что чаще всего появляется в ваших оценках.</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="taste-content" id="tasteContent">
-                        <div class="taste-genres" id="profileTasteGenres"></div>
-                        <div class="rating-distribution" id="ratingDistribution"></div>
-                    </div>
-                </section>
-            </div>
-
-            <!-- Insights: statistics, taste match, reactions, marathons -->
-            <div class="profile-insights" id="profileInsights" hidden></div>
-
-            <!-- Recent Ratings Showcase -->
-            <div class="recent-ratings-section">
-                <div class="section-header">
-                    <div class="section-header-title-group">
-                        <span class="section-header-icon">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-                        </span>
-                        <h2 class="section-title" data-i18n="profile.recent_ratings">Recent Ratings</h2>
-                    </div>
-                    <button class="rating-filter-reset" id="ratingFilterReset" type="button" hidden>
-                        <span id="ratingFilterResetLabel"></span>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                    </button>
+            <!-- Recent ratings with the score filter beside them -->
+            <section class="recent-ratings-section" id="recentRatingsSection">
+                <div class="profile-section__header">
+                    <h2 class="section-title" data-i18n="profile.recent_ratings">Recent Ratings</h2>
                     <button class="btn-view-all" id="viewAllRatingsBtn" type="button">
                         <span data-i18n="profile.view_all">View All</span>
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                     </button>
                 </div>
-                
+                <div class="recent-ratings-layout">
+                <div class="rating-distribution" id="ratingDistribution" role="group" aria-label="Filter by rating" data-i18n="[aria-label]profile.taste.filter_label"></div>
+                <div class="recent-ratings-main">
+                <div class="rating-filter-status" role="status">
+                    <span id="ratingFilterStatus"></span>
+                    <button class="rating-filter-reset" id="ratingFilterReset" type="button" hidden>
+                        <span id="ratingFilterResetLabel"></span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                </div>
                 <div class="recent-ratings-list" id="recentRatingsList">
                     <div class="app-loader app-loader--inline app-loader--compact" role="status" aria-label="Loading ratings" data-i18n="[aria-label]profile.ui.loading_ratings">
                         <div class="app-loader__indicator" aria-hidden="true"></div>
@@ -272,7 +205,13 @@
                     <div class="app-loader__indicator" aria-hidden="true"></div>
                 </div>
                 <div id="recentRatingsSentinel" style="height: 20px; margin-top: 10px;"></div>
+                </div>
+                </div>
+            </section>
             </div>
+
+            <div class="profile-tab-panel" id="profileTabStatistics" role="tabpanel" aria-labelledby="profileTabStatisticsBtn" hidden>
+                <div class="profile-insights" id="profileInsights"></div>
             </div>
 
             <div class="profile-tab-panel" id="profileTabAchievements" role="tabpanel" aria-labelledby="profileTabAchievementsBtn" hidden>

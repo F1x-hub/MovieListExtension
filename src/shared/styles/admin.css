@@ -46,17 +46,6 @@
     padding-right: var(--space-xs);
 }
 
-.reports-list::-webkit-scrollbar {
-    width: 8px;
-}
-.reports-list::-webkit-scrollbar-track {
-    background: transparent;
-}
-.reports-list::-webkit-scrollbar-thumb {
-    background: var(--text-muted);
-    border-radius: var(--radius-md);
-}
-
 .report-card {
     background: var(--gradient-card);
     border-radius: var(--radius-md);
@@ -1244,7 +1233,7 @@
     font-size: var(--font-size-2xs);
     font-weight: 700;
     line-height: 1;
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-sm);
     background: rgba(var(--theme-ink-rgb), 0.12);
     color: inherit;
 }
@@ -2973,7 +2962,7 @@
     width: 2rem;
     height: 2rem;
     border: 1px solid var(--ui-color-border-hover);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-md);
     color: var(--ui-color-content-muted);
     font-size: var(--font-size-lg);
     line-height: 1;
@@ -3356,7 +3345,7 @@
 .live-now__dot {
     width: 8px;
     height: 8px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-xs);
     background: var(--theme-text-muted);
 }
 
@@ -3559,7 +3548,7 @@
     position: relative;
     flex: 0 0 36px;
     height: 20px;
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-md);
     background: rgba(var(--theme-ink-rgb), 0.16);
     transition: background-color var(--motion-duration-menu) var(--motion-ease-out);
 }
@@ -3571,7 +3560,7 @@
     left: 2px;
     width: 16px;
     height: 16px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-sm);
     background: var(--theme-bg-primary);
     box-shadow: var(--elevation-1);
     transition: transform var(--motion-duration-base) var(--ease-out-soft, ease-out);
@@ -3742,7 +3731,7 @@
 .live-planner-calendar button:not(:disabled):hover { background: var(--ui-color-surface-muted); }
 .live-planner-calendar .custom-calendar-day.selected:hover { color: var(--ui-color-page); background: var(--ui-color-content); }
 .live-planner-calendar button:focus-visible { outline: 2px solid var(--ui-color-content); outline-offset: 1px; }
-.live-planner__scroll { overflow-x: auto; padding: 0 24px; scrollbar-width: thin; scrollbar-color: var(--ui-color-border-hover) transparent; }
+.live-planner__scroll { overflow-x: auto; padding: 0 24px; }
 .live-planner__canvas { position: relative; width: 100%; min-width: 0; height: 265px; }
 .live-planner__overview { padding: 16px 24px 0; }
 .live-planner__overview-label { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; font-size: var(--font-size-2xs); color: var(--ui-color-content-muted); }

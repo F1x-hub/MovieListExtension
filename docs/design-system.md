@@ -210,22 +210,41 @@ The corner of an element follows its role, not its page. The scale lives in
 
 | Token | Value | Role |
 | --- | --- | --- |
-| `--radius-sm` | 4px | Text labels: status, studio, genre, "new" and live badges |
+| `--radius-xs` | 2px | Tiny marks: status dots, page dots, the player's progress knob |
+| `--radius-sm` | 4px | Text labels: status, studio, genre, "new" and live badges; number badges (a place in a list, a count); slider and switch knobs; calendar cells |
 | `--radius-md` | 8px | Anything clickable: buttons, inputs, selects, tabs, filter choices, menu items (`--ui-control-radius`) |
-| `--radius-lg` | 12px | Cards, posters, panels, banners, popovers |
+| `--radius-lg` | 12px | Cards, posters, photos of people, panels, banners, popovers |
 | `--radius-xl` | 16px | Page surfaces, modals, large sections |
-| `--radius-pill` | 999px | Non-interactive counters and tracks only: count badges, progress bars, slider and switch tracks |
-| `--radius-circle` | 50% | Square non-interactive elements only: avatars, dots, spinners |
+| `--radius-pill` | 999px | Thin bars and progress tracks only |
+| `--radius-circle` | 50% | The avatar of a user. Besides it, only spinners, which turn, and objects drawn inside games and seasonal art |
+
+**The shape of the product is a rounded square. The only circle is a user's avatar.**
+A photo of an actor, a number, an icon, a plus sign, a status dot, a counter, a slider
+or switch knob is a rounded square, like the cards and controls around it: a circle
+inside a rounded square looks foreign. Before shipping, check new number badges, people
+photos, icon wells, dots and empty states for this. The visual-design test lists the
+avatars, spinners and game objects and fails on any other circle.
 
 Buttons, tabs and choices are never pill-shaped, and icon-only buttons (close,
 remove, clear, play, small actions) are never circles: like every control they
 are rounded squares with `--radius-md`, or `--radius-sm` below about 16px.
 `npm run test:visual-design` fails on a control selector with a circular radius. `50%` on a wide element draws
-an ellipse, so wide counters and bars use `--radius-pill`; `--radius-full` is a
+an ellipse, so wide bars use `--radius-pill`; `--radius-full` is a
 legacy alias of it. A child inset in a rounded frame takes the frame's radius
 minus the inset (`calc(var(--radius-xl) - 1px)` inside a 1px border).
 Files that load without `common.css` keep fallbacks; see "Files loaded without
 `common.css`" below.
+
+### Scrollbars
+
+The extension has one scrollbar, in `src/shared/styles/scrollbars.css`. Pages get it
+through `common.css`; a page without `common.css` links the file. Do not style
+scrollbars anywhere else. `scrollbar-width: thin` and `scrollbar-color` are forbidden:
+in Chrome they switch the `::-webkit-scrollbar` rules off, and the system bar with
+arrows comes back. `scrollbar-width: none` (a row that shows no bar, such as tabs) and
+`scrollbar-gutter` are fine. Player controls inside provider frames carry a copy of the
+declarations in `content-scripts/player-cleaner.js`, because our stylesheets do not
+load there; `npm run test:visual-design` keeps the copy identical.
 
 ### Type scale
 

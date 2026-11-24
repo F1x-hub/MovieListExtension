@@ -254,7 +254,7 @@
     bottom: 3px;
     width: 4px;
     height: 4px;
-    border-radius: var(--radius-circle);
+    border-radius: 25%;
     background: #2aabee;
 }
 
@@ -629,24 +629,6 @@
     gap: 2px;
     padding-right: 2px;
     scroll-behavior: smooth;
-}
-
-/* Custom Scrollbar for Time Columns */
-.custom-time-column-list::-webkit-scrollbar {
-    width: 4px;
-}
-
-.custom-time-column-list::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.custom-time-column-list::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: var(--radius-sm);
-}
-
-.light-theme .custom-time-column-list::-webkit-scrollbar-thumb {
-    background: rgba(9, 9, 11, 0.15);
 }
 
 .custom-time-item {

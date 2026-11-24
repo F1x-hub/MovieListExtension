@@ -63,39 +63,97 @@ export function computeWatchTime(ratings = [], movies = {}) {
 }
 
 /**
- * Ratings per day for a GitHub-style calendar: `weeks` columns (Monday first),
- * the last one holding today. Days after today are null.
- * @returns {{weeks: Array<Array<{date: Date, count: number}|null>>, max: number, total: number}}
+ * Ratings per day for a year calendar: `weeks` columns (Monday first), the last
+ * one holding today. Days after today are null. Each day keeps its ratings, so
+ * the page can list them without another read.
+ * @returns {{weeks: Array<Array<{date: Date, count: number, ratings: Array}|null>>, max: number, total: number, activeDays: number, bestStreak: number}}
  */
 export function computeDailyActivity(ratings = [], now = Date.now(), weeks = 53) {
     const today = new Date(now);
     today.setHours(0, 0, 0, 0);
     const weekday = (today.getDay() + 6) % 7;
     const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - weekday - (weeks - 1) * 7);
-    const counts = new Map();
+    const byDay = new Map();
     for (const rating of ratings) {
         const time = toMillis(rating.createdAt);
         if (!time) continue;
         const date = new Date(time);
         const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-        counts.set(key, (counts.get(key) || 0) + 1);
+        if (!byDay.has(key)) byDay.set(key, []);
+        byDay.get(key).push(rating);
     }
     let max = 0;
     let total = 0;
+    let activeDays = 0;
+    let streak = 0;
+    let bestStreak = 0;
     const columns = [];
     for (let week = 0; week < weeks; week++) {
         const days = [];
         for (let day = 0; day < 7; day++) {
             const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + week * 7 + day);
             if (date > today) { days.push(null); continue; }
-            const count = counts.get(`${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`) || 0;
+            const dayRatings = byDay.get(`${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`) || [];
+            const count = dayRatings.length;
             max = Math.max(max, count);
             total += count;
-            days.push({ date, count });
+            activeDays += count ? 1 : 0;
+            streak = count ? streak + 1 : 0;
+            bestStreak = Math.max(bestStreak, streak);
+            days.push({ date, count, ratings: dayRatings });
         }
         columns.push(days);
     }
-    return { weeks: columns, max, total };
+    return { weeks: columns, max, total, activeDays, bestStreak };
+}
+
+/**
+ * Calendar shade for a day: fixed steps (0, 1, 2, 3-4, 5+), so one record day
+ * does not fade every other day.
+ */
+export function activityLevel(count) {
+    if (!(count > 0)) return 0;
+    if (count >= 5) return 4;
+    return count >= 3 ? 3 : count;
+}
+
+/**
+ * Genres of rated titles with the average score given, most rated first.
+ * @returns {Array<{name: string, count: number, average: number}>}
+ */
+export function computeGenres(ratings = [], movies = {}, { limit = 6 } = {}) {
+    const genres = new Map();
+    for (const rating of ratings) {
+        const score = scoreOf(rating);
+        const list = movieFor(movies, rating.movieId)?.genres;
+        if (!score || !Array.isArray(list)) continue;
+        const names = new Map();
+        for (const genre of list) {
+            const name = String(typeof genre === 'object' ? genre?.name || genre?.genre || '' : genre ?? '').trim();
+            if (name) names.set(name.toLowerCase(), name);
+        }
+        for (const [key, name] of names) {
+            const entry = genres.get(key) || { name, count: 0, sum: 0 };
+            entry.count++;
+            entry.sum += score;
+            genres.set(key, entry);
+        }
+    }
+    return [...genres.values()]
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+        .slice(0, limit)
+        .map(({ name, count, sum }) => ({ name, count, average: Math.round((sum / count) * 10) / 10 }));
+}
+
+/** Decades from the first to the last one, the empty ones between them included. */
+export function fillDecades(decades = []) {
+    if (!decades.length) return [];
+    const counts = new Map(decades.map(item => [item.decade, item.count]));
+    const result = [];
+    for (let decade = Math.min(...counts.keys()); decade <= Math.max(...counts.keys()); decade += 10) {
+        result.push({ decade, count: counts.get(decade) || 0 });
+    }
+    return result;
 }
 
 /**

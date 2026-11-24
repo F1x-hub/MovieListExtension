@@ -1,0 +1,34 @@
+/*
+ * The only scrollbar of the extension. Pages get it through common.css; the few
+ * pages without common.css link this file. Nothing else may style a scrollbar:
+ * in Chrome `scrollbar-width: thin` and `scrollbar-color` switch these rules off
+ * and bring the system bar back, so elsewhere only `scrollbar-width: none`
+ * (hide it) and `scrollbar-gutter` are allowed. `npm run test:visual-design`
+ * checks that, and that the player controls inside provider frames, where no
+ * stylesheet of ours loads, carry the same declarations (player-cleaner.js).
+ * A surface that stays dark in both themes sets --scrollbar-ink for its own bars.
+ */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+::-webkit-scrollbar-button {
+    display: none;
+}
+
+::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--scrollbar-ink, var(--ui-color-content, #f4f4f5)) 28%, transparent) padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+    background: color-mix(in srgb, var(--scrollbar-ink, var(--ui-color-content, #f4f4f5)) 52%, transparent) padding-box;
+}

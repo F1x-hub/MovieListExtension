@@ -390,10 +390,6 @@
     scrollbar-width: none;
 }
 
-.tab-buttons::-webkit-scrollbar {
-    display: none;
-}
-
 .tab-buttons::after {
     display: none;
 }
@@ -1880,52 +1876,6 @@
     gap: 12px;
     padding-bottom: 10px;
     scroll-behavior: smooth;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
-}
-
-.sequels-container::-webkit-scrollbar,
-.movie-frames-grid::-webkit-scrollbar,
-.movie-frames-container::-webkit-scrollbar {
-    height: 5px;
-}
-
-.sequels-container::-webkit-scrollbar-track,
-.movie-frames-grid::-webkit-scrollbar-track,
-.movie-frames-container::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.sequels-container::-webkit-scrollbar-thumb,
-.movie-frames-grid::-webkit-scrollbar-thumb,
-.movie-frames-container::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: var(--radius-pill);
-    transition: background-color var(--motion-duration-base) var(--motion-ease-out);
-}
-
-.sequels-container::-webkit-scrollbar-thumb:hover,
-.movie-frames-grid::-webkit-scrollbar-thumb:hover,
-.movie-frames-container::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.35);
-}
-
-.light-theme .sequels-container,
-.light-theme .movie-frames-grid,
-.light-theme .movie-frames-container {
-    scrollbar-color: rgba(9, 9, 11, 0.15) transparent;
-}
-
-.light-theme .sequels-container::-webkit-scrollbar-thumb,
-.light-theme .movie-frames-grid::-webkit-scrollbar-thumb,
-.light-theme .movie-frames-container::-webkit-scrollbar-thumb {
-    background-color: rgba(9, 9, 11, 0.15);
-}
-
-.light-theme .sequels-container::-webkit-scrollbar-thumb:hover,
-.light-theme .movie-frames-grid::-webkit-scrollbar-thumb:hover,
-.light-theme .movie-frames-container::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(9, 9, 11, 0.3);
 }
 
 .sequel-card {
@@ -2156,7 +2106,7 @@
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
     border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2448,7 +2398,7 @@
 .announce-bot-status-dot {
     width: 8px;
     height: 8px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-xs);
     flex-shrink: 0;
     background: var(--theme-text-muted);
     transition: background var(--motion-duration-slow);
@@ -2731,27 +2681,7 @@
     padding-bottom: 12px;
     scroll-behavior: smooth;
     scroll-snap-type: x mandatory;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
     -webkit-overflow-scrolling: touch;
-}
-
-.movie-franchise-carousel::-webkit-scrollbar {
-    height: 5px;
-}
-
-.movie-franchise-carousel::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.movie-franchise-carousel::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: var(--radius-pill);
-    transition: background-color var(--motion-duration-base) var(--motion-ease-out);
-}
-
-.movie-franchise-carousel::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.35);
 }
 
 .franchise-card {
@@ -3042,7 +2972,7 @@
     transform: translate(-50%, -50%);
     width: 40px;
     height: 40px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-md);
     background: rgba(0, 0, 0, 0.65);
     border: 1px solid rgba(255, 255, 255, 0.2);
     backdrop-filter: blur(8px);
@@ -3214,7 +3144,7 @@
     font-size: var(--font-size-2xs);
     font-weight: 600;
     padding: 1px 6px;
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-sm);
     background: rgba(255, 255, 255, 0.1);
     color: var(--theme-text-secondary);
     margin-left: 4px;
@@ -3370,11 +3300,6 @@
     overflow-x: auto;
     scrollbar-width: none;
     min-width: 0;
-}
-
-.season-browser-tabs::-webkit-scrollbar,
-.episode-chart::-webkit-scrollbar {
-    display: none;
 }
 
 .season-tab {
@@ -3688,7 +3613,7 @@
 
 .episode-user-rating-badge {
     padding: 3px 8px;
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-sm);
     font-size: var(--font-size-2xs);
     background: var(--ui-color-interactive);
     color: var(--ui-color-page);
@@ -4754,7 +4679,6 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    scrollbar-width: thin;
 }
 
 .torrent-file-picker__list button {
@@ -4943,8 +4867,6 @@
     overflow-y: auto;
     overscroll-behavior-y: contain;
     padding: 0 4px 6px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--ui-color-border-hover) transparent;
 }
 
 /* An empty list must not push the search placeholders down the panel. */
@@ -5387,39 +5309,7 @@
     padding-bottom: 12px;
     scroll-behavior: smooth;
     scroll-snap-type: x mandatory;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
     -webkit-overflow-scrolling: touch;
-}
-
-.movie-recommendations-carousel::-webkit-scrollbar {
-    height: 5px;
-}
-
-.movie-recommendations-carousel::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.movie-recommendations-carousel::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: var(--radius-pill);
-    transition: background-color var(--motion-duration-base) var(--motion-ease-out);
-}
-
-.movie-recommendations-carousel::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.35);
-}
-
-.light-theme .movie-recommendations-carousel {
-    scrollbar-color: rgba(9, 9, 11, 0.15) transparent;
-}
-
-.light-theme .movie-recommendations-carousel::-webkit-scrollbar-thumb {
-    background-color: rgba(9, 9, 11, 0.15);
-}
-
-.light-theme .movie-recommendations-carousel::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(9, 9, 11, 0.3);
 }
 
 .light-theme .movie-carousel-btn {

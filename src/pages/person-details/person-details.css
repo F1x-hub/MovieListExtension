@@ -386,17 +386,6 @@
     scroll-padding-inline: 2px;
     padding: 4px 2px 16px;
     margin: 0;
-    scrollbar-width: thin;
-    scrollbar-color: var(--ui-color-border-hover) transparent;
-}
-
-.known-for-carousel::-webkit-scrollbar {
-    height: 6px;
-}
-
-.known-for-carousel::-webkit-scrollbar-thumb {
-    background: var(--ui-color-border-hover);
-    border-radius: var(--radius-pill);
 }
 
 .known-for-carousel .movie-card-component {

@@ -122,7 +122,6 @@ function createHarness() {
     service.resolveMovieDataForRating = async (_movieId, movieData) => movieData;
     service.invalidateRatingsCache = async () => {};
     service.invalidateAverageRatingsCache = async () => {};
-    service.recalculateUserTopGenres = async () => [];
     return { db, service, cacheClears };
 }
 

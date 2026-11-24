@@ -359,7 +359,7 @@
     appearance: none;
     width: 20px;
     height: 20px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-sm);
     background: var(--ui-color-interactive);
     cursor: pointer;
     box-shadow: var(--elevation-1);
@@ -368,7 +368,7 @@
 .rating-slider::-moz-range-thumb {
     width: 20px;
     height: 20px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-sm);
     background: var(--ui-color-interactive);
     cursor: pointer;
     border: none;
@@ -937,7 +937,7 @@
     height: 96px;
     margin-inline: auto;
     margin-bottom: var(--space-md);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-xl);
     border: 1px solid var(--theme-border);
     background: radial-gradient(circle at 50% 35%, rgba(var(--theme-ink-rgb), 0.08), rgba(var(--theme-ink-rgb), 0.02) 70%);
     box-shadow: var(--elevation-1);
@@ -1025,7 +1025,7 @@
     display: grid;
     place-items: center;
     border: 2px solid var(--danger);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-lg);
     color: var(--danger);
     font-size: var(--font-size-3xl);
     font-weight: 700;

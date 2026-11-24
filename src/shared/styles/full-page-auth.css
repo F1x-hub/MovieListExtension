@@ -396,7 +396,7 @@
 .full-page-auth-approval-icon {
     width: 64px;
     height: 64px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-xl);
     display: flex;
     align-items: center;
     justify-content: center;

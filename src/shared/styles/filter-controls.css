@@ -231,7 +231,7 @@
 .filter-range > .filter-range__slider:focus-visible {
     outline: 2px solid var(--ui-color-interactive);
     outline-offset: 3px;
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-sm);
     filter: drop-shadow(0 0 3px var(--ui-color-interactive));
 }
 .filter-range > .filter-range__slider:disabled::-webkit-slider-thumb { cursor: not-allowed; }

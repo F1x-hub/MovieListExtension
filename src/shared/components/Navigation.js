@@ -1934,8 +1934,8 @@ class Navigation {
                                         border: 2px solid ${isSelected ? 'var(--accent-color, #6366f1)' : 'var(--theme-border, transparent)'};
                                     ">
                                         <div style="display: flex; align-items: center; gap: 4px;">
-                                            <span style="width: 14px; height: 14px; border-radius: 50%; background: ${primaryDot}; border: 1px solid var(--theme-border, rgba(255,255,255,0.2)); display: inline-block;"></span>
-                                            <span style="width: 14px; height: 14px; border-radius: 50%; background: ${accentDot}; display: inline-block;"></span>
+                                            <span style="width: 14px; height: 14px; border-radius: var(--radius-sm); background: ${primaryDot}; border: 1px solid var(--theme-border, rgba(255,255,255,0.2)); display: inline-block;"></span>
+                                            <span style="width: 14px; height: 14px; border-radius: var(--radius-sm); background: ${accentDot}; display: inline-block;"></span>
                                         </div>
                                         <span style="flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${this.escapeHtml(ct.name)}</span>
                                         <div style="display: flex; align-items: center; gap: 6px;" class="custom-theme-actions">

@@ -1434,7 +1434,7 @@
     cursor: pointer;
     top: 0; left: 0; right: 0; bottom: 0;
     background-color: var(--theme-border-hover);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-md);
     transition: background-color var(--motion-duration-slow) var(--motion-ease-out);
 }
 
@@ -1446,7 +1446,7 @@
     left: 3px;
     bottom: 3px;
     background-color: #ffffff;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-sm);
     transition: transform var(--motion-duration-slow) var(--motion-ease-out);
     box-shadow: var(--elevation-1);
 }

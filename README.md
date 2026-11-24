@@ -461,6 +461,33 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Features
+
+- Profile: a new «Статистика» tab next to «Обзор» and «Достижения» (`?tab=statistics`) holds genres with the average score, release years, favourite actors and directors, movie marathons and reactions to reviews. Reactions and marathons are read only when the tab first opens. Empty decades keep their place on the axis, and bars are proportional instead of having a minimum length that drew 1, 2 and 3 films alike.
+- Profile: «Оценки по дням» is a full-width year of rounded squares of about 16 px (they were 7 px dots). Choosing a day lists its films; buttons walk the days with ratings; the keyboard moves by day, week and month with one tab stop. Shades have fixed steps (0, 1, 2, 3–4, 5 and more), each at least 3:1 against the page in both themes, so one record day no longer fades the rest. The header says how many ratings, active days and days in a row the year had.
+- Profile: the main numbers, with hours watched, stand beside the name; «Продолжить просмотр» is three cards in a row with the time left; another user's profile opens with the taste match; a profile without ratings shows one next step instead of empty sections.
+
+### Fixes
+
+- Profile: the score filter sits beside the list it filters (it was about 1250 px above it, so a press changed nothing on screen), says what it shows and brings a reader deep in the list back to its start.
+- Profile: favourite genres no longer ask to rate films after hundreds of ratings. The helper that counted them loaded only on the profile page, so every rating made elsewhere saved an empty list. Genres are now counted from the films already loaded, and saving or deleting a rating no longer reads all of the user's ratings for it.
+- Profile: «Участник с октября 2025» instead of «с октябрь 2025 г.», noun forms follow the number («24 оценки», «3 реакции»), month labels no longer overlap, portraits of actors and directors show whole, and the sections keep their order whichever answer comes first.
+- One scrollbar for the whole extension, in `src/shared/styles/scrollbars.css`. Twelve stylesheets had their own, and those with `scrollbar-width: thin` or `scrollbar-color` showed the system bar with arrows.
+
+### Refactor
+
+- Numbers on favourite posters, photos of people and plus signs on the profile are rounded squares, and so are the last 13 round containers elsewhere: icons of empty, error, approval and resume states, the chess result and upload icons, Play badges on trailers, letters of quiz answers and the add button of Random's search. Status dots, slider and switch knobs, counters and the player's progress knob followed: the only circle left in the interface is a user's avatar, besides spinners and objects inside games. The rule is written down, and `npm run test:visual-design` fails on a new circle and on a scrollbar styled outside its file.
+- Removed `genreStats.js`, its test and `scripts/backfillTopGenres.js`: nothing reads `users.topGenres` any more. The end-to-end rig seeds dates and nested fields, and `specs/profile.spec.cjs` covers the profile.
+
+### Docs
+
+- `docs/design-system.md` and `AGENTS.md` describe the corner rule and the single scrollbar.
+
+</details>
+
 <details>
 <summary><strong>1.5.10</strong> — automatic updates on their own, translated Catalog, Downloads and Calendar, one rating dialog</summary>
 

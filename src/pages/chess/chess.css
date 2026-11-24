@@ -1101,7 +1101,7 @@
     height: 7px;
     margin-right: 6px;
     background: var(--ui-color-content-subtle);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-xs);
 }
 
 .chess-status-dot.is-active {
@@ -1265,7 +1265,7 @@
     margin-bottom: 8px;
     color: var(--ui-color-content);
     background: var(--chess-overlay-strong);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-lg);
 }
 
 .chess-result__icon svg {

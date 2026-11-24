@@ -67,10 +67,12 @@ const documentStub = {
 const translations = {
     'profile.page_title': 'Мой профиль',
     'profile.page_title_other': 'Профиль: {name}',
-    'profile.taste.title': 'Мой вкус',
-    'profile.taste.subtitle': 'Что чаще всего появляется в ваших оценках.',
-    'profile.taste.title_other': 'Вкус',
-    'profile.taste.subtitle_other': 'Что чаще всего появляется в оценках пользователя.',
+    'profile.continue_watching.left': 'Осталось {time}',
+    'profile.continue_watching.left_hours': '{h} ч {m} мин',
+    'profile.continue_watching.left_minutes': '{m} мин',
+    'profile.taste.filter_hint': 'Нажмите на оценку',
+    'profile.taste.filter_active': 'Оценка {rating}: {count}',
+    'profile.taste.filter_reset': 'Показать все',
     'profile.sign_in_required': 'Войдите в аккаунт, чтобы открыть профиль',
     'profile.load_failed': 'Не удалось загрузить профиль.',
     'profile.not_found': 'Профиль не найден',
@@ -266,14 +268,11 @@ function createManager() {
     assert.equal(ProfilePageManager.isOtherUser('me', 'me'), false);
     assert.equal(ProfilePageManager.isOtherUser(null, 'me'), false);
 
-    const statCard = new FakeElement({ href: '../ratings/ratings.html' }, ['stat-card', 'stat-card--link']);
+    const statCard = new FakeElement({ href: '../ratings/ratings.html' }, ['profile-fact', 'profile-fact--link']);
     const viewer = createManager();
     viewer.elements = {
         profileMenu: new FakeElement(),
         continueWatchingSection: new FakeElement(),
-        profileDashboard: new FakeElement(),
-        tasteTitle: new FakeElement(),
-        tasteSubtitle: new FakeElement(),
         statCards: [statCard],
         viewAllRatingsBtn: new FakeElement()
     };
@@ -282,11 +281,7 @@ function createManager() {
     viewer.applyViewerMode('Анна');
     assert.equal(viewer.elements.profileMenu.style.display, 'none');
     assert.ok(viewer.elements.continueWatchingSection.hasAttribute('hidden'), 'continue watching is hidden');
-    assert.ok(viewer.elements.profileDashboard.classList.contains('profile-dashboard--single'));
-    assert.equal(viewer.elements.tasteTitle.textContent, 'Вкус');
-    assert.equal(viewer.elements.tasteTitle.getAttribute('data-i18n'), 'profile.taste.title_other');
     assert.equal(statCard.hasAttribute('href'), false, 'counters do not link to the viewer\'s lists');
-    assert.ok(statCard.classList.contains('stat-card--static'));
     assert.equal(viewer.elements.viewAllRatingsBtn.style.display, 'none');
     assert.equal(documentStub.title, 'Профиль: Анна');
 
@@ -295,8 +290,6 @@ function createManager() {
     assert.equal(viewer.elements.profileMenu.style.display, 'flex');
     assert.equal(viewer.elements.continueWatchingSection.hasAttribute('hidden'), false);
     assert.equal(statCard.getAttribute('href'), '../ratings/ratings.html');
-    assert.ok(statCard.classList.contains('stat-card--link'));
-    assert.equal(viewer.elements.tasteTitle.textContent, 'Мой вкус');
     assert.equal(documentStub.title, 'Мой профиль');
 
     assert.doesNotMatch(pageHtml, /aria-label="Open (?:all ratings|watching list|plan to watch list)"/,
@@ -309,9 +302,57 @@ function createManager() {
         for (const key of ['page_title', 'page_title_other', 'sign_in_required']) {
             assert.ok(profile[key], `${lang}.profile.${key}`);
         }
-        for (const key of ['title_other', 'subtitle_other', 'empty_other', 'distribution_empty_other']) {
+        for (const key of ['filter_label', 'filter_hint', 'filter_active', 'filter_reset']) {
             assert.ok(profile.taste[key], `${lang}.profile.taste.${key}`);
         }
+        // Every counted text has the noun forms its language needs.
+        const forms = lang === 'ru' ? ['one', 'few', 'many', 'other'] : ['one', 'other'];
+        for (const key of ['watch_note', 'watch_days', 'activity_year', 'activity_days', 'activity_streak', 'ratings_count', 'films_count', 'match_common', 'match_few', 'reactions_count', 'reactions_reviews', 'marathon_rounds', 'marathon_added']) {
+            for (const form of forms) assert.match(profile.insights[`${key}_${form}`] || '', /\{n\}/, `${lang}.profile.insights.${key}_${form}`);
+        }
+        for (const form of forms) assert.ok(profile.stats[`rated_${form}`], `${lang}.profile.stats.rated_${form}`);
+    }
+
+    // Profile texts used by the page exist in both languages, so no raw key reaches the screen.
+    const viewSources = read('src/pages/profile/ProfileInsightsView.js') + read('src/pages/profile/ProfileActivityCalendar.js');
+    const insightKeys = new Set([...viewSources.matchAll(/this\.t\('([a-z_]+)'/g)].map(match => match[1]));
+    assert.ok(insightKeys.size > 20);
+    for (const lang of ['en', 'ru']) {
+        for (const key of insightKeys) assert.ok(allLocales[lang].profile.insights[key], `${lang}.profile.insights.${key}`);
+    }
+
+    // «Участник с» needs the genitive month; time left is spelled out only while something plays.
+    assert.equal(ProfilePageManager.formatJoinDate(null), '');
+    context.i18n.currentLocale = 'ru';
+    assert.equal(ProfilePageManager.formatJoinDate(new Date(2025, 9, 15)), 'октября 2025');
+    assert.equal(ProfilePageManager.getTimeLeft({ timestamp: 600, duration: 4920 }), 'Осталось 1 ч 12 мин');
+    assert.equal(ProfilePageManager.getTimeLeft({ timestamp: 600, duration: 1200 }), 'Осталось 10 мин');
+    for (const progress of [{}, { timestamp: 600 }, { timestamp: 1200, duration: 1200 }]) {
+        assert.equal(ProfilePageManager.getTimeLeft(progress), '');
+    }
+
+    // The filter names what the list shows and brings a reader deep in the list back to its start.
+    {
+        const filtered = createManager();
+        let scrolls = 0;
+        const reloads = [];
+        filtered.elements = {
+            ratingFilterStatus: new FakeElement(),
+            ratingFilterReset: Object.assign(new FakeElement(), { addEventListener() {}, hidden: true }),
+            ratingFilterResetLabel: new FakeElement(),
+            recentRatingsSection: { getBoundingClientRect: () => ({ top: -900 }), scrollIntoView: () => { scrolls++; } }
+        };
+        filtered.ratingCounts = new Map([[9, 41], [8, 75]]);
+        filtered.ratingsUserId = 'me';
+        filtered.loadRecentRatings = uid => reloads.push([uid, filtered.ratingFilter]);
+        filtered.setRatingFilter(9);
+        assert.equal(filtered.elements.ratingFilterStatus.textContent, 'Оценка 9: 41');
+        assert.equal(filtered.elements.ratingFilterReset.hidden, false);
+        assert.equal(scrolls, 1);
+        filtered.setRatingFilter(null);
+        assert.equal(filtered.elements.ratingFilterStatus.textContent, 'Нажмите на оценку');
+        assert.equal(filtered.elements.ratingFilterReset.hidden, true);
+        assert.deepEqual(reloads, [['me', 9], ['me', null]]);
     }
 
     // --- 5. Read failures are reported, not shown as empty data -------------

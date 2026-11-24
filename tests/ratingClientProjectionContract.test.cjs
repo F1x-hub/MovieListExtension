@@ -6,7 +6,7 @@ const addStart = source.indexOf('async addOrUpdateRating');
 const addEnd = source.indexOf('async updateRatingText', addStart);
 const addMethod = source.slice(addStart, addEnd);
 const deleteStart = source.indexOf('async deleteRating');
-const deleteEnd = source.indexOf('async recalculateUserTopGenres', deleteStart);
+const deleteEnd = source.indexOf('/**', deleteStart);
 const deleteMethod = source.slice(deleteStart, deleteEnd);
 
 assert.doesNotMatch(addMethod, /transaction\.(set|update)\(movieRef/);

@@ -25,6 +25,7 @@ const migrationGuardFiles = {
     search: 'src/shared/styles/search.css',
     random: 'src/pages/random/random.css',
     popup: 'src/shared/styles/popup.css',
+    scrollbars: 'src/shared/styles/scrollbars.css',
     reportWidget: 'src/shared/styles/report-widget.css',
     movieDetails: 'src/pages/movie-details/movie-details.css',
     // The shared rating dialog (RatingDialog.js); its rules moved here from movie-details.css.
@@ -294,7 +295,7 @@ for (const file of cssFilesInSource.filter((item) => !seasonalFiles.includes(ite
 }
 
 // Corners follow the role: controls are rounded squares (`--radius-md`, or `--radius-sm`
-// when tiny), never circles; circles are for avatars, dots and spinners only.
+// when tiny), never circles.
 const ROUND_RADIUS = /border-radius\s*:\s*(?:50%|var\(--radius-circle[^;]*\))\s*[;}]/;
 const CONTROL_SELECTOR = /(?:close|btn|button|action|toggle|dismiss|remove|clear|trigger)(?![\w-]*(?:avatar|dot|spinner|icon|thumb|preview))/i;
 for (const file of cssFilesInSource) {
@@ -305,5 +306,62 @@ for (const file of cssFilesInSource) {
         assert.fail(`${file}: ${name} is a control with a circular radius; use var(--radius-md)`);
     }
 }
+
+// The shape of the product is a rounded square; the only circle is a user's avatar.
+// Spinners turn, so they stay rings; game pieces and seasonal art draw their own objects.
+const ROUND_AVATARS = {
+    'src/pages/battleship/battleship.css': ['.bs-avatar'],
+    'src/pages/chess/chess.css': ['.chess-avatar'],
+    'src/pages/movie-details/movie-details.css': ['.user-rating-avatar'],
+    'src/shared/styles/admin.css': ['.skeleton-avatar', '.user-avatar'],
+    'src/shared/styles/components.css': ['.avatar'],
+    'src/shared/styles/movie-card.css': ['.mc-rater-avatar', '.mc-user-avatar'],
+    'src/shared/styles/navigation.css': ['.battleship-notice__avatar', '.nav-user-avatar', '.reaction-inbox__avatar'],
+    'src/shared/styles/popup.css': ['.popup-page .avatar-btn', '.popup-page .rating-author-avatar', '.popup-page .user-avatar, .popup-page .avatar-fallback'],
+    // The avatar, its preview and its crop frame.
+    'src/shared/styles/profile.css': ['.cropper-selection', '.photo-preview', '.photo-preview .preview-overlay', '.profile-photo'],
+    'src/shared/styles/ratings.css': ['.movies-grid .mc-rater-avatar']
+};
+const ROUND_OBJECTS = {
+    'src/pages/battleship/battleship.css': ['.bs-cell.is-pending::after', '.bs-cell[data-mark="miss"]::after, .bs-cell[data-mark="clear"]::after', '.bs-radar', '.bs-radar span', '.bs-side--enemy .bs-board.is-interactive .bs-cell.is-target:hover::after'],
+    'src/pages/chess/chess.css': ['.chess-flat__square.is-capture::after', '.chess-flat__square.is-target::after'],
+    'src/pages/movie-details/movie-details.css': ['.movie-detail-ratings-container.is-refreshing::after'],
+    'src/pages/random/random.css': ['#randomPanelMarathon .marathon-action-loading::before', '.roll-wheel', '.roll-wheel-center', '.roll-wheel-frame'],
+    'src/shared/styles/common.css': ['.app-loader__indicator'],
+    'src/shared/styles/components.css': ['.btn--pending::after'],
+    'src/shared/styles/full-page-auth.css': ['.full-page-auth-spinner'],
+    'src/shared/styles/report-widget.css': ['.report-spinner'],
+    'src/shared/styles/seasonal-newyear.css': ['.ny-leader__sweep'],
+    'src/shared/styles/seasonal.css': ['.season-banner__mark::before']
+};
+for (const file of cssFilesInSource) {
+    const source = read(file).replace(/\/\*[\s\S]*?\*\//g, '');
+    const allowed = new Set([...(ROUND_AVATARS[file] || []), ...(ROUND_OBJECTS[file] || [])]);
+    for (const [, selector, body] of source.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        if (!ROUND_RADIUS.test(`${body}}`)) continue;
+        const name = selector.trim().replace(/\s+/g, ' ');
+        assert.ok(allowed.has(name), `${file}: ${name} is a circle; only a user's avatar is one (docs/design-system.md, Corner radius)`);
+    }
+}
+// One scrollbar for the whole extension (src/shared/styles/scrollbars.css). `thin` and
+// `scrollbar-color` switch its rules off in Chrome and bring the system bar back.
+const SCROLLBAR_FILE = 'src/shared/styles/scrollbars.css';
+for (const file of cssFilesInSource.filter(item => item !== SCROLLBAR_FILE)) {
+    const source = read(file).replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.doesNotMatch(source, /::-webkit-scrollbar/, `${file} styles a scrollbar; the only one is ${SCROLLBAR_FILE}`);
+    assert.doesNotMatch(source, /scrollbar-color\s*:|scrollbar-width\s*:(?!\s*none\b)/, `${file} brings the system scrollbar back`);
+}
+assert.match(read(files.common), /@import url\('\.\/scrollbars\.css'\);/);
+for (const page of ['src/pages/live/youtube-player.html', 'src/pages/update/update_instructions.html']) {
+    assert.match(read(page), /styles\/scrollbars\.css/, `${page} has no common.css and links the scrollbar itself`);
+}
+const scrollbarRules = source => [...source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/((?:[^{}]*::-webkit-scrollbar[^{}]*))\{([^{}]*)\}/g)]
+    .map(([, selector, body]) => `${selector.replace(/\.native-player-wrapper\s+/g, '')}{${body}}`.replace(/\s+/g, ''));
+const cleanerSource = read('content-scripts/player-cleaner.js');
+const cleanerStart = cleanerSource.indexOf('.native-player-wrapper ::-webkit-scrollbar {');
+assert.ok(cleanerStart > 0);
+const cleanerRules = scrollbarRules(cleanerSource.slice(cleanerStart, cleanerSource.indexOf('.player-subtitle-appearance__preview {', cleanerStart)));
+assert.deepStrictEqual(cleanerRules, scrollbarRules(read(SCROLLBAR_FILE)), 'player controls in provider frames carry the same scrollbar');
+assert.doesNotMatch(cleanerSource, /scrollbar-color\s*:|scrollbar-width\s*:\s*thin/);
 
 console.log('Visual design contract tests passed');

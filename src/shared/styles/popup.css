@@ -554,7 +554,7 @@
     height: 48px;
     margin-bottom: 16px;
     border: 1px solid var(--ui-color-border-hover);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-lg);
     background: var(--ui-color-surface-muted);
     color: var(--ui-color-content);
 }
@@ -842,8 +842,6 @@
     box-sizing: border-box;
     overflow-y: auto;
     overflow-x: hidden;
-    scrollbar-width: thin;
-    scrollbar-color: var(--ui-color-content-subtle) var(--ui-color-page);
     transition: opacity var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -1498,28 +1496,6 @@
 .popup-page .popup-dialog__footer .btn {
     min-height: 36px;
     font-size: var(--font-size-sm);
-}
-
-.popup-page .feed-content::-webkit-scrollbar,
-.popup-page .auth-section::-webkit-scrollbar,
-.popup-page .compact-search-results::-webkit-scrollbar,
-.popup-page .popup-dialog__body::-webkit-scrollbar {
-    width: 6px;
-}
-
-.popup-page .feed-content::-webkit-scrollbar-thumb,
-.popup-page .auth-section::-webkit-scrollbar-thumb,
-.popup-page .compact-search-results::-webkit-scrollbar-thumb,
-.popup-page .popup-dialog__body::-webkit-scrollbar-thumb {
-    border-radius: var(--radius-md);
-    background: var(--ui-color-content-subtle);
-}
-
-.popup-page .feed-content::-webkit-scrollbar-track,
-.popup-page .auth-section::-webkit-scrollbar-track,
-.popup-page .compact-search-results::-webkit-scrollbar-track,
-.popup-page .popup-dialog__body::-webkit-scrollbar-track {
-    background: transparent;
 }
 
 @media (max-width: 360px) {

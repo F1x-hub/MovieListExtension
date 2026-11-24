@@ -649,7 +649,7 @@
     height: 64px;
     margin-bottom: 16px;
     border: 1px solid var(--ui-color-border);
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-xl);
     color: var(--ui-color-content-subtle);
 }
 

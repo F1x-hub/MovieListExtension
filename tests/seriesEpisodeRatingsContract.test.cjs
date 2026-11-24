@@ -19,7 +19,7 @@ assert.match(service, /return season \+ ':' \+ episode/);
 assert.match(service, /_enqueueSeries\(userId, movieId/);
 assert.match(service, /runTransaction\(async transaction/);
 assert.doesNotMatch(service, /ratingSource|episodeAverage|manualBackup|ratingSum|ratedCount|calculateAggregate/);
-assert.doesNotMatch(service, /getRatingService|invalidateAverageRatingsCache|invalidateRatingsCache|recalculateUserTopGenres|cacheMovie/);
+assert.doesNotMatch(service, /getRatingService|invalidateAverageRatingsCache|invalidateRatingsCache|cacheMovie/);
 assert.doesNotMatch(service, /getWatchlistService|removeFromWatchlist/);
 
 assert.match(rules, /match \/seriesEpisodeRatings\/{seriesRatingId}/);

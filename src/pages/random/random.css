@@ -301,7 +301,7 @@
     pointer-events: auto;
     width: 14px;
     height: 14px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-sm);
     background: var(--theme-bg-secondary);
     border: 2px solid var(--theme-text-primary);
     cursor: grab;
@@ -325,7 +325,7 @@
     pointer-events: auto;
     width: 14px;
     height: 14px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-sm);
     background: var(--theme-bg-secondary);
     border: 2px solid var(--theme-text-primary);
     cursor: grab;
@@ -905,23 +905,6 @@
     padding-right: 8px;
 }
 
-.cmc-info::-webkit-scrollbar {
-    width: 4px;
-}
-
-.cmc-info::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.cmc-info::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: var(--radius-pill);
-}
-
-.light-theme .cmc-info::-webkit-scrollbar-thumb {
-    background: rgba(9, 9, 11, 0.08);
-}
-
 .cmc-header {
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
     padding-bottom: 14px;
@@ -1194,7 +1177,7 @@
     min-width: 20px;
     padding: 1px 6px;
     border: 1px solid var(--ui-color-border-hover);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-sm);
     font-size: var(--font-size-2xs);
     font-weight: 700;
     line-height: 1.4;
@@ -1207,7 +1190,7 @@
 .random-mode-dot {
     width: 7px;
     height: 7px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-xs);
     background: currentColor;
 }
 
@@ -1740,7 +1723,7 @@
     flex-shrink: 0;
     width: 24px;
     height: 24px;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-md);
     border: 1px solid var(--theme-border);
     background: transparent;
     color: var(--theme-text-secondary);
@@ -1774,21 +1757,6 @@
 #poolList:not(:has(.random-empty)) {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
-}
-
-.pool-list::-webkit-scrollbar {
-    width: 4px;
-}
-.pool-list::-webkit-scrollbar-track {
-    background: transparent;
-}
-.pool-list::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: var(--radius-pill);
-}
-
-.light-theme .pool-list::-webkit-scrollbar-thumb {
-    background: rgba(9, 9, 11, 0.08);
 }
 
 .pool-list-empty {

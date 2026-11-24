@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import {
+    activityLevel,
     computeDecades,
+    computeGenres,
+    fillDecades,
     computeFavoritePeople,
     computeDailyActivity,
     computeTasteMatch,
@@ -54,6 +57,27 @@ assert.equal(lastWeek[2].count, 2);
 assert.equal(lastWeek[3], null);
 assert.equal(daily.max, 2);
 assert.equal(daily.total, 3);
+assert.equal(daily.activeDays, 2);
+assert.equal(daily.bestStreak, 1, 'Monday and Wednesday are not consecutive');
+assert.equal(lastWeek[2].ratings.length, 2, 'a day keeps its ratings for the list under the calendar');
+assert.equal(computeDailyActivity([19, 20, 21].map(day => ({ createdAt: new Date(2026, 9, day) })), now).bestStreak, 3);
+assert.deepEqual([0, 1, 2, 3, 4, 5, 40].map(activityLevel), [0, 1, 2, 3, 3, 4, 4], 'a record day does not fade the others');
+
+// Genres: counted once per title, with the average score; titles without genres are skipped.
+assert.deepEqual(computeGenres([
+    { movieId: 1, rating: 10 }, { movieId: 2, rating: '7' }, { movieId: 3, rating: 4 }, { movieId: 4, rating: 9 }, { movieId: 5, rating: null }
+], {
+    1: { genres: [{ name: 'фантастика' }, 'боевик', 'Боевик'] },
+    2: { genres: ['фантастика'] },
+    3: { genres: ['драма'] },
+    4: {},
+    5: { genres: ['драма'] }
+}, { limit: 2 }), [{ name: 'фантастика', count: 2, average: 8.5 }, { name: 'Боевик', count: 1, average: 10 }]);
+
+// Empty decades between rated ones keep their place on the axis.
+assert.deepEqual(fillDecades([{ decade: 1930, count: 1 }, { decade: 1950, count: 2 }]),
+    [{ decade: 1930, count: 1 }, { decade: 1940, count: 0 }, { decade: 1950, count: 2 }]);
+assert.deepEqual(fillDecades([]), []);
 
 // Favorite people: only from titles rated 8+, at least two films.
 const people = computeFavoritePeople([

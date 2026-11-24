@@ -1,11 +1,10 @@
 /**
- * Profile showcase: achievement points and the highest-tier badges, linking to
+ * Profile showcase: the highest-tier badges, linking to
  * the profile's «Достижения» tab. It reads the stored snapshot on the user
  * document; the owner's profile refreshes that snapshot in the background at
  * most once per SYNC_INTERVAL_MS.
  */
 import { ACHIEVEMENTS_BY_ID, pointsFor } from './AchievementCatalog.js';
-import { rankFor, totalPoints } from './AchievementEngine.js';
 import { renderBadge } from './AchievementBadge.js';
 
 const SHOWCASE_SIZE = 6;
@@ -30,14 +29,11 @@ export function renderShowcase(container, stored, { isOwn, uid, i18n }) {
     };
     const items = topAchievements(stored);
     const href = `../profile/profile.html?${isOwn ? '' : `userId=${encodeURIComponent(uid)}&`}tab=achievements`;
-    const rank = rankFor(totalPoints(stored));
-    const rankName = rank.level ? t('rank_' + rank.level) : t('rank_none');
     container.hidden = false;
     container.innerHTML = `
         <div class="profile-achievements__header">
             <h2 class="section-title">${escape(t('showcase_title'))}</h2>
-            <span class="profile-achievements__points">${escape(t('rank'))}: <b>${escape(rankName)}</b></span>
-            <a class="dashboard-section-link profile-achievements__link" href="${href}">${escape(t('view_all'))} →</a>
+            <a class="dashboard-section-link profile-achievements__link" href="${href}">${escape(t('view_all'))}</a>
         </div>
         ${items.length ? `<div class="profile-achievements__list">${items.map(({ def, tier }) => {
             const name = i18n.get(`achievements.items.${def.id}.name`);

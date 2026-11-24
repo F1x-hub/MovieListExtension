@@ -2577,7 +2577,7 @@
                     right: -5px;
                     width: 10px;
                     height: 10px;
-                    border-radius: 50%;
+                    border-radius: 2px;
                     background: #f4f4f5;
                     box-shadow: 0 2px 10px rgba(0, 0, 0, .45);
                     opacity: 0;
@@ -2785,33 +2785,6 @@
                     overflow-y: auto;
                     overscroll-behavior: contain;
                     scrollbar-gutter: stable;
-                    scrollbar-width: thin;
-                    scrollbar-color: rgba(161, 161, 170, .48) transparent;
-                }
-                .native-player-wrapper .player-settings-menu__list::-webkit-scrollbar {
-                    width: 6px;
-                }
-                .native-player-wrapper .player-settings-menu__list::-webkit-scrollbar-track {
-                    margin-block: 5px;
-                    background: transparent;
-                }
-                .native-player-wrapper .player-settings-menu__list::-webkit-scrollbar-button {
-                    width: 0;
-                    height: 0;
-                    display: none;
-                }
-                .native-player-wrapper .player-settings-menu__list::-webkit-scrollbar-thumb {
-                    background: rgba(161, 161, 170, .42);
-                    border: 1px solid transparent;
-                    border-radius: 999px;
-                    background-clip: padding-box;
-                }
-                .native-player-wrapper .player-settings-menu__list::-webkit-scrollbar-thumb:hover {
-                    background: rgba(212, 212, 216, .62);
-                    background-clip: padding-box;
-                }
-                .native-player-wrapper .player-settings-menu__list::-webkit-scrollbar-corner {
-                    background: transparent;
                 }
                 .native-player-wrapper .player-subtitle-appearance__body {
                     display: flex;
@@ -2822,17 +2795,27 @@
                     overflow-x: hidden;
                     overflow-y: auto;
                     overscroll-behavior: contain;
-                    scrollbar-width: thin;
-                    scrollbar-color: rgba(161, 161, 170, .48) transparent;
                 }
-                .native-player-wrapper .player-subtitle-appearance__body::-webkit-scrollbar {
-                    width: 6px;
+                /* A copy of src/shared/styles/scrollbars.css: none of our stylesheets load in a provider frame. */
+                .native-player-wrapper ::-webkit-scrollbar {
+                    width: 8px;
+                    height: 8px;
                 }
-                .native-player-wrapper .player-subtitle-appearance__body::-webkit-scrollbar-thumb {
-                    background: rgba(161, 161, 170, .42);
-                    border: 1px solid transparent;
+                .native-player-wrapper ::-webkit-scrollbar-track,
+                .native-player-wrapper ::-webkit-scrollbar-corner {
+                    background: transparent;
+                }
+                .native-player-wrapper ::-webkit-scrollbar-button {
+                    display: none;
+                }
+                .native-player-wrapper ::-webkit-scrollbar-thumb {
+                    border: 2px solid transparent;
                     border-radius: 999px;
-                    background-clip: padding-box;
+                    background: color-mix(in srgb, var(--scrollbar-ink, var(--ui-color-content, #f4f4f5)) 28%, transparent) padding-box;
+                }
+                .native-player-wrapper ::-webkit-scrollbar-thumb:hover,
+                .native-player-wrapper ::-webkit-scrollbar-thumb:active {
+                    background: color-mix(in srgb, var(--scrollbar-ink, var(--ui-color-content, #f4f4f5)) 52%, transparent) padding-box;
                 }
                 .native-player-wrapper .player-subtitle-appearance__preview {
                     min-height: 62px;
@@ -2971,7 +2954,7 @@
                 .native-player-wrapper .mre-volume-button { background: none; border: none; cursor: pointer; color: var(--mre-control-foreground); padding: 5px; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; }
                 .native-player-wrapper .mre-volume-track { width: 4px; height: 80px; background: var(--mre-control-track); border-radius: 2px; position: relative; cursor: pointer; }
                 .native-player-wrapper .mre-volume-fill { position: absolute; bottom: 0; left: 0; width: 100%; background: var(--mre-control-foreground); border-radius: 2px; }
-                .native-player-wrapper .mre-volume-knob { width: 12px; height: 12px; background: var(--mre-control-foreground); border-radius: 50%; position: absolute; top: 0; left: 50%; transform: translate(-50%, -50%); }
+                .native-player-wrapper .mre-volume-knob { width: 12px; height: 12px; background: var(--mre-control-foreground); border-radius: 4px; position: absolute; top: 0; left: 50%; transform: translate(-50%, -50%); }
                 @media (max-width: 600px) {
                     .native-player-wrapper .player-center-action {
                         width: 58px !important;

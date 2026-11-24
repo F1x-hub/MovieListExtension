@@ -62,7 +62,9 @@ function toFirestoreValue(value) {
     if (Number.isInteger(value)) return { integerValue: String(value) };
     if (typeof value === 'number') return { doubleValue: value };
     if (value === null) return { nullValue: null };
+    if (value instanceof Date) return { timestampValue: value.toISOString() };
     if (Array.isArray(value)) return { arrayValue: { values: value.map(toFirestoreValue) } };
+    if (typeof value === 'object') return { mapValue: { fields: Object.fromEntries(Object.entries(value).map(([key, item]) => [key, toFirestoreValue(item)])) } };
     throw new Error(`Unsupported seed value: ${value}`);
 }
 

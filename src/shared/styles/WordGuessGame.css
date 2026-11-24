@@ -233,7 +233,7 @@
     font-size: var(--font-size-3xs);
     font-weight: 600;
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.12));
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-sm);
 }
 
 .word-guess-history {
@@ -260,26 +260,7 @@
     list-style: none;
     overflow-y: auto;
     overscroll-behavior: contain;
-    scrollbar-color: #52525b transparent;
     scrollbar-gutter: stable;
-    scrollbar-width: thin;
-}
-
-.word-guess-history-list::-webkit-scrollbar {
-    width: 6px;
-}
-
-.word-guess-history-list::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.word-guess-history-list::-webkit-scrollbar-thumb {
-    background: #52525b;
-    border-radius: var(--radius-pill);
-}
-
-.word-guess-history-list::-webkit-scrollbar-thumb:hover {
-    background: #71717a;
 }
 
 .word-guess-history-list:focus-visible {

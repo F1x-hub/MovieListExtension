@@ -234,20 +234,6 @@ body,
     box-shadow: var(--elevation-1);
 }
 
-/* Light theme scrollbar */
-.light-theme ::-webkit-scrollbar-track {
-    background: var(--theme-bg-tertiary);
-}
-
-.light-theme ::-webkit-scrollbar-thumb {
-    background: #838080;
-    border-radius: var(--radius-sm, 4px);
-}
-
-.light-theme ::-webkit-scrollbar-thumb:hover {
-    background: #666666;
-}
-
 /* Ensure text contrast in light theme */
 .light-theme h1,
 .light-theme h2,

@@ -87,8 +87,8 @@ assert.doesNotMatch(cleaner, /const thumbTooltip = document\.createElement\('div
 assert.match(cleaner, /new GhostPlayer\(/, 'GhostPlayer must remain the single hover-preview owner');
 assert.match(cleaner, /iframe-safe visual contract/, 'cleaner controls must carry their styles into cross-origin player frames');
 assert.match(cleaner, /uiVersion: 'obsidian-3'/, 'cleaner readiness log must identify the active UI contract');
-assert.match(cleaner, /player-settings-menu__list::-webkit-scrollbar/, 'settings popup must provide an iframe-safe custom scrollbar');
-assert.match(cleaner, /player-settings-menu__list::-webkit-scrollbar-button/, 'custom scrollbar must suppress Windows arrow buttons');
+assert.match(cleaner, /\.native-player-wrapper ::-webkit-scrollbar \{/, 'settings popup must provide an iframe-safe custom scrollbar');
+assert.match(cleaner, /\.native-player-wrapper ::-webkit-scrollbar-button/, 'custom scrollbar must suppress Windows arrow buttons');
 assert.match(cleaner, /player-settings-menu__option\.is-active/, 'settings popup must use the shared monochrome active state');
 assert.match(cleaner, /function makeKeyboardActivatable/);
 assert.match(cleaner, /player-keyboard-action:focus-visible/);

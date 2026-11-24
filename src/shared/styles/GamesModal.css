@@ -491,7 +491,7 @@ a.game-menu-card {
     flex: 0 0 auto;
     display: grid;
     place-items: center;
-    border-radius: var(--radius-circle);
+    border-radius: var(--radius-sm);
     color: var(--games-content-muted);
     background: var(--games-fill-hover);
     font: 700 0.65rem 'Geist Mono', monospace;
