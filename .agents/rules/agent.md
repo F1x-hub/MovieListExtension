@@ -535,7 +535,8 @@ checklist; `npm run test:visual-design` enforces much of it.
   `ProfileInsightsView` renders the overview calendar (`ProfileActivityCalendar`) and taste match
   from the ratings snapshot and one movie batch; reactions and marathons are read only when
   «Статистика» first opens. Hours watched are kept in the cached statistics. Counted texts use
-  `tn()` with `_one/_few/_many/_other` keys. Genres are counted on the page; `users.topGenres`
+  `tn()` with `_one/_few/_many/_other` keys. A favourite person's number is the titles rated 8+
+  with them (`liked`); lower ones (`other`) show in the panel but never count. Genres are counted on the page; `users.topGenres`
   is a legacy field that nothing reads.
   Local profile caches hold rendered fields only (no e-mail or admin flags), are bounded and are
   cleared on sign-out. Uploads use versioned names, and the old object is deleted only after the

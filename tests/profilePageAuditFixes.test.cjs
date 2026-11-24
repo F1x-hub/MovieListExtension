@@ -307,7 +307,7 @@ function createManager() {
         }
         // Every counted text has the noun forms its language needs.
         const forms = lang === 'ru' ? ['one', 'few', 'many', 'other'] : ['one', 'other'];
-        for (const key of ['watch_note', 'watch_days', 'activity_year', 'activity_days', 'activity_streak', 'ratings_count', 'films_count', 'match_common', 'match_few', 'reactions_count', 'reactions_reviews', 'marathon_rounds', 'marathon_added']) {
+        for (const key of ['watch_note', 'watch_days', 'activity_year', 'activity_days', 'activity_streak', 'ratings_count', 'films_count', 'people_liked', 'match_common', 'match_few', 'reactions_count', 'reactions_reviews', 'marathon_rounds', 'marathon_added']) {
             for (const form of forms) assert.match(profile.insights[`${key}_${form}`] || '', /\{n\}/, `${lang}.profile.insights.${key}_${form}`);
         }
         for (const form of forms) assert.ok(profile.stats[`rated_${form}`], `${lang}.profile.stats.rated_${form}`);

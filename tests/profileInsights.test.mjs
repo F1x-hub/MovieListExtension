@@ -90,6 +90,21 @@ assert.deepEqual(people.directors.map(person => person.id), [20]);
 assert.equal(people.basis, 2);
 assert.equal(computeFavoritePeople([{ movieId: 1, rating: 9 }, { movieId: 2, rating: 7 }], movies).actors.length, 0);
 
+// The films behind the number: best score first, lower ones apart and not counted.
+const cast = { persons: [{ id: 10, name: 'Киану Ривз', enProfession: 'actor', photo: 'p.jpg' }] };
+const [keanu] = computeFavoritePeople([
+    { movieId: 5, rating: 6 },
+    { movieId: 1, rating: 8 },
+    { movieId: 2, rating: 10 },
+    { movieId: '2', rating: 9 },
+    { movieId: 6, rating: 7 }
+], { ...movies, 5: cast, 6: cast }).actors;
+assert.equal(keanu.count, 2);
+assert.equal(keanu.photo, 'p.jpg');
+assert.deepEqual(keanu.liked, [{ movieId: '2', score: 10 }, { movieId: '1', score: 8 }]);
+assert.deepEqual(keanu.other, [{ movieId: '6', score: 7 }, { movieId: '5', score: 6 }]);
+assert.equal(computeFavoritePeople([{ movieId: 5, rating: 6 }], { 5: cast }).basis, 0);
+
 // Taste match: identical scores give 100, opposite ends give 0, too few common titles give null.
 assert.equal(computeTasteMatch(
     [{ movieId: 1, rating: 9 }, { movieId: 2, rating: 8 }, { movieId: 3, rating: 7 }],

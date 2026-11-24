@@ -175,41 +175,47 @@ export function computeDecades(ratings = [], movies = {}) {
 
 /**
  * Actors and directors that recur among highly rated titles. Only top-billed
- * actors count so crowds of extras do not dominate.
+ * actors count so crowds of extras do not dominate. Each person carries the
+ * titles behind the number (`liked`, best score first) and the lower-rated ones
+ * (`other`), as `{movieId, score}`.
  * @returns {{actors: Array, directors: Array, basis: number}}
  */
 export function computeFavoritePeople(ratings = [], movies = {}, { minRating = LIKED_RATING, actorsPerMovie = 10, minCount = 2, limit = 6 } = {}) {
     const actors = new Map();
     const directors = new Map();
     let basis = 0;
-    const add = (map, person, movieId) => {
+    const add = (map, person, film) => {
         const id = Number(person?.id);
         const name = String(person?.name || person?.enName || '').trim();
         if (!Number.isInteger(id) || id <= 0 || !name) return;
-        const entry = map.get(id) || { id, name, photo: person.photo || '', count: 0, movieIds: new Set() };
-        if (entry.movieIds.has(movieId)) return;
-        entry.movieIds.add(movieId);
-        entry.count++;
+        const entry = map.get(id) || { id, name, photo: '', films: new Map() };
+        entry.photo ||= person.photo || '';
+        if (!entry.films.has(film.movieId)) entry.films.set(film.movieId, film);
         map.set(id, entry);
     };
     for (const rating of ratings) {
-        if ((scoreOf(rating) || 0) < minRating) continue;
+        const score = scoreOf(rating);
+        if (!score) continue;
         const movie = movieFor(movies, rating.movieId);
         const persons = Array.isArray(movie?.persons) ? movie.persons : [];
         if (!persons.length) continue;
-        basis++;
-        const movieId = String(rating.movieId);
+        if (score >= minRating) basis++;
+        const film = { movieId: String(rating.movieId), score };
         persons.filter(person => String(person?.enProfession || '').toLowerCase() === 'actor')
             .slice(0, actorsPerMovie)
-            .forEach(person => add(actors, person, movieId));
+            .forEach(person => add(actors, person, film));
         persons.filter(person => String(person?.enProfession || '').toLowerCase() === 'director')
-            .forEach(person => add(directors, person, movieId));
+            .forEach(person => add(directors, person, film));
     }
     const top = map => [...map.values()]
+        .map(({ films, ...entry }) => {
+            const sorted = [...films.values()].sort((a, b) => b.score - a.score);
+            const liked = sorted.filter(film => film.score >= minRating);
+            return { ...entry, count: liked.length, liked, other: sorted.filter(film => film.score < minRating) };
+        })
         .filter(entry => entry.count >= minCount)
         .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-        .slice(0, limit)
-        .map(({ movieIds, ...entry }) => entry);
+        .slice(0, limit);
     return { actors: top(actors), directors: top(directors).slice(0, 3), basis };
 }
 

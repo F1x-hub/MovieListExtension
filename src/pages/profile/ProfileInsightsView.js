@@ -18,6 +18,10 @@ import { ProfileActivityCalendar } from './ProfileActivityCalendar.js';
 // Firestore `in` queries accept at most 30 values; only existing documents are billed.
 const IN_QUERY_CHUNK = 30;
 
+// Two full rows on a wide page; the rest of a person's films wait behind a button.
+const LIKED_FILMS_SHOWN = 14;
+const OTHER_FILMS_SHOWN = 8;
+
 function chunk(values, size) {
     const chunks = [];
     for (let index = 0; index < values.length; index += size) chunks.push(values.slice(index, index + size));
@@ -306,25 +310,117 @@ export class ProfileInsightsView {
             body.innerHTML = `<p class="taste-empty">${this.escape(this.t(basis ? 'people_few' : 'people_empty'))}</p>`;
             return section;
         }
-        const person = entry => {
+        const person = (entry, index, group) => {
             const photo = this.safeImageUrl(entry.photo);
             const label = this.tn('films_count', entry.count);
             return `
                 <li>
-                    <a class="insight-person" href="../person-details/person-details.html?personKey=kp:${encodeURIComponent(entry.id)}">
+                    <button type="button" class="insight-person" data-group="${group}" data-index="${index}" aria-expanded="false" aria-controls="insightFilms">
                         <span class="insight-person__photo" aria-hidden="true">${photo ? `<img src="${this.escape(photo)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : this.escape(entry.name.charAt(0).toUpperCase())}</span>
                         <span class="insight-person__name">${this.escape(entry.name)}</span>
                         <span class="insight-person__count">${this.escape(label)}</span>
-                    </a>
+                    </button>
                 </li>`;
         };
-        const group = (titleKey, list, modifier) => list.length ? `
-            <div class="insight-people__group insight-people__group--${modifier}">
-                <h3 class="insight-subtitle">${this.escape(this.t(titleKey))}</h3>
-                <ul class="insight-people">${list.map(person).join('')}</ul>
+        const group = (key, list) => list.length ? `
+            <div class="insight-people__group insight-people__group--${key}">
+                <h3 class="insight-subtitle">${this.escape(this.t(key))}</h3>
+                <ul class="insight-people">${list.map((entry, index) => person(entry, index, key)).join('')}</ul>
             </div>` : '';
-        body.innerHTML = `<div class="insight-people__groups">${group('actors', actors, 'actors')}${group('directors', directors, 'directors')}</div>`;
+        body.innerHTML = `
+            <div class="insight-people__groups">
+                ${group('actors', actors)}${group('directors', directors)}
+                <div class="insight-films" id="insightFilms"></div>
+            </div>`;
+        this.bindPeople(body, { actors, directors });
         return section;
+    }
+
+    /** One panel for all people: a press shows that person's films, a second press closes it. */
+    bindPeople(body, people) {
+        const panel = body.querySelector('.insight-films');
+        const buttons = [...body.querySelectorAll('.insight-person')];
+        body.addEventListener('click', event => {
+            const more = event.target.closest('.insight-films__more');
+            if (more) {
+                const rest = [...more.previousElementSibling.querySelectorAll('li[hidden]')];
+                rest.forEach(item => { item.hidden = false; });
+                rest[0]?.querySelector('a')?.focus({ preventScroll: true });
+                more.remove();
+                return;
+            }
+            const button = event.target.closest('.insight-person');
+            if (!button) return;
+            const opening = button.getAttribute('aria-expanded') !== 'true';
+            buttons.forEach(item => item.setAttribute('aria-expanded', String(opening && item === button)));
+            panel.classList.toggle('is-open', opening);
+            // A closing panel keeps its films and pointer until it has folded.
+            if (!opening) return;
+            buttons.forEach(item => item.classList.toggle('is-current', item === button));
+            const { group, index } = button.dataset;
+            panel.dataset.group = group;
+            panel.innerHTML = this.personFilms(people[group][Number(index)], group);
+            this.revealFilms(panel, button);
+        });
+    }
+
+    personFilms(entry, group) {
+        const average = entry.liked.reduce((sum, film) => sum + film.score, 0) / entry.liked.length;
+        const note = this.tn('people_liked', entry.count, {
+            average: new Intl.NumberFormat(this.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(average)
+        });
+        const info = film => this.data.titles.get(film.movieId) || { title: this.i18n.get('profile.unknown_title'), posterUrl: '' };
+        const image = url => url ? `<img src="${this.escape(url)}" alt="" loading="lazy" decoding="async">` : '';
+        const score = film => this.escape(this.t('people_score')).replace('{n}', `<b>${this.escape(film.score)}</b>`);
+        const list = (className, films, shown, item) => `
+            <ul class="${className}">${films.map((film, index) => item(film, index < shown ? '' : ' hidden')).join('')}</ul>
+            ${films.length > shown ? `<button type="button" class="btn btn-sm btn-outline insight-films__more">${this.escape(this.t('people_more', { n: films.length - shown }))}</button>` : ''}`;
+        const liked = (film, hidden) => `
+            <li${hidden}>
+                <a class="insight-poster" href="${this.escape(this.movieUrl(film.movieId))}" title="${this.escape(info(film).title)}">
+                    <span class="insight-poster__image">${image(info(film).posterUrl)}</span>
+                    <span class="insight-films__title">${this.escape(info(film).title)}</span>
+                    <span class="insight-films__score">${score(film)}</span>
+                </a>
+            </li>`;
+        const other = (film, hidden) => `
+            <li${hidden}>
+                <a class="insight-film" href="${this.escape(this.movieUrl(film.movieId))}" title="${this.escape(info(film).title)}">
+                    <span class="insight-film__poster">${image(info(film).posterUrl)}</span>
+                    <span class="insight-film__text">
+                        <span class="insight-films__title">${this.escape(info(film).title)}</span>
+                        <span class="insight-films__score">${score(film)}</span>
+                    </span>
+                </a>
+            </li>`;
+        return `
+            <div class="insight-films__panel">
+                <div>
+                    <h3 class="insight-films__name">${this.escape(entry.name)}</h3>
+                    <p class="insight-films__note">${this.escape(note)}</p>
+                    <a class="insight-films__link" href="../person-details/person-details.html?personKey=kp:${encodeURIComponent(entry.id)}">${this.escape(group === 'directors' ? this.t('people_director_page') : this.t('people_actor_page'))}</a>
+                </div>
+                <div>
+                    ${list('insight-films__grid', entry.liked, LIKED_FILMS_SHOWN, liked)}
+                    ${entry.other.length ? `
+                    <div class="insight-films__other">
+                        <h4 class="insight-subtitle">${this.escape(this.t('people_other'))}</h4>
+                        ${list('insight-films__list', entry.other, OTHER_FILMS_SHOWN, other)}
+                    </div>` : ''}
+                </div>
+            </div>`;
+    }
+
+    /** Scrolls a panel that opened below the fold into view, never past the pressed person. */
+    async revealFilms(panel, button) {
+        await Promise.allSettled(panel.getAnimations().map(animation => animation.finished));
+        if (!button.isConnected || button.getAttribute('aria-expanded') !== 'true') return;
+        const below = panel.getBoundingClientRect().bottom + 24 - window.innerHeight;
+        const above = button.getBoundingClientRect().top - 88;
+        const distance = Math.min(below, above);
+        if (distance <= 0) return;
+        const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.scrollBy({ top: distance, behavior: calm ? 'auto' : 'smooth' });
     }
 
     poster({ movieId, title, posterUrl, caption }) {

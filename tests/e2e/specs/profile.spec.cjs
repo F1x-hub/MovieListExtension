@@ -39,6 +39,8 @@ async function seedRatings(uid, count) {
             genres: [{ name: index % 3 ? 'драма' : 'фантастика' }],
             persons: [
                 { id: 1, name: 'Анна Вымышленная', enProfession: 'actor', photo: `https://image.tmdb.org/t/p/w342${FILMS[0].poster_path}` },
+                // Nine films rated 8+ among the first fourteen: a second, short row of posters.
+                ...(index < 14 ? [{ id: 4, name: 'Вера Выдуманная', enProfession: 'actor', photo: `https://image.tmdb.org/t/p/w342${FILMS[1].poster_path}` }] : []),
                 { id: 2 + (index % 2), name: index % 2 ? 'Пётр Ненастоящий' : 'Олег Придуманный', enProfession: 'director' }
             ]
         });
@@ -181,7 +183,7 @@ for (const theme of ['dark', 'light']) {
             await page.locator('#profileTabStatisticsBtn').click();
             await expect(page.locator('.insight-genres__row')).toHaveCount(2);
             await expect(page.locator('.insight-decades__item')).toHaveCount(3);
-            await expect(page.locator('.insight-person')).toHaveCount(3);
+            await expect(page.locator('.insight-person')).toHaveCount(4);
             await expect.poll(() => reads.length).toBeGreaterThan(0);
             await expect(page.locator('#profileInsights .app-loader')).toHaveCount(0);
             // A portrait keeps its whole picture inside its frame.
@@ -191,6 +193,46 @@ for (const theme of ['dark', 'light']) {
                 expect(content).toBeLessThanOrEqual(height);
             }
             await page.screenshot({ path: testInfo.outputPath(`statistics-${theme}.png`), fullPage: true });
+
+            // A person shows the films behind their number; one panel serves everyone.
+            const people = page.locator('.insight-person');
+            const panel = page.locator('.insight-films');
+            await expect(panel).toBeHidden();
+            for (const index of [0, 1]) {
+                const person = people.nth(index);
+                const count = await person.locator('.insight-person__count').innerText();
+                await person.click();
+                await waitForStillness(page);
+                await expect(person).toHaveAttribute('aria-expanded', 'true');
+                await expect(page.locator('.insight-person[aria-expanded="true"]')).toHaveCount(1);
+                await expect(panel.locator('.insight-films__name')).toHaveText(await person.locator('.insight-person__name').innerText());
+                await expect(panel.locator('.insight-films__note')).toContainText(`${count} с оценкой 8 и выше, в среднем`);
+                await expect(panel.locator('.insight-films__grid > li')).toHaveCount(parseInt(count, 10));
+                await expect(panel.locator('.insight-films__grid > li:visible')).toHaveCount(Math.min(parseInt(count, 10), 14));
+                const scores = await panel.locator('.insight-films__score b').allInnerTexts();
+                expect(scores.map(Number)).toEqual(scores.map(Number).sort((a, b) => b - a));
+                // The pointer stands under the chosen photo.
+                const offset = await person.locator('.insight-person__photo').evaluate(photo => {
+                    const box = photo.getBoundingClientRect();
+                    const films = document.querySelector('.insight-films');
+                    const left = parseFloat(getComputedStyle(films, '::before').left) + films.parentElement.getBoundingClientRect().left + 6;
+                    return Math.abs(left - (box.left + box.width / 2));
+                });
+                expect(offset).toBeLessThan(2);
+                await page.screenshot({ path: testInfo.outputPath(`statistics-films-${index}-${theme}.png`), fullPage: true });
+            }
+            await expect(panel.locator('.insight-films__link')).toHaveAttribute('href', /personKey=kp:\d+$/);
+            await people.nth(1).click();
+            await expect(panel).toBeHidden();
+            await expect(page.locator('.insight-person[aria-expanded="true"]')).toHaveCount(0);
+            // The rest of a long list opens in place, and focus moves to the first film it adds.
+            await people.nth(0).click();
+            await panel.locator('.insight-films__grid + .insight-films__more').click();
+            await expect(panel.locator('.insight-films__grid > li:visible')).toHaveCount(15);
+            await expect(panel.locator('.insight-films__grid > li').nth(14).locator('a')).toBeFocused();
+            await expect(panel.locator('.insight-films__grid + .insight-films__more')).toHaveCount(0);
+            // Left open, so the narrow windows below are checked with it.
+
             expect(new URL(page.url()).searchParams.get('tab')).toBe('statistics');
             await expect(page.locator('#profileTabOverview')).toBeHidden();
             await expect(page.locator('#profileTabAchievements')).toBeHidden();
