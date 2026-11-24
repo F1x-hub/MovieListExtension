@@ -6,6 +6,7 @@
  */
 
 import { renderScene } from './AchievementScenes.js';
+import { CAT_FRAME } from './catTrail.js';
 
 const PALETTES = [
     ['#F2C091', '#C9824A', '#8E5428', '#4A2A12'],
@@ -197,6 +198,7 @@ const GLYPHS = {
     flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>',
     chart: '<path d="M3 3v18h18"/><path d="M7 16v-3"/><path d="M11 16v-6"/><path d="M15 16v-9"/><path d="M19 16V4"/>',
     moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+    cat: '<path d="M4 3l4 4h8l4-4v10a8 8 0 0 1-16 0Z"/><path d="M9 12h.01"/><path d="M15 12h.01"/><path d="M11 16l1 1 1-1"/>',
     pumpkin: '<ellipse cx="12" cy="14.5" rx="9" ry="7"/><path d="M12 7.5c-2.5 2-2.5 12 0 14"/><path d="M12 7.5c2.5 2 2.5 12 0 14"/><path d="M12 7.5V4c1-1 2.5-1 3 0"/>',
     tree: '<path d="M12 2 7 8h3l-4 6h3l-4 6h14l-4-6h3l-4-6h3z"/><path d="M12 20v2"/>'
 };
@@ -266,10 +268,11 @@ export function renderBadge(def, tier, { title = '' } = {}) {
  * Profile rank frame around the avatar: the same metals and ornaments as the
  * badge tiers drawn as a ring. The ring's inner edge (radius 39 of 120) sits
  * on the avatar's edge, so the overlay is sized 120/78 of the avatar.
- * @param {number} level - rank 1..7
+ * @param {number} level - rank 1..7, or CAT_FRAME for the cat's
  * @param {{label?: boolean}} [options] - label: false leaves the ribbon blank for small previews
  */
 export function renderAvatarFrame(level, { label = true } = {}) {
+    if (Number(level) === CAT_FRAME) return kittyFrame(label);
     const rank = Math.max(1, Math.min(7, Number(level) || 1));
     const p = PALETTES[rank - 1];
     let s = '';
@@ -303,6 +306,19 @@ export function renderAvatarFrame(level, { label = true } = {}) {
     if (rank >= 6) s += crown(p, rank === 7, CY - 37);
     s += ribbon(p, rank, label ? (rank === 7 ? '★ VII ★' : ROMAN[rank - 1]) : '', CY + 41);
     return `<svg class="rank-frame" viewBox="0 0 120 120" aria-hidden="true">${s}</svg>`;
+}
+
+/**
+ * The cat's frame: a 2280x1900 picture around (1140, 990), scaled so its
+ * opening (radius 709) overlaps the photo's edge like the rank rings do.
+ * The lettering is part of a second picture, left out of small previews.
+ */
+function kittyFrame(label) {
+    const k = 38.6 / 709, x = CX - 1140 * k, y = CY - 990 * k;
+    const path = `src/shared/assets/frames/kitty${label ? '-label' : ''}.webp`;
+    const url = globalThis.chrome?.runtime?.getURL ? globalThis.chrome.runtime.getURL(path) : '/' + path;
+    const s = `<image href="${url}" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${(2280 * k).toFixed(2)}" height="${(1900 * k).toFixed(2)}"/>`;
+    return `<svg class="rank-frame rank-frame--cat" viewBox="0 0 120 120" aria-hidden="true">${s}</svg>`;
 }
 
 /** Wings for the avatar frame: rooted at the ring so the feathers stay outside the photo. */

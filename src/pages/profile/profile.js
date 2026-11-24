@@ -4,6 +4,7 @@ import { renderShowcase, SYNC_INTERVAL_MS } from '../../shared/achievements/Achi
 import { AchievementService } from '../../shared/achievements/AchievementService.js';
 import { AchievementsView } from '../../shared/achievements/AchievementsView.js';
 import { frameLevel, rankFor, totalPoints } from '../../shared/achievements/AchievementEngine.js';
+import { catFrameUnlocked } from '../../shared/achievements/catTrail.js';
 import { renderAvatarFrame } from '../../shared/achievements/AchievementBadge.js';
 import { compressAnimatedImage } from '../../shared/utils/animatedWebp.js';
 
@@ -540,8 +541,8 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
             i18n,
             db: firebaseManager.db,
             profileService: this.profileService,
-            onSynced: ({ stored, points }) => this.applyAchievements(stored, points),
-            onFrameChange: level => this.saveRankFrameLevel(level)
+            onSynced: ({ stored, points, persist }) => this.applyAchievements(stored, points, persist),
+            onFrameChange: (level, options) => this.saveRankFrameLevel(level, options)
         });
         if (this.insightsView) Object.assign(this.insightsView, { db: firebaseManager.db, profileService: this.profileService, userService: this.userService });
 
@@ -1417,9 +1418,10 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
     }
 
     /** Stores the chosen frame (null follows the current rank); the picker already updated the preview. */
-    async saveRankFrameLevel(level) {
+    async saveRankFrameLevel(level, { show = false } = {}) {
         const uid = this.currentUser?.uid;
         if (!uid || this.viewingOtherUser || !this.userProfile) return;
+        if (show && this.userProfile.showRankFrame === false) this.saveRankFrameVisibility(true);
         this.renderAchievements();
         clearTimeout(this.frameSaveTimer);
         // Paging through frames quickly writes once, for the last choice.
@@ -1458,11 +1460,13 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
     }
 
     /** Keeps the showcase and the profile cache in step with a fresh recompute. */
-    applyAchievements(stored, points) {
+    applyAchievements(stored, points, persist = false) {
         if (!this.userProfile) return;
         this.userProfile.achievements = stored;
         this.userProfile.achievementPoints = points;
         this.renderAchievements();
+        // What no recompute can find again must not be missing from the cached profile.
+        if (persist && this.currentUser?.uid) this.saveProfileCache(this.currentUser.uid, this.userProfile, this.userProfile.stats);
         try { localStorage.setItem(`achievementsSyncedAt_${this.userProfile.uid}`, String(Date.now())); } catch { /* optional throttle */ }
     }
 
@@ -1473,15 +1477,15 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         const rank = rankFor(totalPoints(this.userProfile.achievements || {}));
         // The owner can hide the frame; it is then hidden for every viewer.
         const showFrame = this.userProfile.showRankFrame !== false;
+        const shownLevel = frameLevel(rank.level, this.userProfile.rankFrameLevel, catFrameUnlocked(this.userProfile.achievements));
         const toggleWrap = document.getElementById('achFrameToggleWrap');
         if (toggleWrap) {
-            toggleWrap.hidden = this.viewingOtherUser || rank.level === 0;
+            toggleWrap.hidden = this.viewingOtherUser || shownLevel === 0;
             document.getElementById('achFrameToggle').checked = showFrame;
         }
-        const shownLevel = frameLevel(rank.level, this.userProfile.rankFrameLevel);
         if (!this.viewingOtherUser) this.publishNavRankFrame(showFrame ? shownLevel : 0);
         if (frame) {
-            const visible = rank.level > 0 && showFrame;
+            const visible = shownLevel !== 0 && showFrame;
             frame.hidden = !visible;
             // The ribbon hangs below the photo: keep it clear of the name.
             frame.parentElement?.classList.toggle('has-rank-frame', visible);
@@ -1521,6 +1525,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
             this.userProfile.achievements = synced.stored;
             this.userProfile.achievementPoints = synced.points;
             this.renderAchievements();
+            if (synced.trailStep && typeof Utils !== 'undefined') Utils.showToast(i18n.get(`achievements.cat.toast_${synced.trailStep}`), 'info');
             if (hadRecord && synced.unlocked.length && typeof Utils !== 'undefined') {
                 const ids = new Set(synced.unlocked.map(item => item.id));
                 Utils.showToast(i18n.get('achievements.unlocked_many').replace('{n}', ids.size), 'success');

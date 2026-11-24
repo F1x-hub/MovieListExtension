@@ -279,3 +279,236 @@ test('a profile without ratings shows one next step', async ({ page, extension }
     await expect(page.locator('#profileInsights')).toContainText('Статистика появится после первых оценок');
     await page.screenshot({ path: testInfo.outputPath('empty.png'), fullPage: true });
 });
+
+/** Moves the hand over the cat's head: `passes` strokes, one per direction. */
+async function pet(page, passes, { stepMs = 22, reach = 0.15, samples = 14 } = {}) {
+    const stage = await page.locator('.cat-den__stage').boundingBox();
+    const at = share => stage.x + stage.width * (0.5 + share);
+    const y = stage.y + stage.height * 0.36;
+    for (let pass = 0; pass < passes; pass++) {
+        const [from, to] = pass % 2 ? [reach, -reach] : [-reach, reach];
+        for (let index = 0; index <= samples; index++) {
+            await page.mouse.move(at(from + (to - from) * index / samples), y);
+            if (stepMs) await page.waitForTimeout(stepMs);
+        }
+    }
+}
+
+for (const theme of ['dark', 'light']) {
+    test(`the cat trail: call, box, petting and the frame (${theme})`, async ({ page, extension }, testInfo) => {
+        const { uid } = extension.user;
+        const user = async () => (await emulator.listDocuments('users')).find(item => item.id === uid);
+        const trail = async () => (await user())?.achievements?.cat_trail;
+        const shot = name => page.screenshot({ path: testInfo.outputPath(`cat-${theme}-${name}.png`) });
+        const den = page.locator('.cat-den');
+        const stage = page.locator('.cat-den__stage');
+        const title = page.locator('.cat-den__title');
+        const frame = page.locator('#profileRankFrame');
+        const label = page.locator('#achFrameName');
+        const errors = [];
+        page.on('pageerror', error => errors.push(error.message));
+
+        await test.step('a silhouette stands first in the picker and opens the den', async () => {
+            await open(page, extension, theme, '?tab=achievements');
+            await expect(label).toHaveText('Без рамки');
+            await page.locator('#achFramePrev').click();
+            await expect(page.locator('#achFramePrev')).toBeDisabled();
+            await expect(label).toHaveText('Там кто-то есть');
+            await expect(frame).toBeHidden();
+            expect((await user()).rankFrameLevel).toBeUndefined();
+            await page.locator('.cat-peek').scrollIntoViewIfNeeded();
+            await page.waitForTimeout(500);
+            await shot('picker-0');
+            await page.locator('.cat-peek').click();
+            await expect(title).toHaveText('Там кто-то есть');
+            await expect(stage).toHaveAttribute('data-step', '0');
+            await expect(page.locator('.cat-paw.is-passed')).toHaveCount(0);
+            await page.waitForTimeout(900);
+            await shot('step-0');
+            await page.keyboard.press('Escape');
+            await expect(den).toHaveCount(0);
+            await expect(page.locator('.cat-peek')).toBeFocused();
+        });
+
+        await test.step('«мяу» in a review opens the eyes', async () => {
+            await emulator.putDocument(`ratings/${uid}_${FILMS[0].id}`, { userId: uid, movieId: FILMS[0].id, rating: 8, comment: 'Ну мяу же!', movieTitle: FILMS[0].title || FILMS[0].name, createdAt: new Date(NOW) });
+            // Not open(): setting the theme loads the page once more, and the step is announced only once.
+            await page.reload();
+            await expect(page.locator('.utils-toast').filter({ hasText: 'открыл глаза' })).toBeVisible();
+            expect((await trail()).steps).toBe(1);
+            const card = page.locator('[data-id="cat_trail"]');
+            await expect(card).toContainText('Он вас услышал');
+            await card.scrollIntoViewIfNeeded();
+            await expect(card.locator('.ach-card__eyes')).toBeVisible();
+            await shot('card-1');
+            await card.click();
+            // The step plays out: the den opens as it was left.
+            await expect(stage).toHaveAttribute('data-step', '0');
+            await expect(stage).toHaveAttribute('data-step', '1');
+            await expect(page.locator('.cat-paw.is-passed')).toHaveCount(1);
+            await page.waitForTimeout(3200);
+            await shot('step-1');
+            // A hand over it: the lids close, but the cat and its lashes stay in sight and the dialog does not jump.
+            const size = () => den.evaluate(dialog => [dialog.offsetTop, dialog.offsetHeight]);
+            const before = await size();
+            await page.mouse.move(0, 0);
+            await pet(page, 1);
+            await expect(stage).toHaveClass(/is-shy/);
+            await expect(page.locator('.cat-den__hint')).toHaveText('Зажмурился. Значит, ещё рано.');
+            const lid = side => page.locator(`[data-cat="eye-${side}"]`).evaluate(eye => Number(getComputedStyle(eye).getPropertyValue('--lid')));
+            await expect.poll(() => lid('l')).toBeGreaterThan(0.9);
+            expect(await page.locator('.cat-eyes').evaluate(eyes => Number(getComputedStyle(eyes).opacity))).toBe(1);
+            expect(await page.locator('[data-cat="figure"]').getAttribute('opacity')).toBe('1');
+            expect(await size()).toEqual(before);
+            await shot('shy');
+            await expect(page.locator('.cat-den__hint')).toHaveText('Подглядывает одним глазом.');
+            await page.waitForTimeout(300);
+            await shot('peek');
+            await page.mouse.move(0, 0);
+            await expect(stage).not.toHaveClass(/is-shy/);
+            await expect.poll(() => lid('l')).toBeLessThan(0.1);
+            await page.locator('.cat-den__close').click();
+            await expect(den).toHaveCount(0);
+        });
+
+        await test.step('a box with a film brings it out', async () => {
+            await emulator.putDocument(`users/${uid}/collections/box`, { id: 'box', name: 'Коробка', icon: 'L', movieIds: [] });
+            await open(page, extension, theme, '?tab=achievements');
+            await page.waitForTimeout(1500);
+            expect((await trail()).steps).toBe(1);
+            await emulator.putDocument(`users/${uid}/collections/box`, { id: 'box', name: 'Коробка', icon: 'L', movieIds: [FILMS[0].id] });
+            await page.reload();
+            await expect(page.locator('.utils-toast').filter({ hasText: 'залез в вашу коробку' })).toBeVisible();
+            expect((await trail()).steps).toBe(2);
+            await page.locator('#achFramePrev').click();
+            await expect(label).toHaveText('Залез в вашу коробку');
+            await page.locator('.cat-peek').scrollIntoViewIfNeeded();
+            await page.waitForTimeout(700);
+            await shot('picker-2');
+            await page.locator('.cat-peek').hover();
+            await page.waitForTimeout(700);
+            await shot('picker-2-hover');
+            await page.locator('.cat-peek').click();
+            await expect(stage).toHaveAttribute('data-step', '2');
+            await page.waitForTimeout(900);
+            await shot('sniff');
+            await expect(title).toHaveText('Залез в вашу коробку');
+            await expect(stage).toHaveAttribute('role', 'button');
+            await page.waitForTimeout(700);
+            await shot('step-2');
+        });
+
+        await test.step('hurrying startles it, a slow hand does not', async () => {
+            await pet(page, 2);
+            await expect(stage).toHaveAttribute('data-strokes', '2');
+            await pet(page, 3, { stepMs: 0, reach: 0.19, samples: 6 });
+            await expect(stage).toHaveClass(/is-startled/);
+            await shot('startled');
+            await expect(stage).not.toHaveClass(/is-startled/);
+            await page.mouse.move(0, 0);
+            await pet(page, 5);
+            await shot('petting');
+            for (let turn = 0; turn < 8 && await page.locator('.is-revealed').count() === 0; turn++) await pet(page, 1 + turn % 2);
+            await expect(page.locator('.cat-den__hint')).toHaveText('Медленно моргнул. На кошачьем это значит «я вам верю».');
+            await expect(title).toHaveText('Свой человек');
+            await baseExpect(page.locator('.cat-den__bit').nth(20)).toBeAttached({ timeout: 8000 });
+            await page.waitForTimeout(250);
+            await shot('reveal');
+            // Every part of the frame was found and drawn.
+            expect(await page.locator('.cat-den__frame image').evaluateAll(images => Promise.all(images.map(image => fetch(image.href.baseVal).then(response => response.ok))))).not.toContain(false);
+            await page.waitForTimeout(3000);
+            await shot('done');
+            await expect(page.locator('.cat-paw.is-passed')).toHaveCount(3);
+            await expect.poll(async () => (await trail())?.tier).toBe(1);
+            // A reward, not a rank: nothing but its own points moves.
+            expect((await user()).achievements.cat_trail.steps).toBe(3);
+        });
+
+        await test.step('the frame is worn, saved and drawn around the photo', async () => {
+            await page.locator('[data-den="wear"]').click();
+            await expect(den).toHaveCount(0);
+            await expect(label).toHaveText('Рамка: Kitty');
+            await expect(frame.locator('image')).toHaveAttribute('href', /kitty-label\.webp$/);
+            await expect.poll(async () => (await user()).rankFrameLevel).toBe(-1);
+            await expect(page.locator('[data-id="cat_trail"]')).toContainText('Свой человек');
+            const loaded = await page.evaluate(() => fetch(document.querySelector('#profileRankFrame image').href.baseVal).then(response => response.ok));
+            expect(loaded).toBe(true);
+            const [photo, overlay] = await Promise.all([page.locator('.profile-photo').boundingBox(), frame.locator('svg').boundingBox()]);
+            expect(Math.abs(photo.x + photo.width / 2 - overlay.x - overlay.width / 2)).toBeLessThan(1);
+            expect(Math.abs(photo.y + photo.height / 2 - overlay.y - overlay.height / 2)).toBeLessThan(1);
+            const [whiskers, name] = await Promise.all([frame.locator('image').boundingBox(), page.locator('.profile-name').first().boundingBox()]);
+            expect(whiskers.x + whiskers.width * 2259 / 2280).toBeLessThanOrEqual(name.x);
+            // Other pages draw it in the bar, without the lettering.
+            await expect(page.locator('#navRankFrame image')).toHaveAttribute('href', /kitty\.webp$/);
+            await page.waitForTimeout(1500);
+            await shot('worn');
+        });
+
+        await test.step('it outlives the review and the box, and can be taken off', async () => {
+            await emulator.putDocument(`users/${uid}/collections/box`, { id: 'box', name: 'Разное', icon: 'L', movieIds: [] });
+            await open(page, extension, theme, '?tab=achievements');
+            await expect(frame.locator('image')).toBeVisible();
+            await page.setViewportSize({ width: 390, height: 900 });
+            expect(await overflow(page)).toBeLessThanOrEqual(0);
+            await page.setViewportSize(config.VIEWPORT);
+            await page.locator('#achFrameNext').click();
+            await expect.poll(async () => (await user()).rankFrameLevel).toBeUndefined();
+            await page.locator('[data-id="cat_trail"]').click();
+            await expect(page.locator('#achDialogCondition')).toHaveText('Позвать кота, дать ему коробку и погладить');
+            await page.waitForTimeout(400);
+            await shot('dialog');
+            expect((await trail()).tier).toBe(1);
+        });
+        expect(errors).toEqual([]);
+    });
+}
+
+test('the cat can be petted with the keyboard, in a narrow window and without motion', async ({ page, extension }, testInfo) => {
+    await emulator.putDocument(`users/${extension.user.uid}`, {
+        displayName: extension.user.displayName, email: extension.user.email, approvalStatus: 'approved', isAdmin: false,
+        achievements: { cat_trail: { tier: 0, steps: 2 } }
+    });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await open(page, extension, 'dark', '?tab=achievements');
+    await page.locator('[data-id="cat_trail"]').click();
+    const stage = page.locator('.cat-den__stage');
+    await expect(stage).toHaveAttribute('role', 'button');
+    await stage.focus();
+    for (let index = 0; index < 8; index++) {
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(320);
+    }
+    await expect(stage).toHaveAttribute('data-strokes', '8');
+    await page.screenshot({ path: testInfo.outputPath('cat-narrow.png') });
+    expect(await page.locator('.cat-den').evaluate(dialog => dialog.scrollWidth - dialog.clientWidth)).toBeLessThanOrEqual(0);
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.cat-den__title')).toHaveText('Свой человек');
+    await expect(page.locator('[data-den="wear"]')).toBeFocused();
+    await expect(page.locator('.cat-den__reward')).toBeVisible();
+    expect(await page.locator('.cat-den').evaluate(dialog => dialog.scrollWidth - dialog.clientWidth)).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: testInfo.outputPath('cat-narrow-done.png') });
+});
+
+test('a press plays the cat\'s story to its end at once', async ({ page, extension }) => {
+    await emulator.putDocument(`users/${extension.user.uid}`, {
+        displayName: extension.user.displayName, email: extension.user.email, approvalStatus: 'approved', isAdmin: false,
+        achievements: { cat_trail: { tier: 0, steps: 2 } }
+    });
+    await open(page, extension, 'dark', '?tab=achievements');
+    await page.locator('[data-id="cat_trail"]').click();
+    const stage = page.locator('.cat-den__stage');
+    await expect(stage).toHaveAttribute('data-step', '0');
+    await stage.click();
+    await baseExpect(stage).toHaveAttribute('role', 'button', { timeout: 4500 });
+    await expect(page.locator('.cat-den__title')).toHaveText('Залез в вашу коробку');
+    await expect.poll(() => page.locator('[data-cat="head"]').getAttribute('transform')).toMatch(/^translate\(32[0-9.]* (19|20)/);
+    await expect(page.locator('[data-cat="paw-r"]')).toHaveAttribute('display', 'inline');
+});
+
+test('a frame chosen without the trail is not shown', async ({ page, extension }) => {
+    await emulator.putDocument(`users/${OTHER_UID}`, { displayName: 'Второй Зритель', username: 'second', displayNameFormat: 'username', approvalStatus: 'approved', isAdmin: false, rankFrameLevel: -1, createdAt: new Date('2025-10-15T12:00:00Z') });
+    await open(page, extension, 'dark', `?userId=${OTHER_UID}`);
+    await expect(page.locator('#profileName')).toContainText('second');
+    await expect(page.locator('#profileRankFrame')).toBeHidden();
+});

@@ -79,6 +79,13 @@ Color is allowed only when it carries content or an unavoidable semantic:
    is a dark scrim in both themes; its status panel, buttons and close control
    use only the neutral `--ui-*` tokens, and a sent or failed result has an icon
    next to its text.
+9. the cat trail: inside `.cat-scene` (the den opened from the achievements tab and
+   its silhouette in the frame picker) a cinema storeroom at night with a cat, a
+   cardboard box and the pink of the cat's frame, the same in both themes; on the
+   secret card only the cat's eyes. The dialog around it, its texts, paw prints and
+   buttons stay neutral, and every state is also told in text. The dialog keeps its
+   size while the text changes. The cat lives only while the scene is open, a press
+   plays any story to its end, and under reduced motion poses change at once.
 
 Exceptions must remain local, documented, and visually subordinate to the
 neutral interface. Semantic states require a label, icon, shape, border style, or
@@ -557,6 +564,7 @@ Each generic visual primitive has one owner:
 | Filter choices, ranges and discovery panels | `src/shared/components/FilterControls.js` and `src/shared/styles/filter-controls.css` |
 | Movie cards | `src/shared/styles/movie-card.css` and `MovieCard.js` |
 | Rating dialog (Movie Details and Ratings) | `src/shared/styles/rating-dialog.css` and `RatingDialog.js` |
+| Cat trail scene | `src/shared/styles/cat-den.css`, `CatDen.js`, `CatDenArt.js`, `CatPuppet.js` and `CatPeek.js` |
 | Awards and nominations (film tab, person page) | `src/shared/styles/awards.css` and `AwardsList.js` |
 | Navigation | `src/shared/styles/navigation.css` and `Navigation.js` |
 | Icons | `scripts/icon-set/` (drawings) and `src/shared/utils/Icons.js` (generated block) |

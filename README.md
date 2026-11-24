@@ -473,6 +473,7 @@ keeps npm-compatible three-component semver metadata.
 - Profile: the main numbers, with hours watched, stand beside the name; «Продолжить просмотр» is three cards in a row with the time left; another user's profile opens with the taste match; a profile without ratings shows one next step instead of empty sections.
 - The theme is chosen in place instead of in an old dialog: three buttons in the account menu, and three cards with previews in Settings → «Основные». «Как в системе» is new: it follows Chrome's mode while the page is open. Dark stays the default.
 - A guest can open Settings, and so change the theme and the language, with a button beside «Войти».
+- Profile: a «Kitty» avatar frame, earned by a secret achievement in three steps: say «мяу» in a review or a comment, put a film into a collection named «Коробка», and pet the cat. A silhouette stands first in the frame picker and opens the scene, a cinema storeroom at night: the cat looks at the pointer, squeezes its eyes shut and peeks when a hand comes too soon, climbs into the box, ducks from a hurried hand and turns into the frame around your photo. The keyboard works too, a press plays a story to its end, and reduced motion is respected. Steps stay passed after the review or the collection is deleted, and the points come on top of those ranks are counted from.
 
 ### Fixes
 

@@ -10,7 +10,9 @@
  * the next year). `id` names the SeasonalThemeService season whose dates it
  * keeps, and windows that start before `since` do not count. Seasonal points
  * are a bonus: they add to the total but not to the maximum that ranks are
- * shares of, because they can be earned only in their season.
+ * shares of, because they can be earned only in their season. `bonus` does the
+ * same for an achievement outside seasons, and `trail` marks the cat trail
+ * (catTrail.js), whose steps are stored next to its tier.
  */
 
 export const CATEGORIES = ['ratings', 'variety', 'watching', 'lists', 'community', 'marathon', 'profile', 'special'];
@@ -56,6 +58,7 @@ export const ACHIEVEMENTS = [
     { id: 'first_step', category: 'special', icon: 'flag', metric: 'ratings', tiers: [1], oneOff: true },
     { id: 'full_spectrum', category: 'special', icon: 'chart', metric: 'distinctScores', tiers: [10], oneOff: true },
     { id: 'night_owl', category: 'special', icon: 'moon', metric: 'nightRatings', tiers: [10], oneOff: true, hidden: true },
+    { id: 'cat_trail', category: 'special', icon: 'cat', metric: 'catTrail', tiers: [3], oneOff: true, hidden: true, bonus: true, trail: true },
     { id: 'halloween', category: 'special', icon: 'pumpkin', metric: 'halloweenHorror', tiers: [5], oneOff: true, hidden: true,
         season: { id: 'halloween', start: { month: 10, day: 17 }, end: { month: 11, day: 7 } } },
     // The New Year season first ran in 2026, so earlier holidays do not count.

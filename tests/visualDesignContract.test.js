@@ -50,6 +50,8 @@ const exceptionScopedFiles = [
     'src/shared/styles/WordGuessGame.css',
     'src/shared/styles/achievements.css',
     'src/shared/styles/back-to-top.css',
+    // The cat trail: the night scene inside .cat-scene is content art; its dialog uses tokens.
+    'src/shared/styles/cat-den.css',
     'src/shared/styles/comments.css',
     'src/shared/styles/custom-picker.css',
     'src/shared/styles/full-page-auth.css',
@@ -314,6 +316,7 @@ const ROUND_AVATARS = {
     'src/pages/chess/chess.css': ['.chess-avatar'],
     'src/pages/movie-details/movie-details.css': ['.user-rating-avatar'],
     'src/shared/styles/admin.css': ['.skeleton-avatar', '.user-avatar'],
+    'src/shared/styles/cat-den.css': ['.cat-den__photo'],
     'src/shared/styles/components.css': ['.avatar'],
     'src/shared/styles/movie-card.css': ['.mc-rater-avatar', '.mc-user-avatar'],
     'src/shared/styles/navigation.css': ['.battleship-notice__avatar', '.nav-user-avatar', '.reaction-inbox__avatar'],

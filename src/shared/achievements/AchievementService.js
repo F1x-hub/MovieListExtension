@@ -3,13 +3,14 @@
  *
  * Some sources are readable only by their owner (reactions the user gave), so
  * progress is recomputed only for the signed-in user. The result is stored on
- * users/{uid} as `achievements` ({id: {tier, at: {tier: ISO date}}}) plus
+ * users/{uid} as `achievements` ({id: {tier, at: {tier: ISO date}}}; the cat trail adds `steps`) plus
  * `achievementPoints`, and other users see that stored snapshot.
  *
  * Reads: the ratings snapshot ProfileService already shares, one batched
  * movie-metadata read, and `in`/equality queries that bill only for matches.
  */
 import { evaluateAll, computeMetrics, mergeUnlocks, totalPoints } from './AchievementEngine.js';
+import { TRAIL_ID, TRAIL_STEPS, trailSteps } from './catTrail.js';
 
 const IN_QUERY_CHUNK = 30;
 const chunk = (values, size) => {
@@ -71,6 +72,7 @@ export class AchievementService {
             watchlistCount,
             watchingCount,
             collections,
+            catTrail: trailSteps(profile.achievements),
             pinned: Array.isArray(profile.pinnedMovies) ? profile.pinnedMovies : [],
             createdAt: profile.createdAt,
             now: Date.now()
@@ -89,12 +91,31 @@ export class AchievementService {
         const merged = mergeUnlocks(stored, results);
         const points = totalPoints(merged.stored);
         if (merged.changed || Number(profile.achievementPoints) !== points) {
+            // Only the entries that changed: a profile read from an old cache must not take back
+            // what another tab earned, and petting the cat cannot be recomputed.
             await this.db.collection('users').doc(uid).update({
-                achievements: merged.stored,
+                ...Object.fromEntries(merged.changedIds.map(id => [`achievements.${id}`, merged.stored[id]])),
                 achievementPoints: points,
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
         }
-        return { results, metrics, stored: merged.stored, unlocked: merged.unlocked, points };
+        const steps = trailSteps(merged.stored);
+        return {
+            results, metrics, stored: merged.stored, unlocked: merged.unlocked, points,
+            trailStep: steps > trailSteps(stored) ? steps : 0
+        };
+    }
+
+    /** The last step of the cat trail. @returns {Promise<{stored: Object, points: number}>} */
+    async completeTrail(uid, stored = {}) {
+        const entry = { tier: 1, at: { 1: new Date().toISOString() }, steps: TRAIL_STEPS };
+        const next = { ...stored, [TRAIL_ID]: entry };
+        const points = totalPoints(next);
+        await this.db.collection('users').doc(uid).update({
+            [`achievements.${TRAIL_ID}`]: entry,
+            achievementPoints: points,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        return { stored: next, points };
     }
 }

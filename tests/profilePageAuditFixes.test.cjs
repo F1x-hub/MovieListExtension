@@ -111,6 +111,7 @@ const scriptSource = pageSource
     .replace(/^import \{ AchievementService \} from .*$/m, 'class AchievementService {}')
     .replace(/^import \{ AchievementsView \} from .*$/m, 'class AchievementsView {}')
     .replace(/^import \{ frameLevel, rankFor, totalPoints \} from .*$/m, 'const frameLevel = () => 0; const rankFor = () => ({ level: 0 }); const totalPoints = () => 0;')
+    .replace(/^import \{ catFrameUnlocked \} from .*$/m, 'const catFrameUnlocked = () => false;')
     .replace(/^import \{ renderAvatarFrame \} from .*$/m, 'const renderAvatarFrame = () => "";')
     .replace(/^import \{ compressAnimatedImage \} from .*$/m, 'const compressAnimatedImage = (...args) => globalThis.compressAnimatedImageStub(...args);')
     + '\nglobalThis.ProfilePageManager = ProfilePageManager; globalThis.safeImageUrl = safeImageUrl;';

@@ -45,7 +45,8 @@ service cloud.firestore {
         && (!keys.hasAny(['achievementPoints']) || (data.achievementPoints is int && data.achievementPoints >= 0))
         && (!keys.hasAny(['showRankFrame']) || data.showRankFrame is bool)
         && (!keys.hasAny(['rankFrameLevel']) || !('rankFrameLevel' in data)
-          || (data.rankFrameLevel is int && data.rankFrameLevel >= 1 && data.rankFrameLevel <= 7));
+          // -1 is the frame open to everyone; 1-7 are the rank frames.
+          || (data.rankFrameLevel is int && data.rankFrameLevel in [-1, 1, 2, 3, 4, 5, 6, 7]));
     }
 
     // Helper function to check if user is admin

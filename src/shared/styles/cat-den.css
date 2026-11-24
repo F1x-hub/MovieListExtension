@@ -1,0 +1,523 @@
+/* The cat trail: the den dialog, its cat and the silhouette in the frame picker.
+   Inside .cat-scene everything is content art, a night in both themes; the dialog
+   around it is neutral chrome. Shapes and movement belong to CatDenArt and
+   CatPuppet; here are the light and the colors. */
+@property --warm { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --night { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --moon { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --beam { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --face { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --ink { syntax: '<number>'; inherits: true; initial-value: 0; }
+
+/* --warm: how much the cat trusts the viewer; --night: how dark its fur is;
+   --moon and --beam: the window and the projector; --face: what shows in the dark. */
+.cat-scene {
+    --warm: 0;
+    --night: 1;
+    --moon: 0.4;
+    --beam: 0;
+    --face: 0;
+    --lash: #948fab;
+    position: relative;
+    overflow: hidden;
+    background: #0b0a0e;
+    transition: --warm 800ms var(--motion-ease-out), --night 1100ms var(--motion-ease-standard), --moon 1100ms var(--motion-ease-standard),
+        --beam 900ms var(--motion-ease-standard), --face 800ms var(--motion-ease-standard);
+}
+
+.cat-scene[data-step="1"] {
+    --night: 0.8;
+    --moon: 0.38;
+    --face: 0.5;
+}
+
+.cat-scene[data-step="2"] {
+    --night: 0;
+    --moon: 0.14;
+    --beam: 1;
+    --face: 1;
+    --lash: color-mix(in oklab, #cfc8dc, #3d0d22 calc((var(--warm) - 0.08) * 800%));
+}
+
+.cat-layers,
+.cat-room,
+.cat-art,
+.cat-motes,
+.cat-vignette {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* A layer of its own: the cat moves over it without repainting it. */
+.cat-room { will-change: transform; }
+.cat-art { will-change: transform; }
+.cat-vignette { background: radial-gradient(ellipse 72% 78% at 50% 46%, transparent 55%, rgb(0 0 0 / 0.58)); pointer-events: none; }
+
+/* The room. */
+.cat-wall-1 { stop-color: color-mix(in oklab, #262531, #7b2850 calc(var(--warm) * 100%)); }
+.cat-wall-2 { stop-color: color-mix(in oklab, #17161e, #42142e calc(var(--warm) * 100%)); }
+.cat-wall-3 { stop-color: color-mix(in oklab, #0f0e14, #260b1a calc(var(--warm) * 100%)); }
+.cat-floor-1 { stop-color: color-mix(in oklab, #141319, #31101f calc(var(--warm) * 100%)); }
+.cat-floor-2 { stop-color: color-mix(in oklab, #08080b, #13060c calc(var(--warm) * 100%)); }
+.cat-skirting { stroke: color-mix(in oklab, #2c2b37, #7a3152 calc(var(--warm) * 100%)); stroke-opacity: 0.7; }
+.cat-boards { stroke: #000; stroke-opacity: 0.34; }
+.cat-moon { opacity: calc(var(--moon) * (1 - var(--warm))); }
+.cat-beam-color { stop-color: color-mix(in oklab, #ffe6bd, #ffb3cc calc(var(--warm) * 100%)); }
+.cat-beam { opacity: calc(var(--beam) * 0.5); }
+.cat-halo { stop-color: color-mix(in oklab, #a3a8c8, #ff8fb5 calc(var(--warm) * 100%)); }
+.cat-halo-light { opacity: calc(0.1 + var(--beam) * 0.3 + var(--warm) * 0.5); }
+.cat-motes { opacity: calc(var(--beam) * 0.75); pointer-events: none; }
+.cat-motes i { position: absolute; background: #ffe9c9; clip-path: circle(50%); opacity: 0; }
+
+.cat-prop__body { fill: color-mix(in oklab, #111016, #2f0f20 calc(var(--warm) * 100%)); }
+.cat-prop__top { fill: color-mix(in oklab, #1a1921, #40152c calc(var(--warm) * 100%)); }
+.cat-prop__dark { fill: color-mix(in oklab, #08070a, #1d0913 calc(var(--warm) * 100%)); }
+.cat-prop__rim { stroke: color-mix(in oklab, #7a7f9c, #ff9dbe calc(var(--warm) * 100%)); stroke-opacity: calc(0.2 + var(--beam) * 0.22); stroke-width: 1.5; }
+.cat-prop__leg { stroke: color-mix(in oklab, #0d0c11, #260c19 calc(var(--warm) * 100%)); }
+.cat-prop__strip { stroke: color-mix(in oklab, #0d0c11, #260c19 calc(var(--warm) * 100%)); }
+.cat-prop__frames { stroke: color-mix(in oklab, #24232e, #5b1f3d calc(var(--warm) * 100%)); }
+.cat-prop__lamp { fill: color-mix(in oklab, #3c2c1d, #ffbe5c calc(var(--beam) * 100%)); }
+.cat-prop__lens { fill: color-mix(in oklab, #2a2932, #fff3d6 calc(var(--beam) * 100%)); }
+
+/* The cat: graphite, near black at night, the frame's pink once it trusts you. */
+.cat-fur-1 { stop-color: color-mix(in oklab, color-mix(in oklab, #4c4757, #201e27 calc(var(--night) * 100%)), #ff9ebe calc(var(--warm) * 100%)); }
+.cat-fur-2 { stop-color: color-mix(in oklab, color-mix(in oklab, #23212a, #121117 calc(var(--night) * 100%)), #ea4b84 calc(var(--warm) * 100%)); }
+.cat-rim { stop-color: color-mix(in oklab, color-mix(in oklab, #ccd1ea, #8a90b4 calc(var(--night) * 100%)), #fff2f6 calc(var(--warm) * 100%)); }
+.cat-tail-edge { stroke: color-mix(in oklab, color-mix(in oklab, #6d6f88, #3d3f53 calc(var(--night) * 100%)), #ffc4d7 calc(var(--warm) * 100%)); }
+.cat-lit { opacity: calc(var(--beam) * 0.6); }
+.cat-crease { stroke: color-mix(in oklab, #08070a, #7a1840 calc(var(--warm) * 100%)); stroke-opacity: 0.55; }
+.cat-tuft { fill: color-mix(in oklab, color-mix(in oklab, #645e70, #282630 calc(var(--night) * 100%)), #ffd3e1 calc(var(--warm) * 100%)); opacity: 0.62; }
+.cat-forelock { fill: color-mix(in oklab, color-mix(in oklab, #514c5b, #23212a calc(var(--night) * 100%)), #ffa9c5 calc(var(--warm) * 100%)); }
+.cat-ear-1 { stop-color: #ff97b7; }
+.cat-ear-2 { stop-color: color-mix(in oklab, #a83e66, #d93a75 calc(var(--warm) * 100%)); }
+.cat-ear__inner { opacity: calc(var(--face) * 0.95); }
+.cat-ear__hair { stroke: color-mix(in oklab, #6d6679, #ffe3ec calc(var(--warm) * 100%)); opacity: calc(var(--face) * 0.75); }
+
+.cat-stripes { stroke: color-mix(in oklab, #050406, #b32159 calc(var(--warm) * 100%)); opacity: calc((0.42 - var(--night) * 0.1) * (0.2 + var(--face) * 0.8)); }
+.cat-brows { stroke: color-mix(in oklab, #d4d0e2, #fff calc(var(--warm) * 100%)); opacity: calc(var(--face) * 0.4); }
+.cat-muzzle { fill: color-mix(in oklab, #6f687b, #ffc3d6 calc(var(--warm) * 100%)); opacity: calc(var(--face) * var(--face) * 0.62); }
+.cat-blush-color { stop-color: #ff2f72; }
+.cat-blush { opacity: calc(var(--warm) * 0.6); }
+.cat-nose { fill: color-mix(in oklab, #ff86ab, #c2185b calc(var(--warm) * 100%)); opacity: calc(var(--face) * 1.15); }
+.cat-mouth { stroke: color-mix(in oklab, #0d080c, #5c1534 calc(var(--warm) * 100%)); opacity: var(--face); }
+.cat-dots { fill: color-mix(in oklab, #17121a, #a1285a calc(var(--warm) * 100%)); opacity: calc(var(--face) * 0.7); }
+.cat-whisker-1 { stop-color: #f6ecf8; }
+.cat-whisker-2 { stop-color: color-mix(in oklab, #b5acc6, #ff8cbc calc(var(--warm) * 100%)); }
+.cat-whiskers { opacity: calc(var(--face) * 0.9); }
+
+/* Lids: a lash is dark over an open eye and catches the light when it is closed. */
+.cat-eyes { opacity: clamp(0, var(--face) * 4, 1); }
+.cat-eye { --lid: 0; }
+.cat-eye__lash { stroke: color-mix(in oklab, #0c070a, var(--lash) calc(var(--lid) * 100%)); }
+.cat-eye__lower { stroke: color-mix(in oklab, #1a0f12, var(--lash) calc(var(--lid) * 100%)); stroke-opacity: 0.8; }
+
+/* The box. */
+.cat-board-1 { stop-color: #c99a63; }
+.cat-board-2 { stop-color: #86592f; }
+.cat-board-3 { stop-color: #e7bd86; }
+.cat-board-edge { fill: #744d2a; }
+.cat-board-hi { stroke: #fbe3bd; stroke-opacity: 0.75; }
+.cat-board-shade { fill: #2a1606; fill-opacity: 0.24; }
+.cat-tape { fill: #f6e2b8; fill-opacity: 0.55; }
+.cat-tape-hi { fill: #fff; fill-opacity: 0.25; }
+.cat-stamp { fill: #5a3a1d; opacity: 0.82; }
+.cat-stamp__gap { fill: #c08f58; }
+
+@media (prefers-reduced-motion: no-preference) {
+    .cat-beam { animation: cat-flicker 2.4s steps(1) infinite; }
+    .cat-motes i { animation: cat-mote calc(9s + var(--mote) * 1.1s) linear calc(var(--mote) * -2.3s) infinite; }
+}
+
+/* A projector never shines quite evenly; the steps stay within a few percent. */
+@keyframes cat-flicker {
+    0%, 100% { opacity: calc(var(--beam) * 0.5); }
+    18% { opacity: calc(var(--beam) * 0.47); }
+    31% { opacity: calc(var(--beam) * 0.515); }
+    56% { opacity: calc(var(--beam) * 0.485); }
+    74% { opacity: calc(var(--beam) * 0.51); }
+}
+
+@keyframes cat-mote {
+    0% { transform: translate(0, 18px); opacity: 0; }
+    20%, 75% { opacity: 1; }
+    100% { transform: translate(-34px, -46px); opacity: 0; }
+}
+
+/* The silhouette in the frame picker. */
+.cat-peek {
+    display: block;
+    width: 96px;
+    height: 96px;
+    padding: 0;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+}
+
+.cat-peek::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
+    pointer-events: none;
+}
+
+.cat-peek:hover { border-color: var(--theme-border-hover); }
+.cat-peek:focus-visible { outline: 2px solid var(--ui-color-content); outline-offset: 2px; }
+.cat-peek[data-step="0"] { --moon: 0.72; }
+.cat-peek[data-step="1"] { --moon: 0.66; }
+
+/* The secret card: the cat's eyes through the dark badge, and more of it once it is in the box. */
+.ach-card[data-trail] .ach-card__badge { position: relative; }
+.ach-card--secret[data-trail="2"] .ach-card__badge svg { filter: grayscale(0.55) brightness(0.62) blur(0.4px); }
+
+.ach-card__eyes {
+    position: absolute;
+    inset: 0;
+    filter: drop-shadow(0 0 5px rgb(255 168 70 / 0.85));
+}
+
+.ach-card__eyes i {
+    position: absolute;
+    top: 46.6%;
+    left: 43%;
+    width: 9.4%;
+    aspect-ratio: 1;
+    background: radial-gradient(circle at 50% 58%, #fff3cb, #ffc15f 45%, #d9702c);
+    clip-path: ellipse(50% 48% at 50% 50%);
+    translate: -50% -50%;
+}
+
+.ach-card__eyes i + i { left: 57%; }
+
+.ach-card__eyes i::after {
+    content: "";
+    position: absolute;
+    inset: 12% 38%;
+    background: #120a0e;
+    clip-path: ellipse(50% 50% at 50% 50%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .ach-card__eyes i { animation: cat-card-blink 5.4s linear infinite; }
+}
+
+@keyframes cat-card-blink {
+    0%, 93%, 97%, 100% { scale: 1 1; }
+    95% { scale: 1 0.06; }
+}
+
+/* The den. */
+.cat-den {
+    width: min(640px, calc(100vw - 32px));
+    max-width: none;
+    max-height: calc(100dvh - 32px);
+    margin: auto;
+    padding: 0;
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-xl);
+    background: var(--theme-bg-secondary, var(--theme-bg-primary));
+    color: var(--theme-text-primary);
+    opacity: 0;
+    transition-property: opacity, transform, display, overlay;
+    transition-duration: var(--motion-duration-slow);
+    transition-timing-function: var(--motion-ease-out);
+    transition-behavior: allow-discrete;
+}
+
+.cat-den[open] {
+    opacity: 1;
+
+    @starting-style { opacity: 0; }
+}
+
+.cat-den::backdrop {
+    overflow: hidden;
+    overscroll-behavior: contain;
+    background: rgb(0 0 0 / 0);
+    transition-property: background-color, display, overlay;
+    transition-duration: var(--motion-duration-slow);
+    transition-behavior: allow-discrete;
+}
+
+.cat-den[open]::backdrop {
+    background: rgb(0 0 0 / 0.76);
+
+    @starting-style { background: rgb(0 0 0 / 0); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .cat-den { transform: scale(var(--motion-scale-enter)); }
+
+    .cat-den[open] {
+        transform: none;
+
+        @starting-style { transform: scale(var(--motion-scale-enter)); }
+    }
+}
+
+.cat-den__stage {
+    aspect-ratio: 640 / 400;
+    container-type: inline-size;
+    touch-action: none;
+    user-select: none;
+}
+
+/* The scene opens like a film, out of black; not quite black, or nothing behind it would be drawn yet. */
+.cat-den__stage::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: #060508;
+    opacity: 0.985;
+    pointer-events: none;
+    transition: opacity 1000ms var(--motion-ease-standard);
+}
+
+.cat-den__stage.is-lit::after { opacity: 0; }
+.cat-den__stage:not(.is-set) > .cat-layers { display: none; }
+
+.cat-den__rehearsal {
+    position: absolute;
+    inset: 0;
+    opacity: 0.02;
+}
+
+.cat-den__stage[role="button"] { cursor: grab; }
+.cat-den__stage.is-content { cursor: grabbing; }
+.cat-den__stage:focus-visible { outline: 2px solid #fff; outline-offset: -4px; }
+
+.cat-den__close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 2;
+    display: grid;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    place-items: center;
+    border: 1px solid rgb(255 255 255 / 0.2);
+    border-radius: var(--radius-md);
+    background: rgb(9 9 11 / 0.5);
+    color: #fff;
+    cursor: pointer;
+    transition: background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.cat-den__close:hover { border-color: rgb(255 255 255 / 0.4); background: rgb(9 9 11 / 0.8); }
+.cat-den__close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+.cat-den__panel {
+    display: grid;
+    justify-items: center;
+    padding: 18px 24px 24px;
+    text-align: center;
+}
+
+/* Paw prints: each step is inked from the bottom up, the last one stroke by stroke. */
+.cat-den__paws { display: flex; gap: 10px; }
+
+.cat-paw {
+    --ink: 0;
+    position: relative;
+    width: 24px;
+    height: 24px;
+    transition: --ink 420ms var(--motion-ease-out);
+}
+
+.cat-paw svg { display: block; width: 100%; height: 100%; }
+.cat-paw__blank { fill: var(--theme-text-muted); opacity: 0.3; }
+.cat-paw__ink { position: absolute; inset: 0; fill: var(--theme-text-primary); clip-path: inset(calc(100% - var(--ink) * 100%) 0 0 0); }
+
+.cat-den__title {
+    margin: 10px 0 0;
+    font-size: var(--font-size-xl);
+    text-wrap: balance;
+}
+
+/* Every line the scene can say lies in one cell, so the dialog never changes size under it. */
+.cat-den__hints {
+    display: grid;
+    width: 100%;
+    margin-top: 8px;
+    justify-items: center;
+}
+
+.cat-den__hints > * {
+    grid-area: 1 / 1;
+    max-width: 46ch;
+    margin: 0;
+    color: var(--theme-text-secondary, var(--theme-text-muted));
+    font-size: var(--font-size-md);
+    line-height: 1.5;
+    text-wrap: balance;
+}
+
+.cat-den__hints > [aria-hidden] { visibility: hidden; }
+
+.cat-den__actions {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transition: grid-template-rows 420ms var(--motion-ease-out), opacity 420ms var(--motion-ease-out) 120ms, margin-top 420ms var(--motion-ease-out);
+    margin-top: 16px;
+}
+
+.cat-den__actions[inert] {
+    grid-template-rows: 0fr;
+    margin-top: 0;
+    opacity: 0;
+    visibility: hidden;
+}
+
+.cat-den__actions > div {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    min-height: 0;
+}
+
+/* Clipped only while closed: the focus ring needs the room around the buttons. */
+.cat-den__actions[inert] > div { overflow: hidden; }
+
+/* Hearts under the hand, sounds, dust and the reveal. */
+.cat-den__fx {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.cat-den__bit {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    margin: -11px 0 0 -11px;
+    fill: var(--bit, #ff5c8f);
+}
+
+.cat-den__sound {
+    position: absolute;
+    color: #ffd3e1;
+    font-size: clamp(0.8rem, 2.6cqi, 1.1rem);
+    font-style: italic;
+    font-weight: 600;
+    text-shadow: 0 1px 8px rgb(0 0 0 / 0.5);
+    white-space: nowrap;
+}
+
+.cat-den__puff {
+    position: absolute;
+    width: 8cqi;
+    height: 5cqi;
+    margin: -2.5cqi 0 0 -4cqi;
+    background: radial-gradient(closest-side, rgb(178 170 176 / 0.34), rgb(178 170 176 / 0.16) 55%, rgb(178 170 176 / 0));
+}
+
+.cat-den__ruffle {
+    position: absolute;
+    width: 34px;
+    height: 20px;
+    margin: -10px 0 0 -17px;
+    fill: none;
+    stroke: color-mix(in oklab, #e6e3f2, #fff calc(var(--warm) * 100%));
+    stroke-linecap: round;
+    stroke-width: 2;
+}
+
+/* The reward: the frame, assembled around the viewer's photo. */
+.cat-den__reward {
+    --reward-avatar: clamp(88px, 27cqi, 172px);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: var(--reward-avatar);
+    height: var(--reward-avatar);
+    margin: calc(var(--reward-avatar) / -2) 0 0 calc(var(--reward-avatar) / -2);
+}
+
+/* Painted, but not yet seen. */
+.cat-den__reward.is-waiting { opacity: 0.001; }
+
+.cat-den__photo {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    place-items: center;
+    overflow: hidden;
+    border-radius: var(--radius-circle);
+    background: #2a2530;
+    color: #fff;
+    font-size: calc(var(--reward-avatar) * 0.24);
+    font-weight: 700;
+}
+
+.cat-den__photo img { width: 100%; height: 100%; object-fit: cover; }
+
+.cat-den__frame {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: calc(100% * 120 / 78);
+    height: calc(100% * 120 / 78);
+    overflow: visible;
+    transform: translate(-50%, -50%);
+}
+
+.cat-den__frame image { transform-box: fill-box; transform-origin: 50% 50%; }
+
+@media (prefers-reduced-motion: no-preference) {
+    .cat-den__reward.is-afloat { animation: cat-afloat 3.4s ease-in-out infinite alternate; }
+}
+
+@keyframes cat-afloat { to { transform: translateY(-5px) rotate(0.5deg); } }
+
+.cat-den__frame[class*="rank-frame"] { max-width: none; }
+
+/* One highlight running round the finished ring. */
+.cat-den__shine {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 123.7%;
+    height: 123.7%;
+    margin: -61.85% 0 0 -61.85%;
+    opacity: 0;
+    background: conic-gradient(transparent 0 40%, rgb(255 255 255 / 0.55) 50%, transparent 60%);
+    mask-image: radial-gradient(closest-side, transparent 81%, #000 83%, #000 97%, transparent 100%);
+}
+
+.cat-den__ring {
+    position: absolute;
+    width: 40cqi;
+    height: 40cqi;
+    margin: -20cqi 0 0 -20cqi;
+    overflow: visible;
+    fill: none;
+    stroke: #ffe1ec;
+    stroke-width: 1;
+}
+
+@media (max-width: 480px) {
+    .cat-den__panel { padding: 14px 16px 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cat-scene,
+    .cat-den,
+    .cat-den::backdrop,
+    .cat-den__stage::after,
+    .cat-den__actions,
+    .cat-paw {
+        transition-duration: 1ms;
+        transition-delay: 0s;
+    }
+}

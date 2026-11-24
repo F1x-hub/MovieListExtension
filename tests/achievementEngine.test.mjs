@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID, pointsFor } from '../src/shared/achievements/AchievementCatalog.js';
 import {
     computeMetrics,
     evaluate,
     evaluateAll,
+    frameChoices,
+    frameLevel,
     inSeason,
     longestStreak,
     maxPoints,
@@ -13,6 +16,11 @@ import {
     totalPoints
 } from '../src/shared/achievements/AchievementEngine.js';
 import { BADGE_ICONS, renderAvatarFrame, renderBadge } from '../src/shared/achievements/AchievementBadge.js';
+import { CAT_FRAME, advanceTrail, catFrameUnlocked, isBox, saysMeow, trailSteps } from '../src/shared/achievements/catTrail.js';
+import { StrokeMeter } from '../src/shared/achievements/CatDen.js';
+import { eyePaths, mouthPath, renderCat, renderPaws } from '../src/shared/achievements/CatDenArt.js';
+import { FRAME_PARTS } from '../src/shared/achievements/CatFrameParts.js';
+import { PARTS } from '../src/shared/achievements/CatPuppet.js';
 import { SCENE_ICONS } from '../src/shared/achievements/AchievementScenes.js';
 import { locales } from '../src/shared/i18n/locales.js';
 
@@ -125,7 +133,7 @@ assert.equal(newYearDef.oneOff, true);
 assert.ok(!newYearDef.hidden, 'the season goal is shown before it is earned');
 
 // Seasonal points are a bonus: they count in the total, not in the maximum ranks are shares of.
-assert.equal(maxPoints(), ACHIEVEMENTS.filter(def => !def.season).reduce((sum, def) => sum + pointsFor(def, def.tiers.length), 0));
+assert.equal(maxPoints(), ACHIEVEMENTS.filter(def => !def.season && !def.bonus).reduce((sum, def) => sum + pointsFor(def, def.tiers.length), 0));
 assert.equal(totalPoints({ new_year: { tier: 1 }, halloween: { tier: 1 } }), 200);
 
 // Streak: consecutive days, gaps reset it.
@@ -209,6 +217,89 @@ const halfway = rankFor((thresholds[2] + thresholds[3]) / 2);
 assert.equal(halfway.level, 3);
 assert.ok(Math.abs(halfway.progress - 0.5) < 1e-9);
 for (let level = 1; level <= 7; level++) assert.match(renderAvatarFrame(level), /^<svg class="rank-frame"/);
+
+// The cat's frame comes first and needs its trail, not a rank; without a choice nothing changes.
+assert.deepEqual(frameChoices(0), [CAT_FRAME, 0]);
+assert.deepEqual(frameChoices(3), [CAT_FRAME, 1, 2, 3]);
+assert.equal(frameLevel(0, CAT_FRAME, true), CAT_FRAME);
+assert.equal(frameLevel(4, CAT_FRAME, true), CAT_FRAME);
+assert.equal(frameLevel(0, CAT_FRAME), 0);
+assert.equal(frameLevel(4, CAT_FRAME), 4, 'a locked cat frame falls back to the rank');
+assert.equal(frameLevel(0, undefined), 0);
+assert.equal(frameLevel(4, null), 4);
+assert.equal(frameLevel(4, 2), 2);
+assert.equal(frameLevel(2, 5), 2, 'a rank not reached falls back to the current one');
+assert.equal(frameLevel(2, -2), 2);
+assert.match(renderAvatarFrame(CAT_FRAME), /assets\/frames\/kitty-label\.webp/);
+assert.match(renderAvatarFrame(CAT_FRAME, { label: false }), /assets\/frames\/kitty\.webp/);
+for (const name of ['kitty', 'kitty-label']) assert.ok(existsSync(new URL(`../src/shared/assets/frames/${name}.webp`, import.meta.url)), name);
+
+// The cat trail: «мяу» as a word of its own, then a box with a film, in this order.
+for (const text of ['мяу', 'Ну МЯУ!!!', 'мяяяу', 'мяу-мяу', 'Meow.', 'кот сказал "мяу"']) assert.ok(saysMeow(text), text);
+for (const text of ['мяукать', 'замяукал', 'homeowner', 'который', '', null]) assert.ok(!saysMeow(text), String(text));
+for (const name of ['Коробка', 'моя коробка!', 'КОРОБОЧКА', 'Картонная коробка с кино', 'The Box']) assert.ok(isBox({ name, movieIds: [1] }), name);
+assert.ok(!isBox({ name: 'Коробка', movieIds: [] }), 'an empty box is not enough');
+for (const name of ['Коробейники', 'Xbox', 'Боксёры', '']) assert.ok(!isBox({ name, movieIds: [1] }), name);
+const meow = { rating: 7, comment: 'Мяу', createdAt: 1 };
+const box = { name: 'Коробка', movieIds: [1] };
+assert.equal(advanceTrail(0, { ratings: [], collections: [box] }), 0, 'the box waits for the call');
+assert.equal(advanceTrail(0, { ratings: [meow] }), 1);
+assert.equal(advanceTrail(0, { ratings: [{ review: 'мяу' }], collections: [box] }), 2);
+assert.equal(advanceTrail(1, { ratings: [], collections: [box] }), 2, 'a passed step survives a deleted review');
+const trailDef = ACHIEVEMENTS_BY_ID.cat_trail;
+const trailResults = value => [evaluate(trailDef, value)];
+const afterCall = mergeUnlocks({}, trailResults(1));
+assert.deepEqual(afterCall.unlocked, []);
+assert.deepEqual(afterCall.changedIds, ['cat_trail']);
+assert.equal(trailSteps(afterCall.stored), 1);
+assert.equal(totalPoints(afterCall.stored), 0, 'steps alone are worth nothing');
+assert.equal(mergeUnlocks(afterCall.stored, trailResults(0)).changed, false, 'steps never go down');
+assert.equal(trailSteps(mergeUnlocks(afterCall.stored, trailResults(0)).stored), 1);
+assert.equal(trailSteps({ cat_trail: { steps: 3 } }), 2, 'the last step needs the tier');
+const petted = { cat_trail: { tier: 1, steps: 3, at: { 1: 'x' } } };
+assert.ok(catFrameUnlocked(petted) && !catFrameUnlocked(afterCall.stored));
+assert.deepEqual(mergeUnlocks(petted, trailResults(3)).stored.cat_trail, petted.cat_trail);
+assert.equal(computeMetrics({ ratings: [meow], collections: [box] }).catTrail, 2);
+
+// Petting: a slow pass counts once per direction; hurrying startles.
+const pass = (meter, from, to, start, ms, samples = 10) => Array.from({ length: samples + 1 }, (_, i) =>
+    meter.move(from + (to - from) * i / samples, start + ms * i / samples)).filter(Boolean);
+const hand = new StrokeMeter();
+assert.deepEqual(pass(hand, 250, 390, 0, 400), ['stroke']);
+assert.deepEqual(pass(hand, 390, 430, 410, 200), [], 'the same direction is still the same stroke');
+assert.deepEqual(pass(hand, 430, 260, 620, 400), ['stroke']);
+assert.deepEqual(pass(new StrokeMeter(), 250, 280, 0, 300), [], 'too short to be a stroke');
+assert.equal(pass(new StrokeMeter(), 200, 440, 0, 50)[0], 'startle');
+
+// The drawing needs no filters (they stall the first frames); every part the puppet moves is there once, every reference resolves, and two drawings share no ids.
+const drawings = [renderCat(), renderCat({ compact: true })];
+for (const svg of drawings) {
+    assert.ok(!/NaN|undefined|\$\{|<filter/.test(svg));
+    for (const part of PARTS) assert.equal(svg.split(`data-cat="${part}"`).length, 2, part);
+    const known = new Set([...svg.matchAll(/ id="([^"]+)"/g)].map(match => match[1]));
+    for (const [, id] of svg.matchAll(/url\(#([^)]+)\)/g)) assert.ok(known.has(id), id);
+}
+const idsOf = svg => [...svg.matchAll(/ id="([^"]+)"/g)].map(match => match[1]);
+assert.ok(!idsOf(drawings[0]).some(id => idsOf(drawings[1]).includes(id)));
+assert.equal(renderPaws(3).split('class="cat-paw"').length, 4);
+// Eyelids: any mix of shapes is one path with the same points, and a closed eye is nearly a line.
+const heightOf = options => {
+    const numbers = eyePaths(options).outline.match(/-?[\d.]+/g).map(Number);
+    assert.equal(numbers.length, 26);
+    assert.ok(numbers.every(Number.isFinite));
+    // From the middle of the upper lid to the middle of the lower one.
+    return numbers[19] - numbers[7];
+};
+for (const way of [{}, { happy: 1 }, { tense: 1 }, { happy: 0.5, tense: 0.3 }]) {
+    const open = heightOf(way);
+    const half = heightOf({ ...way, lid: 0.5 });
+    const shut = heightOf({ ...way, lid: 1 });
+    assert.ok(open > 40 && half < open && half > 8 && shut < 2, JSON.stringify([way, open, half, shut]));
+}
+assert.ok(heightOf({ wide: 1 }) > heightOf({}));
+assert.ok(!/NaN/.test(mouthPath({ smile: 1, open: 1 })));
+for (const { name, picture = name } of FRAME_PARTS) assert.ok(existsSync(new URL(`../src/shared/assets/frames/kitty/${picture}.webp`, import.meta.url)), picture);
+assert.deepEqual(Object.keys(locales.ru.achievements.cat).sort(), Object.keys(locales.en.achievements.cat).sort());
 
 // The card and the dialog say when a seasonal achievement can be earned.
 globalThis.document = { getElementById: () => null, addEventListener() {} };

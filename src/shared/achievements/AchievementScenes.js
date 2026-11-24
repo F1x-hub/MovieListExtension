@@ -1638,7 +1638,34 @@ function bat(x, y, k) {
         + '<ellipse cx="0" cy="0.6" rx="1.6" ry="2.4"/><path d="M-1.2 -1.2 l-.4 -1.8 1 1Z M1.2 -1.2 l.4 -1.8 -1 1Z"/></g>';
 }
 
+/* ── Cat trail: the cat in its box, wearing the frame's bow ────────────── */
+
+function catTrail(level, u) {
+    const pupil = [2, 2.2, 2.5, 2.8, 3.1, 3.4, 3.7][level - 1];
+    let s = '<defs>' + radial(`${u}s`, [[0, '#7A2A4C'], [0.6, '#3A1527'], [1, '#160A10']])
+        + linear(`${u}f`, [[0, '#FFA9C4'], [1, '#EF4F86']]) + linear(`${u}b`, [[0, '#E2B67C'], [1, '#8D6238']])
+        + radial(`${u}e`, [[0, '#FFF3C9'], [0.6, '#FFC56B'], [1, '#D9702C']]) + linear(`${u}w`, [[0, '#E4F2FF'], [1, '#F08CC4']])
+        + '</defs>' + backdrop(`url(#${u}s)`);
+    s += '<g transform="translate(60 55) scale(.84) translate(-60 -58)">';
+    s += '<path d="M76 72C90 68 94 54 88 46" fill="none" stroke="#EF4F86" stroke-width="5" stroke-linecap="round"/>';
+    s += '<g stroke="#8E1F4C" stroke-width=".9" stroke-linejoin="round">'
+        + '<path d="M40 48C37 36 38 28 41 25 48 27 54 32 57 37Z M80 48C83 36 82 28 79 25 72 27 66 32 63 37Z" fill="#FFA9C4"/>'
+        + `<path d="M60 34C73 34 83 43 84 53 84 58 86 61 88 63L83 64 84 69C78 76 70 79 60 79 50 79 42 76 36 69L37 64 32 63C34 61 36 58 36 53 37 43 47 34 60 34Z" fill="url(#${u}f)"/></g>`;
+    s += '<path d="M42 42C41 35 41 31 43 29 47 31 50 34 52 37Z M78 42C79 35 79 31 77 29 73 31 70 34 68 37Z" fill="#C2185B" opacity=".55"/>';
+    for (const x of [49, 71]) {
+        s += `<circle cx="${x}" cy="54" r="6" fill="url(#${u}e)" stroke="#4A1024" stroke-width="1"/><ellipse cx="${x}" cy="54" rx="${pupil}" ry="4.8" fill="#1A0A10"/><circle cx="${x - 1.8}" cy="51.6" r="1.6" fill="#fff"/>`;
+    }
+    s += '<path d="M60 65C58 63.500 56.500 62 57 60.500 57.500 59.500 59.500 59.500 60 61 60.500 59.500 62.500 59.500 63 60.500 63.500 62 62 63.500 60 65Z" fill="#B0134F"/>';
+    s += '<path d="M60 65C59 68.500 55 68.500 54 66.500M60 65C61 68.500 65 68.500 66 66.500" fill="none" stroke="#4A1024" stroke-width="1.2" stroke-linecap="round"/>';
+    s += '<path d="M46 63L34 61M46 66L34 67M74 63L86 61M74 66L86 67" stroke="#FFE3EE" stroke-width="1" stroke-linecap="round"/>';
+    s += `<g stroke="#C2185B" stroke-width="1" stroke-linejoin="round" fill="url(#${u}w)"><path d="M76 37C70 35 66 29 69 25 73 24 77 30 78 35Z"/><path d="M79 38C83 33 89 32 92 36 91 41 84 42 80 40Z"/><path d="M75 34C77 33 81 35 81 38 80 41 76 41 75 39Z" fill="#FF407C"/></g>`;
+    s += `<path d="M34 76L26 71 30 68 40 74Z M86 76L94 71 90 68 80 74Z" fill="#E2B67C"/><path d="M34 75H86L83 104H37Z" fill="url(#${u}b)"/><path d="M34 75H86L85 80H35Z" fill="#E8C08A"/>`;
+    for (const x of [49, 71]) s += `<path d="M${x - 5.5} 79C${x - 6.500} 73 ${x - 3} 70 ${x} 70 ${x + 3} 70 ${x + 6.500} 73 ${x + 5.5} 79 ${x + 4} 81 ${x - 4} 81 ${x - 5.5} 79Z" fill="#F2709C" stroke="#8E1F4C" stroke-width=".8"/>`;
+    return s + '</g>';
+}
+
 const SCENES = {
+    cat: catTrail,
     trophy: provider, pin: showcase, calendar: tenure, flag: firstStep, chart: fullSpectrum, pumpkin: halloween, tree: newYear,
     heart: voice, thumbsUp: generous, wheel: marathoner,
     layers: filler, pen: reviewer, book: writer,

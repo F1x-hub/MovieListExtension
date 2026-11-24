@@ -565,6 +565,19 @@ checklist; `npm run test:visual-design` enforces much of it.
   class and `#seasonalDecor`, loads `src/shared/seasonal/<id>/` only in season and never changes
   the theme. Seasonal achievements count only ratings inside their window and stay out of
   `maxPoints()`; `tests/seasonalTheme.test.cjs` keeps their dates in step.
+- Avatar frames: `rankFrameLevel` is 1-7 for a reached rank, `CAT_FRAME` (-1) for the cat's frame,
+  absent to follow the rank; 0 means no frame and is never stored. `rules/firestore.rules` lists the
+  same values; whether the cat's frame is shown depends on the viewed user's stored trail.
+- Cat trail (`catTrail.js`, `CatDen.js`): `steps` are stored in `achievements.cat_trail`
+  beside the tier and never go down. The recompute finds steps 1-2; step 3 is written only by
+  `completeTrail` and cannot be recomputed, so `sync` writes changed entries by field path, never the
+  whole `achievements` map.
+- The cat's scene: `CatDenArt` only draws, `CatPuppet` owns every movement as springs (a pose is a set of
+  targets, see `CatPoses`), `cat-den.css` owns light and colors through registered `--night`, `--moon`,
+  `--beam`, `--face` and `--warm`. Stories are chains of `wait`/`tween`, so a press can skip them and
+  closing drops them. The room is a layer of its own and the drawing has no SVG filters; `lights()`
+  rehearses every pose behind a dark stage, because a first drawing stalls the GPU. `CatFrameParts`
+  pictures are cut from the same artwork as `kitty-label.webp`: replace them together.
 
 ## Live channel and watch rooms
 

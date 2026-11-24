@@ -177,7 +177,7 @@ class Navigation {
 
     /**
      * Profile rank frame around the navbar avatar. The profile page publishes
-     * {uid, level} to chrome.storage.local (level 0 = no rank or hidden by the
+     * {uid, level} to chrome.storage.local (level 0 = no frame or hidden by the
      * owner), so other pages draw it without reading Firestore.
      */
     async applyRankFrame(state) {
@@ -185,7 +185,7 @@ class Navigation {
         if (!frame) return;
         const uid = this.user?.uid || this.cachedUserDisplay?.uid;
         const level = Number(state?.level) || 0;
-        if (!state || !uid || state.uid !== uid || level <= 0) {
+        if (!state || !uid || state.uid !== uid || level === 0) {
             frame.hidden = true;
             frame.innerHTML = '';
             return;

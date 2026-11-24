@@ -110,6 +110,11 @@
     margin-bottom: calc(var(--profile-avatar-size) * 0.16);
 }
 
+/* The cat frame's whiskers reach about 0.29 of the avatar size past the photo: keep them off the name. */
+.profile-photo-wrapper:has(.rank-frame--cat) {
+    margin-right: calc(var(--profile-avatar-size) * 0.16);
+}
+
 /* .meta-item sets its own display, which would otherwise override [hidden]. */
 .meta-item[hidden] {
     display: none;

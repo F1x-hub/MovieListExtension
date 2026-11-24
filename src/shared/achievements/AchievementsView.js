@@ -8,9 +8,11 @@
  * recomputed here); other users see the tiers stored on their user document.
  */
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID, CATEGORIES } from './AchievementCatalog.js';
-import { frameLevel, inSeason, rankFor, totalPoints } from './AchievementEngine.js';
+import { frameChoices, frameLevel, inSeason, rankFor, totalPoints } from './AchievementEngine.js';
 import { renderAvatarFrame, renderBadge } from './AchievementBadge.js';
 import { AchievementService } from './AchievementService.js';
+import { CatPeek } from './CatPeek.js';
+import { CAT_FRAME, TRAIL_ID, TRAIL_STEPS, catFrameUnlocked, trailSteps } from './catTrail.js';
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 const ELEMENT_IDS = ['achFramePrev', 'achFrameNext', 'achFrameName', 'achRankFrame', 'achRankName', 'achRankNext', 'achRankBar', 'achEarned', 'achTiers', 'achTiersBar', 'achFilters', 'achNote', 'achSections', 'achLoader',
@@ -38,6 +40,8 @@ export class AchievementsView {
         this.stats = null;
         this.isOwn = false;
         this.loadedUid = null;
+        // The locked cat frame is looked at in the picker without being chosen.
+        this.peeking = false;
         this.dialog = null;
         this.el = Object.fromEntries(ELEMENT_IDS.map(id => [id, document.getElementById(id)]));
         this.bindEvents();
@@ -62,6 +66,7 @@ export class AchievementsView {
         this.loadedUid = null;
         this.results = null;
         this.stored = {};
+        this.peeking = false;
         this.closeDialog();
     }
 
@@ -88,13 +93,15 @@ export class AchievementsView {
 
         try {
             const hadRecord = Object.keys(this.stored).length > 0;
-            const synced = await this.service.sync(uid, profile);
+            this.syncing = this.service.sync(uid, profile);
+            const synced = await this.syncing;
             if (this.loadedUid !== uid) return;
             this.stored = synced.stored;
             this.results = Object.fromEntries(synced.results.map(result => [result.id, result]));
             this.render();
             this.onSynced?.({ stored: synced.stored, points: synced.points });
             this.announce(synced.unlocked, hadRecord);
+            if (synced.trailStep && typeof Utils !== 'undefined') Utils.showToast(this.t(`cat.toast_${synced.trailStep}`), 'info');
         } catch (error) {
             console.warn('[Achievements] Recompute failed:', error);
         }
@@ -206,28 +213,107 @@ export class AchievementsView {
     }
 
     /**
-     * Frame preview with arrows: the owner pages through the frames of ranks
-     * already reached; the arrow beyond the current rank stays disabled.
+     * Frame preview with arrows: the owner pages through the cat's frame and the
+     * frames of ranks already reached; the arrow past either end stays disabled.
+     * Until the cat trail is done its place holds the silhouette that opens the den.
      */
     renderFramePicker(rankLevel) {
-        const shown = frameLevel(rankLevel, this.profile?.rankFrameLevel);
-        this.el.achRankFrame.innerHTML = shown ? renderAvatarFrame(shown, { label: false }) : '';
-        const picker = this.isOwn && rankLevel > 1;
+        const picker = this.isOwn;
+        const unlocked = catFrameUnlocked(this.stored);
+        const peeking = picker && this.peeking && !unlocked;
+        const shown = peeking ? CAT_FRAME : frameLevel(rankLevel, this.profile?.rankFrameLevel, unlocked);
+        if (peeking) {
+            const step = String(trailSteps(this.stored));
+            // Kept while it stands for the same step, so focus and the cat's pose survive a re-render.
+            if (this.el.achRankFrame.querySelector('.cat-peek')?.dataset.step !== step) {
+                this.peek?.dispose();
+                this.el.achRankFrame.innerHTML = `<button type="button" class="cat-scene cat-peek" data-step="${step}" aria-label="${escape(this.t('cat.open'))}"></button>`;
+                const button = this.el.achRankFrame.firstElementChild;
+                this.peek = new CatPeek(button, Number(step), button.closest('.ach-stat') || button);
+            }
+        } else {
+            this.peek?.dispose();
+            this.peek = null;
+            this.el.achRankFrame.innerHTML = shown ? renderAvatarFrame(shown, { label: false }) : '';
+        }
+        this.el.achRankFrame.ariaHidden = String(!peeking);
+        const choices = frameChoices(rankLevel);
         this.el.achFramePrev.hidden = this.el.achFrameNext.hidden = !picker;
-        this.el.achFramePrev.disabled = shown <= 1;
-        this.el.achFrameNext.disabled = shown >= rankLevel;
-        this.el.achFrameName.textContent = picker ? this.t('frame_name', { name: this.t('rank_' + shown) }) : '';
+        this.el.achFramePrev.disabled = shown === choices[0];
+        this.el.achFrameNext.disabled = shown === choices.at(-1);
+        const name = shown === CAT_FRAME ? this.t('frame_cat') : this.t('rank_' + shown);
+        this.el.achFrameName.textContent = !picker ? ''
+            : peeking ? this.t(`cat.title_${trailSteps(this.stored)}`)
+            : shown === 0 ? this.t('frame_none') : this.t('frame_name', { name });
     }
 
     stepFrame(delta) {
         if (!this.isOwn || !this.profile) return;
         const rankLevel = rankFor(totalPoints(this.stored)).level;
-        const next = frameLevel(rankLevel, this.profile.rankFrameLevel) + delta;
-        if (next < 1 || next > rankLevel) return;
+        const unlocked = catFrameUnlocked(this.stored);
+        const choices = frameChoices(rankLevel);
+        const chosen = frameLevel(rankLevel, this.profile.rankFrameLevel, unlocked);
+        const next = choices[choices.indexOf(this.peeking && !unlocked ? CAT_FRAME : chosen) + delta];
+        if (next === undefined) return;
+        this.peeking = next === CAT_FRAME && !unlocked;
+        if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            this.el.achRankFrame.animate([{ opacity: 0, transform: `translateX(${delta * 16}px) scale(0.9)` }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
+        }
+        if (this.peeking || next === chosen) {
+            this.renderFramePicker(rankLevel);
+            return;
+        }
         // Choosing the current rank clears the choice, so the frame follows future ranks.
         this.profile.rankFrameLevel = next === rankLevel ? null : next;
         this.renderFramePicker(rankLevel);
         this.onFrameChange?.(this.profile.rankFrameLevel);
+    }
+
+    /** The scene of the cat trail, opened from the silhouette or from the secret card. */
+    async openDen() {
+        const uid = this.loadedUid;
+        if (!this.isOwn || catFrameUnlocked(this.stored)) return;
+        const { CatDen } = await import('./CatDen.js');
+        if (this.loadedUid !== uid || !this.isOwn) return;
+        this.den ??= new CatDen({
+            t: (key, params) => this.t(key, params),
+            onPetted: () => this.finishTrail(),
+            onWear: () => this.wearCatFrame()
+        });
+        this.den.open(Math.min(trailSteps(this.stored), TRAIL_STEPS - 1), uid);
+    }
+
+    async finishTrail() {
+        const uid = this.loadedUid;
+        // The recompute in flight must not answer after this write with what it read before it.
+        await this.syncing?.catch(() => {});
+        const { stored, points } = await this.service.completeTrail(uid, this.stored);
+        if (this.loadedUid !== uid) return;
+        this.stored = stored;
+        this.profile.achievements = stored;
+        if (this.results?.[TRAIL_ID]) Object.assign(this.results[TRAIL_ID], { value: TRAIL_STEPS, tier: 1, next: null, progress: 1 });
+        this.render();
+        this.onSynced?.({ stored, points, persist: true });
+        // Closed before the cat could show it: say it in words.
+        if (!this.den?.dialog) this.announce([{ id: TRAIL_ID, tier: 1 }], true);
+    }
+
+    wearCatFrame() {
+        this.peeking = false;
+        this.profile.rankFrameLevel = CAT_FRAME;
+        this.renderFramePicker(rankFor(totalPoints(this.stored)).level);
+        this.onFrameChange?.(CAT_FRAME, { show: true });
+        // The reward goes on where everyone will see it.
+        const frame = document.getElementById('profileRankFrame');
+        const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+        frame?.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
+        if (still) return;
+        frame?.animate([
+            { opacity: 0, transform: 'translate(-50%, -50%) scale(1.6) rotate(-12deg)' },
+            { opacity: 1, transform: 'translate(-50%, -50%) scale(0.93) rotate(3deg)', offset: 0.55 },
+            { opacity: 1, transform: 'translate(-50%, -50%) scale(1.03) rotate(-1deg)', offset: 0.8 },
+            { opacity: 1, transform: 'translate(-50%, -50%)' }
+        ], { duration: 820, delay: 320, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'backwards' });
     }
 
     cardHTML(def) {
@@ -244,13 +330,15 @@ export class AchievementsView {
             progressText = this.t('progress', { value: result.value.toLocaleString(this.locale), next: result.next.toLocaleString(this.locale) });
             width = Math.round(result.progress * 100);
         } else if (secret) {
-            progressText = this.t('hidden_text');
+            progressText = def.trail && this.isOwn ? this.t(`cat.title_${trailSteps(this.stored)}`) : this.t('hidden_text');
         }
         const share = tier > 0 ? this.shareOf(def.id, tier) : null;
         const level = def.oneOff ? '' : `<span class="ach-chip">${escape(this.t('level', { n: tier, m: def.tiers.length }))}</span>`;
         const shareChip = share === null ? '' : `<span class="ach-chip">${escape(this.t('share', { n: share }))}</span>`;
-        return `<button type="button" class="ach-card ach-card--${state}${secret ? ' ach-card--secret' : ''}" data-id="${def.id}">
-            <span class="ach-card__badge${tier === 0 ? ' is-locked' : ''}">${renderBadge(def, Math.max(1, tier))}</span>
+        // Once the cat has answered, its eyes shine through the locked badge.
+        const trail = def.trail && secret && this.isOwn ? trailSteps(this.stored) : 0;
+        return `<button type="button" class="ach-card ach-card--${state}${secret ? ' ach-card--secret' : ''}" data-id="${def.id}"${trail ? ` data-trail="${trail}"` : ''}>
+            <span class="ach-card__badge${tier === 0 ? ' is-locked' : ''}">${renderBadge(def, Math.max(1, tier))}${trail ? '<span class="ach-card__eyes" aria-hidden="true"><i></i><i></i></span>' : ''}</span>
             <span class="ach-card__chips">${level}${shareChip}${this.seasonChip(def)}</span>
             <span class="ach-card__name">${escape(name)}</span>
             <span class="ach-card__progress">${escape(progressText)}</span>
@@ -271,8 +359,11 @@ export class AchievementsView {
         });
         this.el.achSections?.addEventListener('click', event => {
             const card = event.target.closest('.ach-card');
-            if (card) this.openDialog(card.dataset.id, card);
+            if (!card) return;
+            if (card.dataset.id === TRAIL_ID && this.isOwn && this.tierOf(TRAIL_ID) === 0) this.openDen();
+            else this.openDialog(card.dataset.id, card);
         });
+        this.el.achRankFrame?.addEventListener('click', event => event.target.closest('.cat-peek') && this.openDen());
         this.el.achFramePrev?.addEventListener('click', () => this.stepFrame(-1));
         this.el.achFrameNext?.addEventListener('click', () => this.stepFrame(1));
         this.el.achClose?.addEventListener('click', () => this.closeDialog());

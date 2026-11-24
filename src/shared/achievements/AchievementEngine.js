@@ -5,6 +5,7 @@
  * Persistence and Firestore reads live elsewhere, so this file is testable.
  */
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID, RANK_SHARES, pointsFor } from './AchievementCatalog.js';
+import { CAT_FRAME, advanceTrail, trailSteps } from './catTrail.js';
 
 const SERIES_TYPES = new Set(['tv-series', 'mini-series', 'animated-series', 'tv']);
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -72,7 +73,7 @@ const NEW_YEAR = ACHIEVEMENTS_BY_ID.new_year.season;
 /**
  * Every metric the catalog counts.
  * @param {Object} data - { ratings, movies, reactionSummaries, reactionsGiven, marathonItems,
- *   watchlistCount, watchingCount, collections, pinned, createdAt, now }
+ *   watchlistCount, watchingCount, collections, catTrail (steps already passed), pinned, createdAt, now }
  */
 export function computeMetrics(data = {}) {
     const ratings = Array.isArray(data.ratings) ? data.ratings : [];
@@ -161,6 +162,7 @@ export function computeMetrics(data = {}) {
         watching: Number(data.watchingCount) || 0,
         collections: collections.length,
         collectionItems: collections.reduce((sum, collection) => sum + (Array.isArray(collection?.movieIds) ? collection.movieIds.length : 0), 0),
+        catTrail: advanceTrail(data.catTrail, { ratings, collections }),
         pinned: Array.isArray(data.pinned) ? data.pinned.length : 0,
         accountDays: createdAt ? Math.max(0, Math.floor((now - createdAt) / DAY_MS)) : 0
     };
@@ -180,15 +182,15 @@ export function evaluateAll(metrics) {
 }
 
 /**
- * Merges freshly computed tiers into the stored record. Tiers never go down
- * (an earned tier stays earned after a rating is deleted) and each newly
- * reached tier gets an unlock date.
- * @returns {{ stored: Object, unlocked: Array<{id, tier}>, changed: boolean }}
+ * Merges freshly computed tiers into the stored record. Tiers and trail steps
+ * never go down (an earned tier stays earned after a rating is deleted) and each
+ * newly reached tier gets an unlock date.
+ * @returns {{ stored: Object, unlocked: Array<{id, tier}>, changedIds: string[], changed: boolean }}
  */
 export function mergeUnlocks(stored = {}, results = [], nowIso = new Date().toISOString()) {
     const next = {};
     const unlocked = [];
-    let changed = false;
+    const changedIds = [];
     for (const def of ACHIEVEMENTS) {
         const previous = stored?.[def.id];
         const previousTier = Math.max(0, Math.min(def.tiers.length, Number(previous?.tier) || 0));
@@ -198,30 +200,38 @@ export function mergeUnlocks(stored = {}, results = [], nowIso = new Date().toIS
         for (let tier = previousTier + 1; tier <= reached; tier++) {
             at[tier] = nowIso;
             unlocked.push({ id: def.id, tier });
-            changed = true;
         }
-        if (reached > 0) next[def.id] = { tier: reached, at };
+        const previousSteps = def.trail ? trailSteps(stored) : 0;
+        const steps = def.trail ? Math.max(previousSteps, Number(result?.value) || 0) : 0;
+        if (reached > previousTier || steps > previousSteps) changedIds.push(def.id);
+        if (reached > 0 || steps > 0) next[def.id] = { tier: reached, at, ...(def.trail ? { steps } : {}) };
     }
-    return { stored: next, unlocked, changed };
+    return { stored: next, unlocked, changedIds, changed: changedIds.length > 0 };
 }
 
 export function totalPoints(stored = {}) {
     return Object.entries(stored).reduce((sum, [id, entry]) => sum + pointsFor(ACHIEVEMENTS_BY_ID[id], Number(entry?.tier) || 0), 0);
 }
 
-/** The maximum ranks are shares of; seasonal points are a bonus on top (see the catalog). */
+/** The maximum ranks are shares of; seasonal and bonus points come on top (see the catalog). */
 export function maxPoints() {
-    return ACHIEVEMENTS.reduce((sum, def) => sum + (def.season ? 0 : pointsFor(def, def.tiers.length)), 0);
+    return ACHIEVEMENTS.reduce((sum, def) => sum + (def.season || def.bonus ? 0 : pointsFor(def, def.tiers.length)), 0);
 }
 
 /**
- * Frame shown for a rank: the owner may pick any unlocked rank's frame; an
- * unset or out-of-range choice falls back to the current rank.
+ * Frame shown for a rank: the owner may pick any unlocked rank's frame, or the
+ * cat's once its trail is done; any other choice falls back to the current rank.
  */
-export function frameLevel(rankLevel, chosen) {
+export function frameLevel(rankLevel, chosen, catUnlocked = false) {
     const rank = Math.max(0, Number(rankLevel) || 0);
     const pick = Math.floor(Number(chosen) || 0);
-    return pick >= 1 && pick <= rank ? pick : rank;
+    return (catUnlocked && pick === CAT_FRAME) || (pick >= 1 && pick <= rank) ? pick : rank;
+}
+
+/** Frames the owner pages through, in order: the cat's (a silhouette until earned), then every reached rank (or none at all). */
+export function frameChoices(rankLevel) {
+    const rank = Math.max(0, Number(rankLevel) || 0);
+    return [CAT_FRAME, ...(rank ? Array.from({ length: rank }, (_, index) => index + 1) : [0])];
 }
 
 /** Point thresholds of ranks I–VII. */
