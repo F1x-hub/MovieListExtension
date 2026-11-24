@@ -32,7 +32,7 @@ const IconUtils = {
     },
 
     /**
-     * Update the browser extension icon based on the theme
+     * Update the toolbar icon for the browser's own mode (not the extension's theme)
      * @param {string} theme - 'light' or 'dark'
      */
     updateExtensionIcon: (theme) => {

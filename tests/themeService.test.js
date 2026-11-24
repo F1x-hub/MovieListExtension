@@ -12,10 +12,16 @@ class MockClassList {
     }
 
     toggle(value, force) {
-        const nextValue = force === undefined ? !this.values.has(value) : force;
-        if (nextValue) this.values.add(value);
+        if (force) this.values.add(value);
         else this.values.delete(value);
-        return nextValue;
+    }
+
+    add(value) {
+        this.values.add(value);
+    }
+
+    remove(value) {
+        this.values.delete(value);
     }
 
     contains(value) {
@@ -23,122 +29,140 @@ class MockClassList {
     }
 }
 
-class MockStyle {
-    constructor() {
-        this.values = new Map();
-    }
-
-    setProperty(key, value) {
-        this.values.set(key, String(value));
-    }
-
-    removeProperty(key) {
-        this.values.delete(key);
-    }
-
-    getPropertyValue(key) {
-        return this.values.get(key) || '';
-    }
-}
-
-class MockStorage {
-    constructor() {
-        this.values = new Map();
-    }
-
-    getItem(key) {
-        return this.values.has(key) ? this.values.get(key) : null;
-    }
-
-    setItem(key, value) {
-        this.values.set(key, String(value));
-    }
-}
-
-const listeners = new Map();
-const root = { classList: new MockClassList(), style: new MockStyle() };
-const body = { classList: new MockClassList(), style: new MockStyle() };
-const storage = new MockStorage();
-const document = {
-    documentElement: root,
-    body,
-    querySelector: () => null
-};
-
-const context = {
-    console,
-    document,
-    localStorage: storage,
-    IconUtils: {
-        updateExtensionIcon: () => {}
-    },
-    chrome: {
-        storage: {
-            local: {
-                set: () => ({ catch: () => {} })
-            }
-        }
-    },
-    addEventListener(type, listener) {
-        if (!listeners.has(type)) listeners.set(type, []);
-        listeners.get(type).push(listener);
-    },
-    dispatchEvent(event) {
-        (listeners.get(event.type) || []).forEach(listener => listener(event));
-    }
-};
-
-context.window = context;
-context.globalThis = context;
-
 const themeServiceSource = fs.readFileSync(
     new URL('../src/shared/services/ThemeService.js', import.meta.url),
     'utf8'
 );
-vm.createContext(context);
-vm.runInContext(themeServiceSource, context, { filename: 'ThemeService.js' });
 
-const ThemeService = context.ThemeService;
-assert.ok(ThemeService, 'ThemeService must expose a global browser API');
-assert.equal(ThemeService.getCurrentTheme(), 'dark', 'default theme must remain dark');
-assert.equal(root.classList.contains('light-theme'), false, 'dark theme must not add light-theme');
-assert.equal(body.classList.contains('dark-theme'), true, 'dark theme must mark the body');
-
-storage.setItem('movieExtensionCustomThemes', JSON.stringify([
-    {
-        id: 'custom_legacy',
-        name: 'Legacy Theme',
-        base: 'light',
-        variables: {
-            '--theme-bg-primary': '#ffffff',
-            '--theme-text-primary': '#111111'
+/** One page: what is stored, whether the browser is light, and whether the page is in a frame. */
+function openPage(stored = {}, { browserIsLight = false, framed = false } = {}) {
+    const values = new Map(Object.entries(stored));
+    const listeners = new Map();
+    const element = () => ({ classList: new MockClassList() });
+    const root = element();
+    const body = element();
+    const query = {
+        matches: browserIsLight,
+        addEventListener: (type, listener) => { query.changed = listener; }
+    };
+    const synced = {};
+    const context = {
+        console,
+        document: { documentElement: root, body },
+        localStorage: {
+            getItem: key => (values.has(key) ? values.get(key) : null),
+            setItem: (key, value) => values.set(key, String(value)),
+            removeItem: key => values.delete(key)
+        },
+        matchMedia: () => query,
+        chrome: { storage: { local: { set: change => { Object.assign(synced, change); } } } },
+        addEventListener: (type, listener) => listeners.set(type, listener)
+    };
+    context.window = context.globalThis = context.self = context;
+    context.top = framed ? {} : context;
+    vm.createContext(context);
+    vm.runInContext(themeServiceSource, context, { filename: 'ThemeService.js' });
+    return {
+        service: context.ThemeService,
+        root,
+        body,
+        values,
+        synced,
+        shown: () => [root, body].map(item => ['light-theme', 'dark-theme'].filter(name => item.classList.contains(name)).join()),
+        storageEvent: key => listeners.get('storage')({ key }),
+        browserBecomes(light) {
+            query.matches = light;
+            query.changed();
         }
-    }
-]));
+    };
+}
 
-const migratedThemes = ThemeService.getCustomThemes();
-assert.equal(migratedThemes.length, 1, 'legacy custom theme must be readable');
-assert.equal(migratedThemes[0].version, 2, 'legacy theme must be upgraded to schema version 2');
-assert.equal(JSON.parse(storage.getItem('movieExtensionCustomThemes')).version, 2, 'migration must persist versioned data');
+const LIGHT = ['light-theme', 'light-theme'];
+const DARK = ['dark-theme', 'dark-theme'];
 
-ThemeService.applyTheme('custom_legacy');
-assert.equal(root.classList.contains('light-theme'), true, 'custom light theme must apply light class');
-assert.equal(root.style.getPropertyValue('--theme-bg-primary'), '#ffffff');
-assert.equal(root.style.getPropertyValue('--theme-text-primary'), '#111111');
+{
+    const page = openPage({}, { browserIsLight: true });
+    assert.equal(page.service.getPreference(), 'dark', 'default theme must remain dark, whatever the browser uses');
+    assert.deepEqual(page.shown(), DARK);
+    assert.equal(page.values.size, 0, 'opening a page must not turn the default into a choice');
 
-ThemeService.saveCustomThemes([{
-    id: 'custom_next',
-    name: 'Next Theme',
-    base: 'dark',
-    variables: { '--theme-bg-primary': '#09090b' }
-}]);
-ThemeService.applyTheme('custom_next');
-assert.equal(root.classList.contains('light-theme'), false, 'custom dark theme must remove light class');
-assert.equal(root.style.getPropertyValue('--theme-text-primary'), '', 'stale custom variables must be removed');
+    page.service.applyTheme('light');
+    assert.deepEqual(page.shown(), LIGHT);
+    assert.equal(page.values.get('movieExtensionTheme'), 'light');
+    assert.equal(page.root.classList.contains('theme-switching'), false);
 
-context.dispatchEvent({ type: 'storage', key: 'movieExtensionTheme', newValue: 'light' });
-assert.equal(root.classList.contains('light-theme'), true, 'external theme changes must be applied');
-assert.equal(body.classList.contains('light-theme'), true, 'external theme changes must update body');
+    page.service.applyTheme('dark', { persist: false });
+    assert.deepEqual(page.shown(), DARK);
+    assert.equal(page.values.get('movieExtensionTheme'), 'light', 'a theme applied without persistence must not be stored');
+
+    page.service.applyTheme('no-such-theme');
+    assert.equal(page.service.getPreference(), 'dark', 'an unknown theme must be dark');
+}
+
+{
+    const page = openPage({ movieExtensionTheme: 'light' });
+    const states = [];
+    page.service.subscribe(state => states.push(`${state.preference}/${state.theme}`));
+    page.service.applyTheme('auto');
+    assert.equal(page.service.getPreference(), 'auto');
+    assert.deepEqual(page.shown(), DARK, 'auto must follow the browser');
+    page.browserBecomes(true);
+    assert.deepEqual(page.shown(), LIGHT, 'auto must follow the browser while the page is open');
+    assert.equal(page.service.getCurrentTheme(), 'light');
+    assert.deepEqual(states, ['auto/dark', 'auto/light']);
+    assert.equal(page.values.get('movieExtensionTheme'), 'light', 'an older version must find a theme it knows');
+
+    page.service.applyTheme('dark');
+    page.browserBecomes(false);
+    page.browserBecomes(true);
+    assert.equal(page.service.getPreference(), 'dark');
+    assert.deepEqual(page.shown(), DARK, 'a chosen theme must not follow the browser');
+}
+
+{
+    const page = openPage({ movieExtensionTheme: 'dark', movieExtensionThemeAuto: '1' }, { browserIsLight: true });
+    assert.deepEqual(page.shown(), LIGHT);
+    assert.equal(page.values.get('movieExtensionTheme'), 'light', 'frames must find the theme the browser has now');
+
+    const frame = openPage({ movieExtensionTheme: 'light', movieExtensionThemeAuto: '1' }, { framed: true });
+    assert.deepEqual(frame.shown(), LIGHT, 'a frame must take the theme of its page, not its own media query');
+    frame.browserBecomes(false);
+    assert.deepEqual(frame.shown(), LIGHT);
+    assert.deepEqual(frame.synced, {}, 'a frame must not report the mode of the browser');
+}
+
+{
+    const page = openPage({ movieExtensionTheme: 'dark' });
+    page.values.set('movieExtensionTheme', 'light');
+    page.storageEvent('movieExtensionTheme');
+    assert.deepEqual(page.shown(), LIGHT, 'a choice made in another tab must be applied');
+    page.values.set('movieExtensionThemeAuto', '1');
+    page.storageEvent('movieExtensionThemeAuto');
+    assert.deepEqual(page.shown(), DARK);
+}
+
+{
+    const custom = JSON.stringify({ version: 2, themes: [
+        { id: 'custom_light', name: 'Mine', base: 'light', variables: { '--theme-bg-primary': '#ff0000' } },
+        { id: 'custom_dark', name: 'Mine too', base: 'dark', variables: {} }
+    ] });
+    const light = openPage({ movieExtensionTheme: 'custom_light', movieExtensionCustomThemes: custom });
+    assert.deepEqual(light.shown(), LIGHT, 'a theme from the removed editor must become its base');
+    assert.equal(light.values.get('movieExtensionTheme'), 'light');
+    assert.equal(light.values.get('movieExtensionCustomThemes'), custom, 'the colours a user made must not be deleted');
+    assert.deepEqual(openPage({ movieExtensionTheme: 'custom_dark', movieExtensionCustomThemes: custom }).shown(), DARK);
+    assert.deepEqual(openPage({ movieExtensionTheme: 'custom_light' }).shown(), DARK, 'a missing theme must be dark');
+    const legacy = JSON.stringify([{ id: 'custom_old', base: 'light' }]);
+    assert.deepEqual(openPage({ movieExtensionTheme: 'custom_old', movieExtensionCustomThemes: legacy }).shown(), LIGHT);
+    assert.deepEqual(openPage({ movieExtensionTheme: 'custom_old', movieExtensionCustomThemes: '{broken' }).shown(), DARK);
+}
+
+{
+    const page = openPage({ movieExtensionTheme: 'light' });
+    assert.equal(page.synced.toolbarScheme, 'dark', 'the toolbar icon must follow the browser, not the theme');
+    page.browserBecomes(true);
+    assert.equal(page.synced.toolbarScheme, 'light');
+}
 
 const read = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 const commonCss = read('../src/shared/styles/common.css');

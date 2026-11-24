@@ -2333,11 +2333,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadSettings();
     
     // ThemeService is the single owner of persisted theme state and DOM classes.
+    // A choice applies at once on every open page, so Save and Reset do not cover it.
     if (window.ThemeService) {
-        window.ThemeService.applyCurrentTheme({
-            persist: false,
-            syncChromeStorage: false
-        });
+        const themeRadios = [...document.querySelectorAll('input[name="theme"]')];
+        const showTheme = () => {
+            const preference = window.ThemeService.getPreference();
+            themeRadios.forEach(radio => { radio.checked = radio.value === preference; });
+        };
+        window.ThemeService.subscribe(showTheme);
+        window.ThemeService.applyCurrentTheme();
+        themeRadios.forEach(radio => radio.addEventListener('change', () => window.ThemeService.applyTheme(radio.value)));
     }
 
     /**

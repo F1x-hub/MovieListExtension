@@ -69,8 +69,8 @@ class Navigation {
     }
 
     async init() {
-        this.applyTheme(this.getCurrentTheme());
-        
+        window.ThemeService?.applyCurrentTheme();
+
         // CRITICAL: Load this BEFORE rendering, so nothing in the bar changes width a frame later
         await this.loadFirstPaintState();
         
@@ -94,7 +94,6 @@ class Navigation {
         }
 
         this.render();
-        this.updateThemeButton(this.getCurrentTheme()); // Update UI after render
         this.setupEventListeners();
         this.setupAuthListener();
         this.setupDisplayCacheListener();
@@ -380,20 +379,24 @@ class Navigation {
                                     <span class="nav-dropdown-icon">${this.icon('ADMIN')}</span>
                                     <span data-i18n="navbar.admin_panel">Admin Panel</span>
                                 </a>
-                                <div class="nav-dropdown-item" id="navDropdownTheme">
-                                    <span class="nav-dropdown-icon" id="navThemeIcon">
-                                        ${this.icon('MOON')}
-                                    </span>
-                                    <span id="navThemeText" data-i18n="navbar.theme">Theme</span>
+                                <div class="nav-theme" role="radiogroup" aria-label="${this.i18n?.get('navbar.theme') || 'Тема'}">
+                                    ${this.themeOption('dark', 'MOON', 'Тёмная')}
+                                    ${this.themeOption('light', 'SUN', 'Светлая')}
+                                    ${this.themeOption('auto', 'SYSTEM', 'Как в системе')}
                                 </div>
                                 <div class="nav-dropdown-divider"></div>
-                                <div class="nav-dropdown-item nav-dropdown-logout" id="navDropdownLogout">
+                                <button type="button" class="nav-dropdown-item nav-dropdown-logout" id="navDropdownLogout">
                                     <span class="nav-dropdown-icon">${this.icon('LOGOUT')}</span>
                                     <span data-i18n="navbar.log_out">Log Out</span>
-                                </div>
+                                </button>
                             </div>
                         </div>
                         
+                        <!-- A guest has no account menu: theme and language are in Settings -->
+                        <a href="${this.getPageUrl('settings')}" class="nav-icon-btn" id="navGuestSettingsBtn" data-page="settings" aria-label="${this.i18n?.get('navbar.settings') || 'Настройки'}" title="${this.i18n?.get('navbar.settings') || 'Настройки'}" style="display: ${isSignedIn ? 'none' : 'flex'};">
+                            <span class="nav-icon">${this.icon('SETTINGS')}</span>
+                        </a>
+
                         <!-- Sign In Button (for non-authenticated users) -->
                         <button class="nav-signin-btn" id="navSignInBtn" style="display: ${isSignedIn ? 'none' : 'flex'};">
                             <span class="nav-signin-icon">${this.icon('USER')}</span>
@@ -614,20 +617,20 @@ class Navigation {
                 });
             }
 
-            // Theme dropdown item
-            const dropdownTheme = document.getElementById('navDropdownTheme');
-            if (dropdownTheme) {
-                dropdownTheme.addEventListener('mousedown', (e) => {
-                    if (e.button !== 0) return;
-                    this.closeAllDropdowns();
-                    this.showThemeModal();
-                });
+            const themeRadios = [...(userDropdown.querySelectorAll?.('input[name="navTheme"]') ?? [])];
+            if (window.ThemeService && themeRadios.length) {
+                const showTheme = () => {
+                    const preference = window.ThemeService.getPreference();
+                    themeRadios.forEach(radio => { radio.checked = radio.value === preference; });
+                };
+                showTheme();
+                window.ThemeService.subscribe(showTheme);
+                themeRadios.forEach(radio => radio.addEventListener('change', () => window.ThemeService.applyTheme(radio.value)));
             }
 
             // Logout dropdown item
             if (dropdownLogout) {
-                dropdownLogout.addEventListener('mousedown', (e) => {
-                    if (e.button !== 0) return;
+                dropdownLogout.addEventListener('click', () => {
                     this.closeAllDropdowns();
                     this.handleLogout();
                 });
@@ -1485,6 +1488,7 @@ class Navigation {
             const userAvatar = document.getElementById('navUserAvatar');
             const userName = document.getElementById('navUserName');
             const signInBtn = document.getElementById('navSignInBtn');
+            const guestSettingsBtn = document.getElementById('navGuestSettingsBtn');
 
             // console.log('Navigation: Updating user display:', user ? (user.displayName || user.email) : 'No user');
 
@@ -1492,6 +1496,7 @@ class Navigation {
                 // Show user profile dropdown
                 userProfile.style.display = 'block';
                 if (signInBtn) signInBtn.style.display = 'none';
+                if (guestSettingsBtn) guestSettingsBtn.style.display = 'none';
 
                 // Non-blocking: unread reactions on the user's ratings.
                 this.checkReactionNotifications(user);
@@ -1611,6 +1616,7 @@ class Navigation {
                 // Hide user profile, show sign in button
                 if (userProfile) userProfile.style.display = 'none';
                 if (signInBtn) signInBtn.style.display = 'flex';
+                if (guestSettingsBtn) guestSettingsBtn.style.display = 'flex';
                 
                 // Reset watchlist and favorites counts
                 const watchlistCountElement = document.getElementById('watchlistCount');
@@ -1685,629 +1691,14 @@ class Navigation {
         window.location.href = url;
     }
 
-    getCustomThemes() {
-        return window.ThemeService ? window.ThemeService.getCustomThemes() : [];
-    }
-
-    saveCustomThemes(customThemes) {
-        if (window.ThemeService) {
-            return window.ThemeService.saveCustomThemes(customThemes);
-        }
-        return [];
-    }
-
-    getCurrentTheme() {
-        return window.ThemeService ? window.ThemeService.getCurrentTheme() : 'dark';
-    }
-
-    applyTheme(theme) {
-        if (!window.ThemeService) return 'dark';
-        const state = window.ThemeService.applyTheme(theme);
-        this.updateThemeButton(state.theme);
-        return state.theme;
+    themeOption(value, icon, fallback) {
+        const label = this.i18n?.get(`navbar.theme_${value}`) || fallback;
+        return `<label class="nav-theme__option" title="${label}"><input type="radio" name="navTheme" value="${value}" aria-label="${label}"><span class="nav-dropdown-icon">${this.icon(icon)}</span></label>`;
     }
 
     /** Markup from the shared icon set; every page loads Icons.js before the header is built. */
     icon(name) {
         return (typeof Icons !== 'undefined' && Icons[name]) || '';
-    }
-
-    updateThemeButton(theme) {
-        const themeText = document.getElementById('navThemeText');
-        const themeIcon = document.getElementById('navThemeIcon');
-        
-        if (themeText) {
-            if (theme === 'dark') {
-                themeText.textContent = 'Theme (Dark)';
-            } else if (theme === 'light') {
-                themeText.textContent = 'Theme (Light)';
-            } else {
-                const customs = this.getCustomThemes();
-                const ct = customs.find(t => t.id === theme);
-                themeText.textContent = `Theme (${ct ? ct.name : 'Custom'})`;
-            }
-        }
-
-        if (themeIcon) {
-            if (theme === 'light') {
-                themeIcon.innerHTML = this.icon('SUN');
-            } else if (theme === 'dark') {
-                themeIcon.innerHTML = this.icon('MOON');
-            } else {
-                themeIcon.innerHTML = this.icon('PALETTE');
-            }
-        }
-    }
-
-    showThemeModal() {
-        let currentTheme = this.getCurrentTheme();
-        let customThemes = this.getCustomThemes();
-
-        // Helper to get active color scheme values
-        const getActiveColors = () => {
-            const computedStyle = getComputedStyle(document.documentElement);
-            return {
-                primaryBg: computedStyle.getPropertyValue('--theme-bg-primary').trim() || '#09090b',
-                secondaryBg: computedStyle.getPropertyValue('--theme-bg-secondary').trim() || '#121214',
-                cardBg: computedStyle.getPropertyValue('--theme-bg-card').trim() || 'rgba(18, 18, 20, 0.65)',
-                textPrimary: computedStyle.getPropertyValue('--theme-text-primary').trim() || '#f4f4f5',
-                textSecondary: computedStyle.getPropertyValue('--theme-text-secondary').trim() || '#a1a1aa',
-                textMuted: computedStyle.getPropertyValue('--theme-text-muted').trim() || '#52525b',
-                border: computedStyle.getPropertyValue('--theme-border').trim() || 'rgba(255, 255, 255, 0.06)',
-                inputBg: computedStyle.getPropertyValue('--theme-input-bg').trim() || '#121214',
-                inputText: computedStyle.getPropertyValue('--theme-input-text').trim() || '#f4f4f5',
-                accentColor: computedStyle.getPropertyValue('--accent-color').trim() || '#6366f1'
-            };
-        };
-
-        // Convert color format to hex for <input type="color">
-        const toHexColor = (colorStr, fallback = '#121214') => {
-            if (!colorStr) return fallback;
-            colorStr = colorStr.trim();
-            if (colorStr.startsWith('#')) {
-                if (colorStr.length === 4) {
-                    return '#' + colorStr[1] + colorStr[1] + colorStr[2] + colorStr[2] + colorStr[3] + colorStr[3];
-                }
-                return colorStr.slice(0, 7);
-            }
-            if (colorStr.startsWith('rgb')) {
-                const parts = colorStr.match(/\d+/g);
-                if (parts && parts.length >= 3) {
-                    const r = parseInt(parts[0]).toString(16).padStart(2, '0');
-                    const g = parseInt(parts[1]).toString(16).padStart(2, '0');
-                    const b = parseInt(parts[2]).toString(16).padStart(2, '0');
-                    return `#${r}${g}${b}`;
-                }
-            }
-            return fallback;
-        };
-
-        const modal = document.createElement('div');
-        modal.className = 'theme-modal-overlay';
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.75);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-            animation: nav-theme-fade-in 0.2s ease;
-            backdrop-filter: blur(4px);
-        `;
-
-        const renderModalHTML = () => {
-            currentTheme = this.getCurrentTheme();
-            customThemes = this.getCustomThemes();
-            const isLight = document.documentElement.classList.contains('light-theme');
-
-            const checkIcon = this.icon('CHECK');
-            const plusIcon = this.icon('PLUS');
-            const moonIcon = this.icon('MOON');
-            const sunIcon = this.icon('SUN');
-            const paletteIcon = this.icon('PALETTE');
-            const editIcon = this.icon('EDIT');
-            const trashIcon = this.icon('TRASH');
-
-            return `
-                <div class="theme-modal-content" style="
-                    background: var(--theme-bg-secondary, #121214);
-                    padding: 24px;
-                    border-radius: 14px;
-                    width: 360px;
-                    max-width: 92vw;
-                    color: var(--theme-text-primary, #f4f4f5);
-                    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
-                    animation: nav-theme-scale-in 0.2s ease;
-                    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
-                    max-height: 90vh;
-                    display: flex;
-                    flex-direction: column;
-                ">
-                    <!-- Main Theme Selection View -->
-                    <div id="themeModalMain">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
-                            <h3 style="margin: 0; font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
-                                <span style="display: flex; align-items: center; justify-content: center; color: var(--accent-color, #6366f1);">${paletteIcon}</span>
-                                <span data-i18n="navbar.select_theme">Select Theme</span>
-                            </h3>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <button id="addCustomThemeBtn" title="Create custom theme" style="
-                                    background: #6366f1;
-                                    color: #ffffff;
-                                    border: 1px solid rgba(255, 255, 255, 0.25);
-                                    border-radius: 8px;
-                                    width: 32px;
-                                    height: 32px;
-                                    display: flex;
-                                    align-items: center;
-                                    justify-content: center;
-                                    cursor: pointer;
-                                    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
-                                    transition: all 0.2s ease;
-                                ">${plusIcon}</button>
-                                <button class="modal-close-btn" style="
-                                    background: none;
-                                    border: none;
-                                    color: var(--theme-text-secondary, #a1a1aa);
-                                    font-size: 24px;
-                                    cursor: pointer;
-                                    padding: 0;
-                                    width: 32px;
-                                    height: 32px;
-                                    display: flex;
-                                    align-items: center;
-                                    justify-content: center;
-                                    transition: color 0.2s;
-                                ">×</button>
-                            </div>
-                        </div>
-
-                        <div style="display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow-y: auto; padding-right: 4px;">
-                            <!-- Dark Theme Option -->
-                            <div class="theme-option" data-theme="dark" style="
-                                display: flex;
-                                align-items: center;
-                                gap: 12px;
-                                padding: 14px 16px;
-                                border-radius: 10px;
-                                background: ${currentTheme === 'dark' ? 'var(--theme-active-bg, rgba(255, 255, 255, 0.1))' : 'var(--theme-hover-bg, rgba(255, 255, 255, 0.04))'};
-                                cursor: pointer;
-                                transition: all 0.2s;
-                                border: 2px solid ${currentTheme === 'dark' ? 'var(--accent-color, #6366f1)' : 'var(--theme-border, transparent)'};
-                            ">
-                                <span class="theme-option-icon" style="display: flex; align-items: center; justify-content: center; color: #a1a1aa;">${moonIcon}</span>
-                                <span style="flex: 1; font-weight: 500;">Dark Theme</span>
-                                <span class="theme-checkmark" style="
-                                    font-size: 18px;
-                                    color: var(--accent-color, #6366f1);
-                                    display: ${currentTheme === 'dark' ? 'flex' : 'none'};
-                                    align-items: center;
-                                ">${checkIcon}</span>
-                            </div>
-
-                            <!-- Light Theme Option -->
-                            <div class="theme-option" data-theme="light" style="
-                                display: flex;
-                                align-items: center;
-                                gap: 12px;
-                                padding: 14px 16px;
-                                border-radius: 10px;
-                                background: ${currentTheme === 'light' ? 'var(--theme-active-bg, rgba(255, 255, 255, 0.1))' : 'var(--theme-hover-bg, rgba(255, 255, 255, 0.04))'};
-                                cursor: pointer;
-                                transition: all 0.2s;
-                                border: 2px solid ${currentTheme === 'light' ? 'var(--accent-color, #6366f1)' : 'var(--theme-border, transparent)'};
-                            ">
-                                <span class="theme-option-icon" style="display: flex; align-items: center; justify-content: center; color: #eab308;">${sunIcon}</span>
-                                <span style="flex: 1; font-weight: 500;">Light Theme</span>
-                                <span class="theme-checkmark" style="
-                                    font-size: 18px;
-                                    color: var(--accent-color, #6366f1);
-                                    display: ${currentTheme === 'light' ? 'flex' : 'none'};
-                                    align-items: center;
-                                ">${checkIcon}</span>
-                            </div>
-
-                            <!-- Custom Themes List -->
-                            ${customThemes.map(ct => {
-                                const isSelected = currentTheme === ct.id;
-                                const primaryDot = ct.variables?.['--theme-bg-primary'] || '#09090b';
-                                const accentDot = ct.variables?.['--accent-color'] || '#6366f1';
-                                return `
-                                    <div class="theme-option custom-theme-item" data-theme="${ct.id}" style="
-                                        display: flex;
-                                        align-items: center;
-                                        gap: 12px;
-                                        padding: 12px 16px;
-                                        border-radius: 10px;
-                                        background: ${isSelected ? 'var(--theme-active-bg, rgba(255, 255, 255, 0.1))' : 'var(--theme-hover-bg, rgba(255, 255, 255, 0.04))'};
-                                        cursor: pointer;
-                                        transition: all 0.2s;
-                                        border: 2px solid ${isSelected ? 'var(--accent-color, #6366f1)' : 'var(--theme-border, transparent)'};
-                                    ">
-                                        <div style="display: flex; align-items: center; gap: 4px;">
-                                            <span style="width: 14px; height: 14px; border-radius: var(--radius-sm); background: ${primaryDot}; border: 1px solid var(--theme-border, rgba(255,255,255,0.2)); display: inline-block;"></span>
-                                            <span style="width: 14px; height: 14px; border-radius: var(--radius-sm); background: ${accentDot}; display: inline-block;"></span>
-                                        </div>
-                                        <span style="flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${this.escapeHtml(ct.name)}</span>
-                                        <div style="display: flex; align-items: center; gap: 6px;" class="custom-theme-actions">
-                                            <button class="edit-custom-theme-btn" data-theme-id="${ct.id}" title="Edit Theme" style="
-                                                background: none; border: none; color: var(--theme-text-secondary, #a1a1aa); cursor: pointer; padding: 4px; display: flex; align-items: center;
-                                            ">${editIcon}</button>
-                                            <button class="delete-custom-theme-btn" data-theme-id="${ct.id}" title="Delete Theme" style="
-                                                background: none; border: none; color: #ef4444; cursor: pointer; padding: 4px; display: flex; align-items: center;
-                                            ">${trashIcon}</button>
-                                            <span class="theme-checkmark" style="
-                                                font-size: 18px; color: var(--accent-color, #6366f1); display: ${isSelected ? 'flex' : 'none'}; align-items: center; margin-left: 4px;
-                                            ">${checkIcon}</span>
-                                        </div>
-                                    </div>
-                                `;
-                            }).join('')}
-                        </div>
-                    </div>
-
-                    <!-- Custom Theme Editor View (Hidden initially) -->
-                    <div id="themeModalEditor" style="display: none; flex-direction: column; gap: 16px;">
-                        <div style="display: flex; align-items: center; justify-content: space-between;">
-                            <h3 id="themeEditorTitle" style="margin: 0; font-size: 18px; font-weight: 600;">Create Custom Theme</h3>
-                            <button id="cancelThemeEditorBtnTop" style="background: none; border: none; color: var(--theme-text-secondary, #a1a1aa); font-size: 20px; cursor: pointer;">×</button>
-                        </div>
-
-                        <div style="display: flex; flex-direction: column; gap: 12px; max-height: 60vh; overflow-y: auto; padding-right: 4px;">
-                            <div>
-                                <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--theme-text-secondary, #a1a1aa);">Theme Name</label>
-                                <input type="text" id="customThemeNameInput" placeholder="My Custom Theme" style="
-                                    width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px;
-                                    border: 1px solid var(--theme-border, rgba(255,255,255,0.1));
-                                    background: var(--theme-input-bg, #121214); color: var(--theme-input-text, #f4f4f5);
-                                    font-size: 14px;
-                                ">
-                            </div>
-
-                            <div>
-                                <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--theme-text-secondary, #a1a1aa);">Base Mode</label>
-                                <select id="customThemeBaseSelect" style="
-                                    width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px;
-                                    border: 1px solid var(--theme-border, rgba(255,255,255,0.1));
-                                    background: var(--theme-input-bg, #121214); color: var(--theme-input-text, #f4f4f5);
-                                    font-size: 14px;
-                                ">
-                                    <option value="dark" ${!isLight ? 'selected' : ''}>Dark Base</option>
-                                    <option value="light" ${isLight ? 'selected' : ''}>Light Base</option>
-                                </select>
-                            </div>
-
-                            <div style="border-top: 1px solid var(--theme-border, rgba(255,255,255,0.1)); padding-top: 12px; margin-top: 4px;">
-                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--theme-text-primary, #f4f4f5);">Colors Customization</div>
-                                <div id="colorFieldsContainer" style="display: flex; flex-direction: column; gap: 10px;">
-                                    <!-- Dynamic color field rows injected via JS -->
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
-                            <button type="button" id="cancelThemeEditorBtn" style="
-                                background: var(--theme-hover-bg, rgba(255,255,255,0.08));
-                                color: var(--theme-text-primary, #f4f4f5);
-                                border: 1px solid var(--theme-border, transparent);
-                                padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 500;
-                            ">Cancel</button>
-                            <button type="button" id="saveCustomThemeBtn" style="
-                                background: #6366f1;
-                                color: #ffffff;
-                                border: none;
-                                padding: 10px 18px; border-radius: 8px; cursor: pointer; font-weight: 600;
-                                box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
-                            ">Save Theme</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        };
-
-        modal.innerHTML = renderModalHTML();
-        document.body.appendChild(modal);
-
-        let editingThemeId = null;
-
-        const close = () => {
-            const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-            modal.style.animation = 'nav-theme-fade-out 0.2s ease';
-            if (reducedMotion) modal.remove();
-            else setTimeout(() => modal.remove(), 200);
-        };
-
-        // Presets for Base Mode switching
-        const presets = {
-            dark: {
-                '--theme-bg-primary': '#09090b',
-                '--theme-bg-secondary': '#121214',
-                '--theme-bg-tertiary': '#1b1b1f',
-                '--theme-bg-card': '#18181b',
-                '--theme-text-primary': '#f4f4f5',
-                '--theme-text-secondary': '#a1a1aa',
-                '--theme-text-muted': '#52525b',
-                '--theme-border': '#27272a',
-                '--theme-input-bg': '#121214',
-                '--theme-input-text': '#f4f4f5',
-                '--accent-color': '#6366f1'
-            },
-            light: {
-                '--theme-bg-primary': '#f4f4f5',
-                '--theme-bg-secondary': '#ffffff',
-                '--theme-bg-tertiary': '#e4e4e7',
-                '--theme-bg-card': '#ffffff',
-                '--theme-text-primary': '#09090b',
-                '--theme-text-secondary': '#52525b',
-                '--theme-text-muted': '#a1a1aa',
-                '--theme-border': '#e4e4e7',
-                '--theme-input-bg': '#ffffff',
-                '--theme-input-text': '#09090b',
-                '--accent-color': '#18181b'
-            }
-        };
-
-        // Attach main modal event handlers
-        const attachMainEvents = () => {
-            const closeBtn = modal.querySelector('.modal-close-btn');
-            if (closeBtn) closeBtn.addEventListener('mousedown', close);
-
-            modal.addEventListener('mousedown', (e) => {
-                if (e.target === modal) close();
-            });
-
-            // Theme options selection
-            const themeOptions = modal.querySelectorAll('.theme-option');
-            themeOptions.forEach(option => {
-                option.addEventListener('mousedown', (e) => {
-                    if (e.target.closest('.custom-theme-actions')) return; // Ignore action clicks
-                    const selectedTheme = option.dataset.theme;
-                    this.applyTheme(selectedTheme);
-                    close();
-                    if (typeof Utils !== 'undefined' && Utils.showToast) {
-                        Utils.showToast(`Theme updated`);
-                    }
-                });
-            });
-
-            // Add custom theme (+) button
-            const addBtn = modal.querySelector('#addCustomThemeBtn');
-            if (addBtn) {
-                addBtn.addEventListener('mousedown', (e) => {
-                    e.stopPropagation();
-                    openEditor(null);
-                });
-            }
-
-            // Edit custom theme buttons
-            const editBtns = modal.querySelectorAll('.edit-custom-theme-btn');
-            editBtns.forEach(btn => {
-                btn.addEventListener('mousedown', (e) => {
-                    e.stopPropagation();
-                    const id = btn.dataset.themeId;
-                    openEditor(id);
-                });
-            });
-
-            // Delete custom theme buttons
-            const deleteBtns = modal.querySelectorAll('.delete-custom-theme-btn');
-            deleteBtns.forEach(btn => {
-                btn.addEventListener('mousedown', (e) => {
-                    e.stopPropagation();
-                    const id = btn.dataset.themeId;
-                    let customs = this.getCustomThemes();
-                    customs = customs.filter(c => c.id !== id);
-                    this.saveCustomThemes(customs);
-                    
-                    if (this.getCurrentTheme() === id) {
-                        this.applyTheme('dark');
-                    }
-                    
-                    modal.innerHTML = renderModalHTML();
-                    attachMainEvents();
-                    if (typeof Utils !== 'undefined' && Utils.showToast) {
-                        Utils.showToast('Custom theme deleted');
-                    }
-                });
-            });
-        };
-
-        // Custom Theme Color Schema
-        const colorSchema = [
-            { key: '--theme-bg-primary', label: 'Primary Background' },
-            { key: '--theme-bg-secondary', label: 'Secondary / Container BG' },
-            { key: '--theme-bg-tertiary', label: 'Tertiary / Sub-panel BG' },
-            { key: '--theme-bg-card', label: 'Card Background' },
-            { key: '--theme-text-primary', label: 'Primary Text Color' },
-            { key: '--theme-text-secondary', label: 'Secondary Text Color' },
-            { key: '--theme-text-muted', label: 'Muted / Hint Text Color' },
-            { key: '--theme-border', label: 'Border Color' },
-            { key: '--theme-input-bg', label: 'Input Background' },
-            { key: '--theme-input-text', label: 'Input Text Color' },
-            { key: '--accent-color', label: 'Accent Color' }
-        ];
-
-        // Open custom theme editor
-        const openEditor = (themeId = null) => {
-            editingThemeId = themeId;
-            const mainView = modal.querySelector('#themeModalMain');
-            const editorView = modal.querySelector('#themeModalEditor');
-            const titleEl = modal.querySelector('#themeEditorTitle');
-            const nameInput = modal.querySelector('#customThemeNameInput');
-            const baseSelect = modal.querySelector('#customThemeBaseSelect');
-            const colorContainer = modal.querySelector('#colorFieldsContainer');
-
-            mainView.style.display = 'none';
-            editorView.style.display = 'flex';
-
-            let initialVariables = {};
-            let themeName = '';
-            let baseMode = document.documentElement.classList.contains('light-theme') ? 'light' : 'dark';
-
-            if (themeId) {
-                const ct = customThemes.find(t => t.id === themeId);
-                if (ct) {
-                    titleEl.textContent = 'Edit Custom Theme';
-                    themeName = ct.name;
-                    baseMode = ct.base || 'dark';
-                    initialVariables = { ...ct.variables };
-                }
-            } else {
-                titleEl.textContent = 'Create Custom Theme';
-                themeName = '';
-                const active = getActiveColors();
-                initialVariables = {
-                    '--theme-bg-primary': active.primaryBg,
-                    '--theme-bg-secondary': active.secondaryBg,
-                    '--theme-bg-card': active.cardBg,
-                    '--theme-text-primary': active.textPrimary,
-                    '--theme-text-secondary': active.textSecondary,
-                    '--theme-border': active.border,
-                    '--theme-input-bg': active.inputBg,
-                    '--theme-input-text': active.inputText,
-                    '--accent-color': active.accentColor
-                };
-            }
-
-            nameInput.value = themeName;
-            baseSelect.value = baseMode;
-
-            // Render color input rows
-            colorContainer.innerHTML = colorSchema.map(item => {
-                const rawVal = initialVariables[item.key] || '#121214';
-                const hexVal = toHexColor(rawVal);
-                return `
-                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-                        <span style="font-size: 12px; color: var(--theme-text-secondary, #a1a1aa); flex: 1;">${item.label}</span>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <input type="color" class="color-picker-input" data-var="${item.key}" value="${hexVal}" style="
-                                border: none; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; background: none; padding: 0;
-                            ">
-                            <input type="text" class="color-hex-input" data-var="${item.key}" value="${hexVal}" style="
-                                width: 70px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--theme-border, rgba(255,255,255,0.1));
-                                background: var(--theme-input-bg, #121214); color: var(--theme-input-text, #f4f4f5); font-size: 12px; font-family: monospace;
-                            ">
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            // Dynamic update when changing Base Mode select dropdown
-            baseSelect.onchange = (e) => {
-                const selectedMode = e.target.value;
-                const preset = presets[selectedMode] || presets.dark;
-                colorSchema.forEach(item => {
-                    const val = preset[item.key];
-                    if (val) {
-                        const hexVal = toHexColor(val);
-                        const picker = colorContainer.querySelector(`.color-picker-input[data-var="${item.key}"]`);
-                        const hexInput = colorContainer.querySelector(`.color-hex-input[data-var="${item.key}"]`);
-                        if (picker) picker.value = hexVal;
-                        if (hexInput) hexInput.value = hexVal;
-                    }
-                });
-            };
-
-            // Sync color picker with hex text input
-            colorContainer.querySelectorAll('.color-picker-input').forEach(picker => {
-                picker.addEventListener('input', (e) => {
-                    const varName = picker.dataset.var;
-                    const hexInput = colorContainer.querySelector(`.color-hex-input[data-var="${varName}"]`);
-                    if (hexInput) hexInput.value = picker.value;
-                });
-            });
-
-            colorContainer.querySelectorAll('.color-hex-input').forEach(hexInput => {
-                hexInput.addEventListener('input', (e) => {
-                    const varName = hexInput.dataset.var;
-                    const picker = colorContainer.querySelector(`.color-picker-input[data-var="${varName}"]`);
-                    if (picker && e.target.value.match(/^#[0-9A-Fa-f]{6}$/)) {
-                        picker.value = e.target.value;
-                    }
-                });
-            });
-
-            // Handle Save
-            const saveBtn = modal.querySelector('#saveCustomThemeBtn');
-            const cancelBtn = modal.querySelector('#cancelThemeEditorBtn');
-            const cancelBtnTop = modal.querySelector('#cancelThemeEditorBtnTop');
-
-            const backToMain = () => {
-                mainView.style.display = 'block';
-                editorView.style.display = 'none';
-            };
-
-            cancelBtn.onclick = backToMain;
-            cancelBtnTop.onclick = backToMain;
-
-            saveBtn.onclick = () => {
-                const name = nameInput.value.trim() || 'Custom Theme';
-                const base = baseSelect.value;
-                const variables = {};
-
-                colorContainer.querySelectorAll('.color-picker-input').forEach(picker => {
-                    variables[picker.dataset.var] = picker.value;
-                });
-
-                let customs = this.getCustomThemes();
-                const newId = editingThemeId || ('custom_' + Date.now());
-
-                if (editingThemeId) {
-                    const idx = customs.findIndex(c => c.id === editingThemeId);
-                    if (idx !== -1) {
-                        customs[idx] = { id: newId, name, base, variables };
-                    } else {
-                        customs.push({ id: newId, name, base, variables });
-                    }
-                } else {
-                    customs.push({ id: newId, name, base, variables });
-                }
-
-                this.saveCustomThemes(customs);
-                this.applyTheme(newId);
-
-                close();
-                if (typeof Utils !== 'undefined' && Utils.showToast) {
-                    Utils.showToast(`Custom theme "${name}" saved!`);
-                }
-            };
-        };
-
-        attachMainEvents();
-
-        // Handle escape key
-        const handleEscape = (e) => {
-            if (e.key === 'Escape') {
-                close();
-                document.removeEventListener('keydown', handleEscape);
-            }
-        };
-        document.addEventListener('keydown', handleEscape);
-
-        // Add animations
-        if (!document.getElementById('themeModalAnimations')) {
-            const style = document.createElement('style');
-            style.id = 'themeModalAnimations';
-            style.textContent = `
-                @keyframes nav-theme-fade-out {
-                    from { opacity: 1; }
-                    to { opacity: 0; }
-                }
-                @keyframes nav-theme-fade-in {
-                    from { opacity: 0; }
-                    to { opacity: 1; }
-                }
-                @keyframes nav-theme-scale-in {
-                    from { opacity: 0; transform: scale(0.95); }
-                    to { opacity: 1; transform: scale(1); }
-                }
-            `;
-            document.head.appendChild(style);
-        }
     }
 
     /**

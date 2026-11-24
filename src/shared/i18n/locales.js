@@ -1345,6 +1345,13 @@ export const locales = {
                 shadow_strong: "Strong",
                 reset_button: "Reset appearance"
             },
+            theme: {
+                title: "Theme",
+                description: "Changes at once, in every open tab.",
+                dark: { title: "Dark", description: "Light text on black." },
+                light: { title: "Light", description: "Dark text on white." },
+                auto: { title: "Match system", description: "Follows Chrome's mode." }
+            },
             display_mode: {
                 title: "Display Mode",
                 description: "Choose how you want to interact with the extension.",
@@ -1550,6 +1557,9 @@ export const locales = {
             settings: "Settings",
             admin_panel: "Admin Panel",
             theme: "Theme",
+            theme_dark: "Dark",
+            theme_light: "Light",
+            theme_auto: "Match system",
             log_out: "Log Out"
         },
         live_page: {
@@ -4310,6 +4320,13 @@ export const locales = {
                 shadow_strong: "Выразительная",
                 reset_button: "Сбросить оформление"
             },
+            theme: {
+                title: "Тема",
+                description: "Меняется сразу, на всех открытых вкладках.",
+                dark: { title: "Тёмная", description: "Светлый текст на чёрном." },
+                light: { title: "Светлая", description: "Тёмный текст на белом." },
+                auto: { title: "Как в системе", description: "Следует за режимом Chrome." }
+            },
             display_mode: {
                 title: "Режим отображения",
                 description: "Выберите, как вы хотите взаимодействовать с расширением.",
@@ -4515,6 +4532,9 @@ export const locales = {
             settings: "Настройки",
             admin_panel: "Админ панель",
             theme: "Тема",
+            theme_dark: "Тёмная",
+            theme_light: "Светлая",
+            theme_auto: "Как в системе",
             log_out: "Выйти"
         },
         live_page: {

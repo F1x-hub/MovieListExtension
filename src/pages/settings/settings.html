@@ -87,6 +87,44 @@
                         </div>
 
                         <div class="settings-section">
+                            <h3 class="section-title" id="themeSectionTitle" data-i18n="settings.theme.title">Тема</h3>
+                            <p class="section-description" data-i18n="settings.theme.description">Меняется сразу, на всех открытых вкладках.</p>
+
+                            <div class="mode-options theme-options" role="radiogroup" aria-labelledby="themeSectionTitle">
+                                <label class="mode-card">
+                                    <input type="radio" name="theme" value="dark" checked>
+                                    <div class="mode-content">
+                                        <div class="mode-preview theme-preview" aria-hidden="true"><span class="theme-scene theme-preview--dark"><span></span><span></span><span></span><span></span></span></div>
+                                        <div class="mode-info">
+                                            <h4 data-i18n="settings.theme.dark.title">Тёмная</h4>
+                                            <p data-i18n="settings.theme.dark.description">Светлый текст на чёрном.</p>
+                                        </div>
+                                    </div>
+                                </label>
+                                <label class="mode-card">
+                                    <input type="radio" name="theme" value="light">
+                                    <div class="mode-content">
+                                        <div class="mode-preview theme-preview" aria-hidden="true"><span class="theme-scene theme-preview--light"><span></span><span></span><span></span><span></span></span></div>
+                                        <div class="mode-info">
+                                            <h4 data-i18n="settings.theme.light.title">Светлая</h4>
+                                            <p data-i18n="settings.theme.light.description">Тёмный текст на белом.</p>
+                                        </div>
+                                    </div>
+                                </label>
+                                <label class="mode-card">
+                                    <input type="radio" name="theme" value="auto">
+                                    <div class="mode-content">
+                                        <div class="mode-preview theme-preview" aria-hidden="true"><span class="theme-scene theme-preview--dark"><span></span><span></span><span></span><span></span></span><span class="theme-scene theme-preview--light theme-scene--half"><span></span><span></span><span></span><span></span></span></div>
+                                        <div class="mode-info">
+                                            <h4 data-i18n="settings.theme.auto.title">Как в системе</h4>
+                                            <p data-i18n="settings.theme.auto.description">Следует за режимом Chrome.</p>
+                                        </div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="settings-section">
                             <h3 class="section-title" data-i18n="settings.display_mode.title">Display Mode</h3>
                             <p class="section-description" data-i18n="settings.display_mode.description">Choose how you want to interact with the extension.</p>
                             

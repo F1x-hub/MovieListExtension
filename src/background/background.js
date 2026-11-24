@@ -181,10 +181,8 @@ async function refreshTrackedTheNumbersMovies() {
 // Listen for storage changes from other parts of the extension
 chrome.storage.onChanged.addListener(async (changes, areaName) => {
     if (areaName === 'local') {
-        if (changes.theme) {
-            if (typeof IconUtils !== 'undefined') {
-                IconUtils.updateExtensionIcon(changes.theme.newValue);
-            }
+        if (changes.toolbarScheme && typeof IconUtils !== 'undefined') {
+            IconUtils.updateExtensionIcon(changes.toolbarScheme.newValue);
         }
         if (changes.animeRadioSource) {
             const newSource = changes.animeRadioSource.newValue;
@@ -211,10 +209,10 @@ chrome.storage.onChanged.addListener(async (changes, areaName) => {
 });
 
 function updateIconFromStorage() {
-    chrome.storage.local.get(['theme'], (result) => {
+    chrome.storage.local.get(['toolbarScheme', 'theme'], (result) => {
         if (typeof IconUtils !== 'undefined') {
-            const theme = result.theme || 'dark';
-            IconUtils.updateExtensionIcon(theme);
+            // `theme` is what older versions kept, until the first page reports the browser's mode.
+            IconUtils.updateExtensionIcon(result.toolbarScheme || result.theme || 'dark');
         }
     });
 }

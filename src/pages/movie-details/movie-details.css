@@ -2515,6 +2515,10 @@
     border: 1px solid rgba(16, 185, 129, 0.25);
 }
 
+.light-theme .status-badge--released {
+    color: color-mix(in srgb, var(--ui-color-status-success) 60%, var(--ui-color-content));
+}
+
 .status-badge--upcoming {
     background: var(--theme-hover-bg);
     color: var(--ui-color-content);

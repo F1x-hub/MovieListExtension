@@ -502,6 +502,69 @@
     right: 0;
 }
 
+/* Theme cards: each preview carries its own palette (theme.css). */
+.theme-options {
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.mode-card:has(input:focus-visible) .mode-content {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 2px;
+}
+
+.theme-options .mode-content {
+    padding: 12px;
+}
+
+.theme-options .mode-info h4 {
+    margin-top: 8px;
+}
+
+.theme-options .mode-info p {
+    font-size: var(--font-size-sm);
+}
+
+.theme-preview {
+    height: 92px;
+    margin-bottom: 4px;
+}
+
+.theme-scene {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template: 14px 8px 1fr / repeat(4, 1fr);
+    gap: 8px;
+    padding: 0 10px 10px;
+    background: var(--theme-bg-primary);
+}
+
+.theme-scene::before {
+    grid-column: 1 / -1;
+    margin: 0 -10px;
+    border-bottom: 1px solid var(--theme-border);
+    background: var(--theme-bg-secondary);
+    content: '';
+}
+
+.theme-scene::after {
+    grid-area: 2 / 1 / auto / span 2;
+    border-radius: var(--radius-xs);
+    background: var(--theme-text-primary);
+    content: '';
+}
+
+.theme-scene span {
+    grid-row: 3;
+    border: 1px solid var(--theme-border-hover);
+    border-radius: var(--radius-sm);
+    background: var(--theme-bg-tertiary);
+}
+
+.theme-scene--half {
+    clip-path: polygon(62% 0, 100% 0, 100% 100%, 38% 100%);
+}
+
 /* ==========================================================================
    Custom Language Dropdown
    ========================================================================== */

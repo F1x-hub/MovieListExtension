@@ -3,8 +3,11 @@
  * Defines CSS variables for both light and dark themes
  */
 
-/* Default Dark Theme Variables */
+/* Default Dark Theme Variables. A theme preview in Settings carries the palette it shows. */
+.theme-preview--dark,
 :root {
+    color-scheme: dark;
+
     /* Foreground ink channel for translucent overlays: white on dark, near-black on light */
     --theme-ink-rgb: 255, 255, 255;
 
@@ -58,7 +61,10 @@
 }
 
 /* Light Theme Variables */
+.theme-preview--light,
 .light-theme {
+    color-scheme: light;
+
     --theme-ink-rgb: 9, 9, 11;
 
     /* Background Colors */
@@ -130,13 +136,19 @@ body {
     color: var(--theme-text-primary);
 }
 
-/* Smooth theme transitions */
-body,
-.nav-header,
-.nav-user-dropdown,
-.collection-dropdown,
-.filter-section {
-    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+/* ThemeService sets this for one frame: the whole page changes at once instead of every
+   element at the speed of its own transition. */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+    transition: none !important;
+}
+
+/* Other sites' players are light documents: under a dark color-scheme the browser would
+   paint white behind a transparent one. Our own pages in frames follow the theme. */
+iframe:not(.live-frame, [src^="chrome-extension:"]) {
+    color-scheme: light;
 }
 
 /* Light theme body styles */
@@ -175,7 +187,6 @@ body,
 }
 
 .light-theme .nav-user-dropdown {
-    background: var(--theme-bg-secondary);
     border: 1px solid var(--theme-border);
     box-shadow: var(--elevation-2);
 }
@@ -249,7 +260,6 @@ body,
 }
 
 /* Light theme modal overlays */
-.light-theme .modal-overlay,
-.light-theme .theme-modal-overlay {
+.light-theme .modal-overlay {
     background: rgba(0, 0, 0, 0.5);
 }

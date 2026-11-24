@@ -450,12 +450,12 @@
     position: absolute;
     top: 100%;
     right: 0;
-    background: rgba(18, 18, 20, 0.85);
-    backdrop-filter: blur(20px);
+    /* Opaque: inside the blurred bar a second blur does not work and posters show through. */
+    background: var(--theme-bg-secondary);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: var(--radius-lg);
     box-shadow: var(--elevation-3);
-    min-width: 170px;
+    min-width: 176px;
     opacity: 0;
     visibility: hidden;
     transform: translateY(var(--motion-distance-enter));
@@ -466,7 +466,6 @@
 }
 
 .light-theme .nav-user-dropdown {
-    background: rgba(255, 255, 255, 0.9);
     border-color: rgba(9, 9, 11, 0.08);
     box-shadow: var(--elevation-1);
 }
@@ -495,6 +494,13 @@
     font-family: var(--font-family);
 }
 
+button.nav-dropdown-item {
+    width: 100%;
+    border: 0;
+    background: none;
+    text-align: left;
+}
+
 .nav-dropdown-item:hover {
     background: var(--theme-hover-bg);
     color: var(--theme-text-primary);
@@ -512,6 +518,53 @@
     font-size: var(--font-size-md);
     display: inline-flex;
     align-items: center;
+}
+
+/* Theme: the choice is right in the menu. Settings has the same three with previews. */
+.nav-theme {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2px;
+    margin: 4px 10px 6px;
+    padding: 3px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-md);
+    background: var(--theme-bg-primary);
+}
+
+.nav-theme__option {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    border-radius: calc(var(--radius-md) - 3px);
+    color: var(--theme-text-secondary);
+    cursor: pointer;
+    transition: background-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.nav-theme__option input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.nav-theme__option:hover {
+    background: var(--theme-hover-bg);
+    color: var(--theme-text-primary);
+}
+
+.nav-theme__option:has(input:checked) {
+    background: var(--theme-accent);
+    color: var(--theme-bg-primary);
+}
+
+.nav-theme__option:has(input:focus-visible) {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 2px;
 }
 
 .nav-dropdown-divider {
@@ -649,6 +702,13 @@
     .nav-user-dropdown {
         right: -12px;
         min-width: 150px;
+    }
+}
+
+/* Nothing narrower fits both the guest's Settings and "Sign in". */
+@media (width < 360px) {
+    #navGuestSettingsBtn {
+        display: none !important;
     }
 }
 

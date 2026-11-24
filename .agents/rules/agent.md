@@ -557,7 +557,10 @@ checklist; `npm run test:visual-design` enforces much of it.
 - What's new: draft entries never open by themselves, and release packaging checks that the
   catalog covers the manifest version.
 - Themes: `ThemeService` owns theme state, and `theme-init.js`, Navigation, the popup and Settings
-  delegate to it. `SeasonalThemeService` owns the holiday windows, the opt-out, the `season-*`
+  delegate to it. `movieExtensionTheme` always holds `dark` or `light`, what an older version reads;
+  `movieExtensionThemeAuto` marks following the browser. Opening a page never stores the default.
+  A page in a frame takes the stored theme: its own media query describes the page around it. The
+  toolbar icon follows the browser's mode (`toolbarScheme`), because the worker has no media queries. `SeasonalThemeService` owns the holiday windows, the opt-out, the `season-*`
   class and `#seasonalDecor`, loads `src/shared/seasonal/<id>/` only in season and never changes
   the theme. Seasonal achievements count only ratings inside their window and stay out of
   `maxPoints()`; `tests/seasonalTheme.test.cjs` keeps their dates in step.

@@ -435,10 +435,22 @@ the alias must point to a canonical semantic role and have a removal path.
 uses `#85858e` and light mode uses `#66666e`. Both maintain at least 4.5:1
 contrast against their page backgrounds for ordinary text.
 
-`ThemeService` remains the only owner of theme persistence, custom-theme
-migration, DOM theme classes, and cross-tab synchronization. Theme editor values
-must remain within the approved neutral system; arbitrary chromatic accents are
-not part of the product contract.
+`ThemeService` remains the only owner of theme persistence, DOM theme classes,
+cross-tab synchronization and the toolbar icon. There are three choices: dark (the
+default), light, and «Как в системе», which follows `prefers-color-scheme`, that is
+Chrome's own mode. There are no user-made themes; one from the removed editor
+becomes its base. The choice is made in place, without a dialog: three radios in the
+account menu (`.nav-theme`) and three cards with previews in Settings. It applies at
+once, so Save and Reset do not cover it. A guest reaches it through the Settings
+button beside «Войти».
+
+A theme change reaches the whole page in one frame: `.theme-switching` switches
+transitions off while the classes change. Do not add transitions that exist only to
+fade a theme change.
+
+`theme.css` sets `color-scheme` with the theme, so native parts (select lists,
+autofill) match it. Frames of other sites stay `color-scheme: light`: under a dark
+one the browser paints white behind a transparent document.
 
 ## Motion
 

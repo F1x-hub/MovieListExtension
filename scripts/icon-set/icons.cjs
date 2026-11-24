@@ -78,6 +78,9 @@ icons.LOGIN = stroke('M12 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H12M3 10H11M7.6 
 
 icons.LOGOUT = stroke('M8 3H6A3 3 0 0 0 3 6V14A3 3 0 0 0 6 17H8M9 10H17M13.6 6.4L17.2 10L13.6 13.6');
 
+// A screen, half light and half dark: the theme follows the browser.
+icons.SYSTEM = half(box(2, 3, 16, 11, 2.5), 10) + stroke('M7 17H13');
+
 icons.MOON = fill('M17.9 12A8.1 8.1 0 1 1 8 2.1A6.4 6.4 0 0 0 17.9 12Z');
 
 icons.SUN = fill(dot(10, 10, 3.8)) + stroke(Array.from({ length: 8 }, (_, i) => {

@@ -1,299 +1,186 @@
 /**
  * ThemeService
  *
- * The single runtime owner for extension theme persistence, migration, and
- * DOM application. Legacy callers may keep using their old method names, but
- * they must delegate here instead of changing classes or CSS variables.
+ * The single runtime owner of the extension theme: persistence, DOM classes,
+ * following the browser's own light/dark mode, and the toolbar icon. Other code
+ * delegates here instead of changing classes or CSS variables.
+ *
+ * Runs synchronously in <head>, before the first paint.
  */
 (function (global) {
     'use strict';
 
+    // Always 'dark' or 'light', also while following the browser: it is what an older
+    // version of the extension understands, so going back to one keeps the theme.
     const THEME_KEY = 'movieExtensionTheme';
+    // Present while the theme follows the browser.
+    const AUTO_KEY = 'movieExtensionThemeAuto';
+    // Themes users made in the removed editor. Only their base is read, the data is kept.
     const CUSTOM_THEMES_KEY = 'movieExtensionCustomThemes';
-    const CUSTOM_THEME_SCHEMA_VERSION = 2;
     const DEFAULT_THEME = 'dark';
-
-    const MANAGED_CUSTOM_VARIABLES = Object.freeze([
-        '--theme-bg-primary',
-        '--theme-bg-secondary',
-        '--theme-bg-tertiary',
-        '--theme-bg-card',
-        '--theme-text-primary',
-        '--theme-text-secondary',
-        '--theme-text-muted',
-        '--theme-border',
-        '--theme-input-bg',
-        '--theme-input-text',
-        '--theme-hover-bg',
-        '--theme-active-bg',
-        '--accent-color'
-    ]);
+    const AUTO = 'auto';
 
     const listeners = new Set();
-    let externalListenersBound = false;
+    const lightQuery = typeof global.matchMedia === 'function'
+        ? global.matchMedia('(prefers-color-scheme: light)')
+        : null;
+    // A frame's media query describes the page around it, not the browser.
+    const isFramed = global.top !== undefined && global.top !== global.self;
 
-    function getStorage() {
+    const isTheme = value => value === 'dark' || value === 'light';
+
+    function readStorage(key) {
         try {
-            return global.localStorage || null;
+            return global.localStorage?.getItem(key) ?? null;
         } catch {
             return null;
         }
     }
 
-    function getRoot() {
-        return typeof document !== 'undefined' ? document.documentElement : null;
-    }
-
-    function getBody() {
-        return typeof document !== 'undefined' ? document.body : null;
-    }
-
-    function safeParse(value, fallback) {
+    function writeStorage(key, value) {
         try {
-            return JSON.parse(value);
-        } catch {
-            return fallback;
-        }
-    }
-
-    function normalizeVariableMap(variables) {
-        if (!variables || typeof variables !== 'object' || Array.isArray(variables)) {
-            return {};
-        }
-
-        return Object.entries(variables).reduce((normalized, [key, value]) => {
-            if (/^--[a-z0-9-]+$/i.test(key) && (typeof value === 'string' || typeof value === 'number')) {
-                normalized[key] = String(value);
-            }
-            return normalized;
-        }, {});
-    }
-
-    function normalizeCustomTheme(theme, index = 0) {
-        if (!theme || typeof theme !== 'object') return null;
-
-        const id = typeof theme.id === 'string' && theme.id.trim()
-            ? theme.id.trim()
-            : `custom_migrated_${index}`;
-
-        return {
-            version: CUSTOM_THEME_SCHEMA_VERSION,
-            id,
-            name: typeof theme.name === 'string' && theme.name.trim()
-                ? theme.name.trim()
-                : 'Custom Theme',
-            base: theme.base === 'light' ? 'light' : 'dark',
-            variables: normalizeVariableMap(theme.variables)
-        };
-    }
-
-    function persistCustomThemes(themes) {
-        const storage = getStorage();
-        if (storage) {
-            try {
-                storage.setItem(CUSTOM_THEMES_KEY, JSON.stringify({
-                    version: CUSTOM_THEME_SCHEMA_VERSION,
-                    themes
-                }));
-            } catch (error) {
-                console.warn('ThemeService: could not persist custom themes', error);
-            }
-        }
-    }
-
-    function readCustomThemes() {
-        const storage = getStorage();
-        if (!storage) return [];
-
-        let raw;
-        try {
-            raw = storage.getItem(CUSTOM_THEMES_KEY);
-        } catch {
-            return [];
-        }
-
-        if (!raw) return [];
-
-        const parsed = safeParse(raw, null);
-        const sourceThemes = Array.isArray(parsed)
-            ? parsed
-            : (parsed && Array.isArray(parsed.themes) ? parsed.themes : []);
-        const themes = sourceThemes
-            .map((theme, index) => normalizeCustomTheme(theme, index))
-            .filter(Boolean);
-
-        const isCurrentSchema = parsed
-            && !Array.isArray(parsed)
-            && parsed.version === CUSTOM_THEME_SCHEMA_VERSION;
-
-        if (!isCurrentSchema) {
-            persistCustomThemes(themes);
-        }
-
-        return themes;
-    }
-
-    function getCustomThemes() {
-        return readCustomThemes().map(theme => ({
-            ...theme,
-            variables: { ...theme.variables }
-        }));
-    }
-
-    function saveCustomThemes(customThemes) {
-        const sourceThemes = Array.isArray(customThemes) ? customThemes : [];
-        const themes = sourceThemes
-            .map((theme, index) => normalizeCustomTheme(theme, index))
-            .filter(Boolean);
-
-        persistCustomThemes(themes);
-
-        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-            const result = chrome.storage.local.set({ customThemes: themes });
-            result?.catch?.(() => {});
-        }
-
-        return getCustomThemes();
-    }
-
-    function getCurrentTheme() {
-        const storage = getStorage();
-        if (!storage) return DEFAULT_THEME;
-
-        try {
-            const savedTheme = storage.getItem(THEME_KEY);
-            return typeof savedTheme === 'string' && savedTheme.trim()
-                ? savedTheme.trim()
-                : DEFAULT_THEME;
-        } catch {
-            return DEFAULT_THEME;
-        }
-    }
-
-    function resolveTheme(theme) {
-        const requestedTheme = typeof theme === 'string' && theme.trim()
-            ? theme.trim()
-            : DEFAULT_THEME;
-
-        if (requestedTheme === 'dark' || requestedTheme === 'light') {
-            return { id: requestedTheme, customTheme: null };
-        }
-
-        const customTheme = getCustomThemes().find(item => item.id === requestedTheme);
-        return customTheme
-            ? { id: customTheme.id, customTheme }
-            : { id: DEFAULT_THEME, customTheme: null };
-    }
-
-    function clearManagedVariables(root) {
-        if (!root || !root.style) return;
-        MANAGED_CUSTOM_VARIABLES.forEach(variable => root.style.removeProperty(variable));
-    }
-
-    function updateExtensionIcon(isLight) {
-        if (typeof IconUtils === 'undefined' || !IconUtils.updateExtensionIcon) return;
-
-        try {
-            IconUtils.updateExtensionIcon(isLight ? 'light' : 'dark');
-
-            if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
-                const navLogoImg = document.querySelector('#navLogo img');
-                if (navLogoImg && IconUtils.getIconPath) {
-                    navLogoImg.src = chrome.runtime.getURL(
-                        IconUtils.getIconPath(isLight ? 'light' : 'dark', 48)
-                    );
-                }
-            }
+            if (value === null) global.localStorage?.removeItem(key);
+            else global.localStorage?.setItem(key, value);
         } catch (error) {
-            console.warn('ThemeService: could not update extension icon', error);
+            console.warn('ThemeService: could not persist the theme', error);
         }
     }
 
-    function notify(themeState) {
+    /** The base of a theme made in the removed editor, or null. */
+    function customThemeBase(id) {
+        try {
+            const parsed = JSON.parse(readStorage(CUSTOM_THEMES_KEY));
+            const themes = Array.isArray(parsed) ? parsed : parsed?.themes;
+            const theme = themes?.find?.(item => item?.id === id);
+            return theme ? (theme.base === 'light' ? 'light' : 'dark') : null;
+        } catch {
+            return null;
+        }
+    }
+
+    function storedTheme() {
+        const stored = readStorage(THEME_KEY);
+        if (isTheme(stored)) return stored;
+        const base = stored ? customThemeBase(stored) : null;
+        if (base) writeStorage(THEME_KEY, base);
+        return base || DEFAULT_THEME;
+    }
+
+    /** What the user chose: 'dark', 'light' or 'auto'. */
+    function getPreference() {
+        return readStorage(AUTO_KEY) ? AUTO : storedTheme();
+    }
+
+    function resolve(preference) {
+        if (preference !== AUTO) return isTheme(preference) ? preference : DEFAULT_THEME;
+        if (isFramed || !lightQuery) return storedTheme();
+        return lightQuery.matches ? 'light' : 'dark';
+    }
+
+    /** The theme on screen: 'dark' or 'light'. */
+    function getCurrentTheme() {
+        return resolve(getPreference());
+    }
+
+    function notify(state) {
         listeners.forEach(listener => {
             try {
-                listener(themeState);
+                listener(state);
             } catch (error) {
                 console.warn('ThemeService: theme listener failed', error);
             }
         });
     }
 
-    function applyTheme(theme = getCurrentTheme(), options = {}) {
-        const {
-            persist = true,
-            syncChromeStorage = true
-        } = options;
-        const resolved = resolveTheme(theme);
-        const isLight = resolved.id === 'light' || resolved.customTheme?.base === 'light';
-        const root = getRoot();
-        const body = getBody();
+    /**
+     * Elements have transitions of different lengths, so a theme change would reach them
+     * one after another. Everything changes in one frame instead.
+     */
+    function withoutTransitions(root, change) {
+        root.classList.add('theme-switching');
+        change();
+        if (typeof global.requestAnimationFrame !== 'function') {
+            root.classList.remove('theme-switching');
+            return;
+        }
+        global.requestAnimationFrame(() => global.requestAnimationFrame(() => {
+            root.classList.remove('theme-switching');
+        }));
+    }
 
-        [root, body].filter(Boolean).forEach(element => {
+    function applyClasses(theme) {
+        const isLight = theme === 'light';
+        const root = typeof document !== 'undefined' ? document.documentElement : null;
+        if (!root) return;
+        const body = document.body;
+        const change = () => [root, body].filter(Boolean).forEach(element => {
             element.classList.toggle('light-theme', isLight);
             element.classList.toggle('dark-theme', !isLight);
         });
-
-        clearManagedVariables(root);
-        if (root && resolved.customTheme) {
-            Object.entries(resolved.customTheme.variables).forEach(([variable, value]) => {
-                root.style.setProperty(variable, value);
-            });
+        if (body && root.classList.contains(isLight ? 'dark-theme' : 'light-theme')) {
+            withoutTransitions(root, change);
+        } else {
+            change();
         }
+    }
+
+    function applyTheme(preference = getPreference(), { persist = true } = {}) {
+        const chosen = preference === AUTO || isTheme(preference) ? preference : DEFAULT_THEME;
+        const theme = resolve(chosen);
 
         if (persist) {
-            const storage = getStorage();
-            try {
-                storage?.setItem(THEME_KEY, resolved.id);
-            } catch (error) {
-                console.warn('ThemeService: could not persist active theme', error);
-            }
+            writeStorage(AUTO_KEY, chosen === AUTO ? '1' : null);
         }
+        // Frames read it, and the browser may have changed while no page was open.
+        if (persist || (chosen === AUTO && !isFramed)) writeStorage(THEME_KEY, theme);
 
-        if (syncChromeStorage && typeof chrome !== 'undefined' && chrome.storage?.local) {
-            try {
-                const result = chrome.storage.local.set({ theme: resolved.id });
-                result?.catch?.(() => {});
-            } catch (error) {
-                console.warn('ThemeService: could not sync active theme', error);
-            }
-        }
+        applyClasses(theme);
 
-        updateExtensionIcon(isLight);
-
-        const state = {
-            theme: resolved.id,
-            isLight,
-            customTheme: resolved.customTheme
-        };
+        const state = { preference: chosen, theme, isLight: theme === 'light' };
         notify(state);
         return state;
     }
 
-    function applyCurrentTheme(options = {}) {
-        return applyTheme(getCurrentTheme(), options);
+    function applyCurrentTheme() {
+        return applyTheme(getPreference(), { persist: false });
+    }
+
+    /**
+     * The toolbar belongs to the browser, so its icon follows the browser's mode and not
+     * the extension's theme. The service worker has no media queries: it repeats the last
+     * value seen by a page (background.js).
+     */
+    function updateToolbarIcon() {
+        if (isFramed || !lightQuery || typeof chrome === 'undefined') return;
+        try {
+            const result = chrome.storage?.local?.set({ toolbarScheme: lightQuery.matches ? 'light' : 'dark' });
+            result?.catch?.(() => {});
+        } catch (error) {
+            console.warn('ThemeService: could not update the toolbar icon', error);
+        }
     }
 
     function bindExternalListeners() {
-        if (externalListenersBound || typeof global.addEventListener !== 'function') return;
-        externalListenersBound = true;
-
-        global.addEventListener('storage', event => {
-            if (event.key === THEME_KEY && event.newValue) {
-                applyTheme(event.newValue, { persist: false, syncChromeStorage: false });
-            } else if (event.key === CUSTOM_THEMES_KEY) {
-                applyCurrentTheme({ persist: false, syncChromeStorage: false });
-            }
+        global.addEventListener?.('storage', event => {
+            if (event.key === THEME_KEY || event.key === AUTO_KEY) applyCurrentTheme();
         });
+
+        lightQuery?.addEventListener?.('change', () => {
+            updateToolbarIcon();
+            if (!isFramed && getPreference() === AUTO) applyTheme(AUTO);
+        });
+
+        // The service runs before <body> exists; pages without Navigation need it there too.
+        if (typeof document !== 'undefined' && !document.body) {
+            document.addEventListener?.('DOMContentLoaded', () => applyCurrentTheme(), { once: true });
+        }
     }
 
-    const ThemeService = {
-        CUSTOM_THEME_SCHEMA_VERSION,
+    global.ThemeService = {
+        AUTO,
         DEFAULT_THEME,
-        MANAGED_CUSTOM_VARIABLES,
+        getPreference,
         getCurrentTheme,
-        getCustomThemes,
-        saveCustomThemes,
         applyTheme,
         applyCurrentTheme,
         subscribe(listener) {
@@ -303,7 +190,7 @@
         }
     };
 
-    global.ThemeService = ThemeService;
     bindExternalListeners();
-    applyCurrentTheme({ persist: false, syncChromeStorage: false });
+    applyCurrentTheme();
+    updateToolbarIcon();
 })(typeof window !== 'undefined' ? window : globalThis);

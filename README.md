@@ -470,6 +470,8 @@ keeps npm-compatible three-component semver metadata.
 - Profile: a new «Статистика» tab next to «Обзор» and «Достижения» (`?tab=statistics`) holds genres with the average score, release years, favourite actors and directors, movie marathons and reactions to reviews. Reactions and marathons are read only when the tab first opens. Empty decades keep their place on the axis, and bars are proportional instead of having a minimum length that drew 1, 2 and 3 films alike.
 - Profile: «Оценки по дням» is a full-width year of rounded squares of about 16 px (they were 7 px dots). Choosing a day lists its films; buttons walk the days with ratings; the keyboard moves by day, week and month with one tab stop. Shades have fixed steps (0, 1, 2, 3–4, 5 and more), each at least 3:1 against the page in both themes, so one record day no longer fades the rest. The header says how many ratings, active days and days in a row the year had.
 - Profile: the main numbers, with hours watched, stand beside the name; «Продолжить просмотр» is three cards in a row with the time left; another user's profile opens with the taste match; a profile without ratings shows one next step instead of empty sections.
+- The theme is chosen in place instead of in an old dialog: three buttons in the account menu, and three cards with previews in Settings → «Основные». «Как в системе» is new: it follows Chrome's mode while the page is open. Dark stays the default.
+- A guest can open Settings, and so change the theme and the language, with a button beside «Войти».
 
 ### Fixes
 
@@ -477,17 +479,24 @@ keeps npm-compatible three-component semver metadata.
 - Profile: favourite genres no longer ask to rate films after hundreds of ratings. The helper that counted them loaded only on the profile page, so every rating made elsewhere saved an empty list. Genres are now counted from the films already loaded, and saving or deleting a rating no longer reads all of the user's ratings for it.
 - Profile: «Участник с октября 2025» instead of «с октябрь 2025 г.», noun forms follow the number («24 оценки», «3 реакции»), month labels no longer overlap, portraits of actors and directors show whole, and the sections keep their order whichever answer comes first.
 - One scrollbar for the whole extension, in `src/shared/styles/scrollbars.css`. Twelve stylesheets had their own, and those with `scrollbar-width: thin` or `scrollbar-color` showed the system bar with arrows.
+- A theme change reaches the whole page at once. Elements used to change one after another, at six speeds from 120 to 300 ms (418 transitions on Home).
+- The account menu is opaque, so posters and ratings no longer show through it, and «Выйти» and the theme can be reached with the keyboard. The theme entry no longer turns into English «Theme (Light)», and it follows a change made in another tab.
+- Native parts such as select lists and autofill match the theme (`color-scheme`). Frames of other sites are kept as they were.
+- The toolbar icon follows Chrome's mode instead of the extension's theme: with a light theme in dark Chrome it was black on a dark toolbar.
+- Light theme: Catalog's empty and error panels are light (they were a dark grey, with text at 2.03:1), and the «Выпущен» badge on the film page is readable (it was at 2.75:1).
 
 ### Refactor
 
 - Icons have one source. `scripts/icon-set/` draws them into a generated block of `Icons.js` and into every `<svg data-icon>` in the markup; the inline copies in `Navigation.js` are gone, and Settings, which drew its header from those copies, loads `Icons.js`.
 - Numbers on favourite posters, photos of people and plus signs on the profile are rounded squares, and so are the last 13 round containers elsewhere: icons of empty, error, approval and resume states, the chess result and upload icons, Play badges on trailers, letters of quiz answers and the add button of Random's search. Status dots, slider and switch knobs, counters and the player's progress knob followed: the only circle left in the interface is a user's avatar, besides spinners and objects inside games. The rule is written down, and `npm run test:visual-design` fails on a new circle and on a scrollbar styled outside its file.
 - Removed `genreStats.js`, its test and `scripts/backfillTopGenres.js`: nothing reads `users.topGenres` any more. The end-to-end rig seeds dates and nested fields, and `specs/profile.spec.cjs` covers the profile.
+- Removed the theme dialog and its editor, about 570 lines of inline styles in `Navigation.js`. The editor broke the themes it made: a copy saved unchanged got white borders and invisible muted text, and a light-based theme had almost no effect. A saved custom theme becomes its base, dark or light; its colours stay in storage, unused. `tests/themeService.test.js` covers the three choices, frames, other tabs and the move from custom themes.
 
 ### Docs
 
 - `docs/design-system.md` describes the icon set.
 - `docs/design-system.md` and `AGENTS.md` describe the corner rule and the single scrollbar.
+- `docs/design-system.md` and `.agents/rules/agent.md` describe the theme choice, `color-scheme` and the toolbar icon.
 
 </details>
 

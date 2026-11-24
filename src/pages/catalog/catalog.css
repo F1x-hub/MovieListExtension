@@ -316,7 +316,7 @@
     padding: 72px 24px;
     border: 1px dashed var(--catalog-border-strong);
     border-radius: var(--radius-xl);
-    background: rgba(17, 17, 19, 0.5);
+    background: var(--ui-color-surface-card);
     color: var(--catalog-text-secondary);
     text-align: center;
 }
