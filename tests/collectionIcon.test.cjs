@@ -45,14 +45,14 @@ function checkRendering() {
         assert.equal(broken.querySelector('.label').parentElement, broken, 'A truncated icon cannot swallow the name');
         assert.equal(broken.querySelector('.count').parentElement, broken, 'A truncated icon cannot swallow the count');
         assert.equal(broken.querySelector('.icon > svg').getAttribute('width'), '16', 'A truncated icon falls back to a sized icon');
-        assert.match(broken.querySelector('.icon path').getAttribute('d'), /^M22 19a2/, 'The fallback is the folder icon');
+        assert.equal(broken.querySelector('.icon > svg').dataset.icon, 'FOLDER', 'The fallback is the folder icon');
 
         // Icon upload was removed and its Storage files deleted: an old picture
         // shows the folder icon instead of a broken image.
         for (const uploaded of ['https://firebasestorage.googleapis.com/v0/b/x/o/collection_icons%2Fu%2Ficon.jpg?alt=media', 'data:image/png;base64,AAAA']) {
             const old = row(CollectionService.renderIconHtml(uploaded, { size: 20 }));
             assert.equal(old.querySelector('img'), null, 'An uploaded picture is no longer loaded');
-            assert.match(old.querySelector('.icon path').getAttribute('d'), /^M22 19a2/, 'An uploaded picture shows the folder icon');
+            assert.equal(old.querySelector('.icon > svg').dataset.icon, 'FOLDER', 'An uploaded picture shows the folder icon');
             assert.equal(old.querySelector('.icon > svg').getAttribute('width'), '20');
         }
 
@@ -124,7 +124,7 @@ async function checkPickerSavesWholeIcon() {
         modal.querySelector('#collectionNameInput').value = 'Дюна';
         await submit();
         assert.equal(saved.length, 1, 'Create saves once');
-        assert.match(saved[0].icon, /^<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3/, 'The whole chosen SVG is saved');
+        assert.match(saved[0].icon, /^<svg data-icon="MUSIC_CARD" viewBox="0 0 20 20" fill="none"><path .*<.svg>$/, 'The whole chosen SVG is saved');
         assert.ok(saved[0].icon.endsWith('</svg>'), 'The saved SVG is complete');
     } finally {
         window.close();

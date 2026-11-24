@@ -42,7 +42,7 @@ class ReportWidget {
             <!-- Widget Button -->
             <div id="reportWidgetContainer" class="report-widget-container">
                 <button id="reportWidgetBtn" class="report-widget-btn" type="button" title="Сообщить об ошибке / Предложить улучшение" aria-label="Сообщить об ошибке" aria-expanded="false" aria-controls="reportWidgetDrawer">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    <svg data-icon="CHEVRON_RIGHT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 5L12.5 10L7.5 15"/></svg>
                 </button>
             </div>
 
@@ -51,7 +51,7 @@ class ReportWidget {
                 <div class="report-drawer-header">
                     <h2 id="reportWidgetTitle">Сообщить об ошибке / Предложить улучшение</h2>
                     <button id="reportWidgetCloseBtn" class="report-close-btn" type="button" title="Закрыть" aria-label="Закрыть">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        <svg data-icon="CLOSE" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5L15 15M15 5L5 15"/></svg>
                     </button>
                 </div>
                 
@@ -66,7 +66,7 @@ class ReportWidget {
                     <div class="report-file-upload">
                         <label for="reportWidgetFile" class="report-file-label">
                             <span id="reportWidgetFileLabelText">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                                <svg data-icon="PAPERCLIP" style="vertical-align: middle; margin-right: 4px;" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 7V13A4 4 0 0 1 6 13V6A2 2 0 0 1 10 6V12"/></svg>
                                 Прикрепить скриншот (до 5 МБ)
                             </span>
                         </label>
@@ -75,7 +75,7 @@ class ReportWidget {
                         <div id="reportWidgetPreviewContainer" class="report-preview-container">
                             <img id="reportWidgetPreviewImg" class="report-preview-image" src="" alt="Preview">
                             <button id="reportWidgetRemovePhotoBtn" class="report-remove-photo-btn" type="button" title="Удалить фото" aria-label="Удалить фото">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                <svg data-icon="CLOSE" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5L15 15M15 5L5 15"/></svg>
                             </button>
                         </div>
                     </div>
@@ -320,7 +320,7 @@ class ReportWidget {
         this.fileInput.value = '';
         this.previewContainer.style.display = 'none';
         this.previewContainer.inert = true;
-        this.fileLabelText.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg> Прикрепить скриншот (до 5 МБ)';
+        this.fileLabelText.innerHTML = '<svg data-icon="PAPERCLIP" style="vertical-align: middle; margin-right: 4px;" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 7V13A4 4 0 0 1 6 13V6A2 2 0 0 1 10 6V12"/></svg> Прикрепить скриншот (до 5 МБ)';
         this.validateForm();
     }
 

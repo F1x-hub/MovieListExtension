@@ -939,7 +939,7 @@ class SearchManager {
         this.elements.resultsGrid.classList.add('single-item');
         this.elements.resultsGrid.innerHTML = `
             <div class="empty-state">
-                <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></div>
+                <div class="empty-state-icon"><svg data-icon="SEARCH" aria-hidden="true" width="40" height="40" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3A6 6 0 1 0 9 15A6 6 0 1 0 9 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M9 3L9 15C12.32 15 15 12.31 15 9C15 5.69 12.32 3 9 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13.6 13.6L17.6 17.6"/></svg></div>
                 <h3 class="empty-state-title" data-i18n="search.no_results_title">${i18n.get('search.no_results_title')}</h3>
                 <p class="empty-state-text" data-i18n="search.no_results_text">${i18n.get('search.no_results_text')}</p>
             </div>
@@ -1501,7 +1501,7 @@ class SearchManager {
             resultsGrid.classList.add('single-item');
             resultsGrid.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-state-icon"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></div>
+                    <div class="empty-state-icon"><svg data-icon="SEARCH" aria-hidden="true" width="40" height="40" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3A6 6 0 1 0 9 15A6 6 0 1 0 9 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M9 3L9 15C12.32 15 15 12.31 15 9C15 5.69 12.32 3 9 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13.6 13.6L17.6 17.6"/></svg></div>
                     <h3 class="empty-state-title">Search for movies</h3>
                     <p class="empty-state-text">Enter a movie title to start searching</p>
                 </div>

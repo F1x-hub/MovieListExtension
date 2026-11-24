@@ -34,7 +34,7 @@
 
         <!-- Error State -->
         <div id="error-screen" class="error-container" style="display: none;">
-            <div class="error-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #ef4444;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div>
+            <div class="error-icon"><svg data-icon="WARNING" style="color: #ef4444;" aria-hidden="true" width="40" height="40" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3.2L17.4 16H2.6Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3.2L17.4 16H2.6ZM10 7H10A1 1 0 0 1 11 8V10.6A1 1 0 0 1 10 11.6H10A1 1 0 0 1 9 10.6V8A1 1 0 0 1 10 7ZM10 12.45A1.15 1.15 0 1 0 10 14.75A1.15 1.15 0 1 0 10 12.45Z"/></svg></div>
             <h2 data-i18n="home.error_title">Ошибка загрузки</h2>
             <p id="error-message" data-i18n="home.error_message">Не удалось загрузить данные</p>
             <button type="button" id="retry-btn" class="retry-button" data-i18n="home.retry">Повторить</button>
@@ -64,7 +64,7 @@
                     <p class="season-banner__message"></p>
                 </div>
                 <a class="btn season-banner__cta" hidden></a>
-                <button type="button" class="season-banner__close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                <button type="button" class="season-banner__close"><svg data-icon="CLOSE" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5L15 15M15 5L5 15"/></svg></button>
             </section>
 
             <!-- The New Year sign, built by the season's own script -->
@@ -94,12 +94,12 @@
             <section id="films-section" class="category-section">
                 <div class="section-header">
                     <div class="section-header-title">
-                        <svg class="section-header-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+                        <svg data-icon="FILM" class="section-header-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3H15A3 3 0 0 1 18 6V14A3 3 0 0 1 15 17H5A3 3 0 0 1 2 14V6A3 3 0 0 1 5 3ZM7.5 5H12.5A0.5 0.5 0 0 1 13 5.5V8.5A0.5 0.5 0 0 1 12.5 9H7.5A0.5 0.5 0 0 1 7 8.5V5.5A0.5 0.5 0 0 1 7.5 5ZM7.5 11H12.5A0.5 0.5 0 0 1 13 11.5V14.5A0.5 0.5 0 0 1 12.5 15H7.5A0.5 0.5 0 0 1 7 14.5V11.5A0.5 0.5 0 0 1 7.5 11ZM4 5H5A0.5 0.5 0 0 1 5.5 5.5V6.5A0.5 0.5 0 0 1 5 7H4A0.5 0.5 0 0 1 3.5 6.5V5.5A0.5 0.5 0 0 1 4 5ZM4 9H5A0.5 0.5 0 0 1 5.5 9.5V10.5A0.5 0.5 0 0 1 5 11H4A0.5 0.5 0 0 1 3.5 10.5V9.5A0.5 0.5 0 0 1 4 9ZM4 13H5A0.5 0.5 0 0 1 5.5 13.5V14.5A0.5 0.5 0 0 1 5 15H4A0.5 0.5 0 0 1 3.5 14.5V13.5A0.5 0.5 0 0 1 4 13ZM15 5H16A0.5 0.5 0 0 1 16.5 5.5V6.5A0.5 0.5 0 0 1 16 7H15A0.5 0.5 0 0 1 14.5 6.5V5.5A0.5 0.5 0 0 1 15 5ZM15 9H16A0.5 0.5 0 0 1 16.5 9.5V10.5A0.5 0.5 0 0 1 16 11H15A0.5 0.5 0 0 1 14.5 10.5V9.5A0.5 0.5 0 0 1 15 9ZM15 13H16A0.5 0.5 0 0 1 16.5 13.5V14.5A0.5 0.5 0 0 1 16 15H15A0.5 0.5 0 0 1 14.5 14.5V13.5A0.5 0.5 0 0 1 15 13Z"/></svg>
                         <h2 data-i18n="home.sections.films">Фильмы</h2>
                     </div>
                     <a href="../catalog/catalog.html?category=films" class="section-see-all">
                         <span data-i18n="home.see_all.films">Все фильмы</span>
-                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                        <svg data-icon="ARROW_RIGHT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10H16M11 5L16 10L11 15"/></svg>
                     </a>
                 </div>
                 <!-- Grid -->
@@ -112,12 +112,12 @@
             <section id="series-section" class="category-section">
                 <div class="section-header">
                     <div class="section-header-title">
-                        <svg class="section-header-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+                        <svg data-icon="TV" class="section-header-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.6 2L10 5L13.4 2"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 6H15A2 2 0 0 1 17 8V15A2 2 0 0 1 15 17H5A2 2 0 0 1 3 15V8A2 2 0 0 1 5 6Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M12 6H15A2 2 0 0 1 17 8V15A2 2 0 0 1 15 17H12ZM14.6 8.4A1 1 0 1 0 14.6 10.4A1 1 0 1 0 14.6 8.4ZM14.6 11.8A1 1 0 1 0 14.6 13.8A1 1 0 1 0 14.6 11.8Z"/></svg>
                         <h2 data-i18n="home.sections.series">Сериалы</h2>
                     </div>
                     <a href="../catalog/catalog.html?category=series" class="section-see-all">
                         <span data-i18n="home.see_all.series">Все сериалы</span>
-                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                        <svg data-icon="ARROW_RIGHT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10H16M11 5L16 10L11 15"/></svg>
                     </a>
                 </div>
                 <div class="grid-container" id="series-grid"></div>
@@ -127,12 +127,12 @@
             <section id="cartoons-section" class="category-section">
                 <div class="section-header">
                     <div class="section-header-title">
-                        <svg class="section-header-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"></path><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path></svg>
+                        <svg data-icon="PEN" class="section-header-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7 1H13A1 1 0 0 1 14 2V4A1 1 0 0 1 13 5H7A1 1 0 0 1 6 4V2A1 1 0 0 1 7 1Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7H13L15 11L10 18L5 11Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 12V16"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 9.5A1.5 1.5 0 1 0 10 12.5A1.5 1.5 0 1 0 10 9.5Z"/></svg>
                         <h2 data-i18n="home.sections.cartoons">Мультфильмы</h2>
                     </div>
                     <a href="../catalog/catalog.html?category=cartoons" class="section-see-all">
                         <span data-i18n="home.see_all.cartoons">Все мультфильмы</span>
-                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                        <svg data-icon="ARROW_RIGHT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10H16M11 5L16 10L11 15"/></svg>
                     </a>
                 </div>
                 <div class="grid-container" id="cartoons-grid"></div>
@@ -142,12 +142,12 @@
             <section id="tvShows-section" class="category-section">
                 <div class="section-header">
                     <div class="section-header-title">
-                        <svg class="section-header-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                        <svg data-icon="BOLT" class="section-header-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 2.6L4.4 11H9.4L8.6 17.4L15.6 8.6H10.2Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M11 2.6L4.4 11H9.4L8.6 17.4L15.6 8.6H10.2Z"/></svg>
                         <h2 id="tvShows-title" data-i18n="home.sections.anime">Аниме</h2>
                     </div>
                     <a id="tvShows-see-all" href="../catalog/catalog.html?category=anime" class="section-see-all">
                         <span id="tvShows-see-all-text" data-i18n="home.see_all.anime">Всё аниме</span>
-                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                        <svg data-icon="ARROW_RIGHT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10H16M11 5L16 10L11 15"/></svg>
                     </a>
                 </div>
                 <div class="grid-container" id="tvShows-grid"></div>

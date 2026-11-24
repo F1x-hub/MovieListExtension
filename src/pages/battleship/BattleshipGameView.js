@@ -267,7 +267,7 @@ export class BattleshipGameView {
 
     backButtonHtml() {
         return `<button class="bs-back" type="button" data-action="lobby">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            <svg data-icon="CHEVRON_LEFT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.5 5L7.5 10L12.5 15"/></svg>
             <span>${escapeHtml(tb('game.back'))}</span>
         </button>`;
     }
@@ -418,11 +418,11 @@ export class BattleshipGameView {
                         <ul class="bs-dock" id="bsDock"></ul>
                         <div class="bs-tools__actions">
                             <button class="btn btn-secondary" type="button" data-action="random">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+                                <svg data-icon="SHUFFLE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5H5.2C9.6 5 10.4 15 14.8 15H17M3 15H5.2C6.6 15 7.6 14 8.4 12.6M11.6 7.4C12.4 6 13.4 5 14.8 5H17M14.4 2.4L17 5L14.4 7.6M14.4 12.4L17 15L14.4 17.6"/></svg>
                                 <span>${escapeHtml(tb('game.random'))}</span>
                             </button>
                             <button class="btn btn-secondary" type="button" data-action="rotate" aria-keyshortcuts="R">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                                <svg data-icon="RESET" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.2 11.6A7 7 0 1 0 5 5.1L3 7M3 3V7H7"/></svg>
                                 <span>${escapeHtml(tb('game.rotate'))}</span>
                             </button>
                         </div>
@@ -728,7 +728,7 @@ export class BattleshipGameView {
             return `<li><button class="bs-dock__ship ${placed ? 'is-placed' : ''} ${selected ? 'is-selected' : ''}" type="button" data-action="select-ship" data-slot="${slot.id}" aria-pressed="${selected}" aria-label="${escapeHtml(label)}" ${placed ? 'disabled' : ''}>
                 ${shipBlocksHtml(slot.length, placement.vertical && selected ? 'is-vertical' : '')}
                 <span class="bs-dock__name">${escapeHtml(name)}</span>
-                ${placed ? '<svg class="bs-dock__check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
+                ${placed ? '<svg data-icon="CHECK" class="bs-dock__check" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.6L8 14.6L16 5.4"/></svg>' : ''}
             </button></li>`;
         }).join('');
         if (dock.dataset.html !== html) {
@@ -1244,12 +1244,12 @@ export class BattleshipGameView {
     }
 }
 
-const TOP_VIEW_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="M4 12h16M12 4v16"></path></svg>';
+const TOP_VIEW_ICON = '<svg data-icon="BOARD" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3H15A2 2 0 0 1 17 5V15A2 2 0 0 1 15 17H5A2 2 0 0 1 3 15V5A2 2 0 0 1 5 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3H15A2 2 0 0 1 17 5V10H10ZM3 10H10V17H5A2 2 0 0 1 3 15Z"/></svg>';
 
 const BANNER_ICONS = {
-    anchor: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"></circle><line x1="12" y1="22" x2="12" y2="8"></line><path d="M5 12H2a10 10 0 0 0 20 0h-3"></path></svg>',
-    clock: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>',
-    target: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>',
-    trophy: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8"></path><path d="M12 17v4"></path><path d="M7 4h10v5a5 5 0 0 1-10 0z"></path><path d="M17 5h3v2a3 3 0 0 1-3 3"></path><path d="M7 5H4v2a3 3 0 0 0 3 3"></path></svg>',
-    flag: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>'
+    anchor: '<svg data-icon="ANCHOR" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 2A2 2 0 1 0 10 6A2 2 0 1 0 10 2Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6V17M7 9H13M3 11.4A7 6 0 0 0 17 11.4"/></svg>',
+    clock: '<svg data-icon="CLOCK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 0 10 17A7 7 0 1 0 10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6V10L12.6 12"/></svg>',
+    target: '<svg data-icon="TARGET" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 0 10 17A7 7 0 1 0 10 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 7A3 3 0 1 0 10 13A3 3 0 1 0 10 7Z"/></svg>',
+    trophy: '<svg data-icon="TROPHY" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14V8A4 4 0 0 1 6 8Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3L10 12C12.21 12 14 10.21 14 8L14 3L10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 5H2.6V5.6A3.6 3.6 0 0 0 6.2 9.2M14 5H17.4V5.6A3.6 3.6 0 0 1 13.8 9.2M10 12V16M6 17H14"/></svg>',
+    flag: '<svg data-icon="FLAG" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3V17"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 2H15.2A.8 .8 0 0 1 15.9 3.3L13.8 6.6L15.9 9.9A.8 .8 0 0 1 15.2 11.2H5Z"/></svg>'
 };

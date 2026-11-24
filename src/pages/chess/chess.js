@@ -454,7 +454,7 @@ class ChessPage {
         const move = Math.floor(saved.moves.length / 2) + 1;
         box.hidden = false;
         box.innerHTML = `
-            <span class="chess-avatar chess-avatar--bot" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M12 8V4"></path><path d="M9 13h.01M15 13h.01"></path></svg></span>
+            <span class="chess-avatar chess-avatar--bot" aria-hidden="true"><svg data-icon="ROBOT" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 7H14A3 3 0 0 1 17 10V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V10A3 3 0 0 1 6 7Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 7V4"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 1.2A1.6 1.6 0 1 0 10 4.4A1.6 1.6 0 1 0 10 1.2ZM7.2 9.9A1.3 1.3 0 1 0 7.2 12.5A1.3 1.3 0 1 0 7.2 9.9ZM12.8 9.9A1.3 1.3 0 1 0 12.8 12.5A1.3 1.3 0 1 0 12.8 9.9Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M8.4 14.2H11.6"/></svg></span>
             <span class="chess-resume__copy">
                 <strong>${escapeHtml(tc('lobby.resume_title'))}</strong>
                 <small>${escapeHtml(tc('lobby.resume_text', { level: tc(`levels.${saved.level}.name`), side: tc(`lobby.as_${saved.playerColor}`), move }))}</small>

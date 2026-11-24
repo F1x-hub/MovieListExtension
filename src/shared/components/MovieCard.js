@@ -22,7 +22,7 @@ class MovieCard {
         if (typeof CollectionService !== 'undefined' && typeof CollectionService.renderIconHtml === 'function') {
             return CollectionService.renderIconHtml(icon, { size: 16 });
         }
-        return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>';
+        return '<svg data-icon="FOLDER" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 9V6A2 2 0 0 1 4 4H7.6A2 2 0 0 1 9 4.6L10.4 6H16A2 2 0 0 1 18 8V9Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9V14A2 2 0 0 0 5 16H15A2 2 0 0 0 17 14V9"/></svg>';
     }
 
     /**
@@ -35,29 +35,29 @@ class MovieCard {
             action: 'toggle-favorite',
             attribute: 'data-is-favorite',
             labels: ['movie_card.remove_favorite', 'movie_card.add_favorite'],
-            path: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>',
-            fillWhenActive: true
+            icon: '<svg data-icon="HEART" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 16.6L4.2 10.8A3.9 3.9 0 0 1 9.7 5.3L10 5.6L10.3 5.3A3.9 3.9 0 0 1 15.8 10.8Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 5.6L10 16.6L15.8 10.8C17.13 9.25 17.04 6.94 15.6 5.5C14.16 4.06 11.85 3.97 10.3 5.3L10 5.6Z"/></svg>',
+            activeIcon: '<svg data-icon="HEART_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 16.6L4.2 10.8A3.9 3.9 0 0 1 9.7 5.3L10 5.6L10.3 5.3A3.9 3.9 0 0 1 15.8 10.8Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 16.6L4.2 10.8A3.9 3.9 0 0 1 9.7 5.3L10 5.6L10.3 5.3A3.9 3.9 0 0 1 15.8 10.8Z"/></svg>'
         },
         watching: {
             action: 'toggle-watching',
             attribute: 'data-is-watching',
             labels: ['movie_card.remove_watching', 'movie_card.add_watching'],
-            path: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>',
-            fillWhenActive: false
+            icon: '<svg data-icon="EYE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 7.5A2.5 2.5 0 1 0 10 12.5A2.5 2.5 0 1 0 10 7.5Z"/></svg>',
+            activeIcon: '<svg data-icon="EYE_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10ZM10 7.6A2.4 2.4 0 1 0 10 12.4A2.4 2.4 0 1 0 10 7.6Z"/></svg>'
         },
         watched: {
             action: 'toggle-watched',
             attribute: 'data-is-watched',
             labels: ['movie_card.remove_watched', 'movie_card.add_watched'],
-            path: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>',
-            fillWhenActive: false
+            icon: '<svg data-icon="WATCHED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V6A3 3 0 0 1 6 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.6 10.2L9 12.6L13.4 7.6"/></svg>',
+            activeIcon: '<svg data-icon="WATCHED_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M6 2H14A4 4 0 0 1 18 6V14A4 4 0 0 1 14 18H6A4 4 0 0 1 2 14V6A4 4 0 0 1 6 2ZM5.2 10.2L6.6 8.8L9 11.2L12.6 6.9L14.1 8.3L9 14.1Z"/></svg>'
         },
         plan_to_watch: {
             action: 'toggle-watchlist',
             attribute: 'data-is-in-watchlist',
             labels: ['movie_card.remove_watchlist', 'movie_card.add_watchlist'],
-            path: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>',
-            fillWhenActive: true
+            icon: '<svg data-icon="BOOKMARK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3L10 13.6L15 17L15 5C15 3.9 14.1 3 13 3L10 3Z"/></svg>',
+            activeIcon: '<svg data-icon="BOOKMARK_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/></svg>'
         }
     };
 
@@ -66,8 +66,7 @@ class MovieCard {
 
     static statusIconHtml(status, isActive) {
         const item = MovieCard.STATUS_MENU_ITEMS[status];
-        const filled = Boolean(isActive && item.fillWhenActive);
-        return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${item.path}</svg>`;
+        return isActive ? item.activeIcon : item.icon;
     }
 
     static statusLabel(status, isActive) {
@@ -121,7 +120,7 @@ class MovieCard {
         return null;
     }
 
-    static COLLECTION_CHECK_HTML = '<span class="mc-collection-check" style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>';
+    static COLLECTION_CHECK_HTML = '<span class="mc-collection-check" style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);"><svg data-icon="CHECK" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.6L8 14.6L16 5.4"/></svg></span>';
 
     /** One collection item of the card menu, checked when the film is in that collection. */
     static collectionMenuItemHtml(collection, isInCollection, movieId) {
@@ -399,7 +398,7 @@ class MovieCard {
                 
                 ${showThreeDotMenu ? `
                     <button class="mc-menu-btn" data-menu="true" data-action="stop-propagation" aria-label="${window.i18n?.get('movie_card.options') || 'Параметры'}" aria-haspopup="menu" aria-expanded="false" title="Options">
-                        <span class="mc-menu-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg></span>
+                        <span class="mc-menu-icon"><svg data-icon="MORE_VERTICAL" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 2.4A1.6 1.6 0 1 0 10 5.6A1.6 1.6 0 1 0 10 2.4ZM10 8.4A1.6 1.6 0 1 0 10 11.6A1.6 1.6 0 1 0 10 8.4ZM10 14.4A1.6 1.6 0 1 0 10 17.6A1.6 1.6 0 1 0 10 14.4Z"/></svg></span>
                     </button>
                     <div class="mc-menu-dropdown" role="menu" data-action="stop-propagation">
                         ${showFavorite ? MovieCard.statusMenuItemHtml('favorite', isFavorite, { movieId: canonicalMovieId, ratingId: data.id }) : ''}
@@ -419,42 +418,42 @@ class MovieCard {
                                     data-movie-id="${canonicalMovieId || ''}"
                                     data-rating="${rating}"
                                     data-comment="${this.escapeHtml(Utils.normalizeRatingComment(data.comment))}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></span>
+                                <span class="mc-menu-item-icon"><svg data-icon="EDIT" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16L4.8 12.2L12.6 4.4A1.7 1.7 0 0 1 15 4.4L15.6 5A1.7 1.7 0 0 1 15.6 7.4L7.8 15.2Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10.4 6.6L12.6 4.4A1.7 1.7 0 0 1 15 4.4L15.6 5A1.7 1.7 0 0 1 15.6 7.4L13.4 9.6Z"/></svg></span>
                                 <span class="mc-menu-item-text">${window.i18n?.get('movie_card.edit_rating')}</span>
                             </button>
                         ` : ''}
                         ${showAddToCollection ? `
                             <button class="mc-menu-item" data-action="add-to-collection"
                                     data-movie-id="${canonicalMovieId || ''}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>
+                                <span class="mc-menu-item-icon"><svg data-icon="FOLDER" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 9V6A2 2 0 0 1 4 4H7.6A2 2 0 0 1 9 4.6L10.4 6H16A2 2 0 0 1 18 8V9Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9V14A2 2 0 0 0 5 16H15A2 2 0 0 0 17 14V9"/></svg></span>
                                 <span class="mc-menu-item-text">${window.i18n?.get('movie_card.add_collection')}</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatching ? `
                             <button class="mc-menu-item" data-action="remove-from-watching"
                                     data-movie-id="${canonicalMovieId || ''}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></span>
+                                <span class="mc-menu-item-icon"><svg data-icon="CLOSE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5L15 15M15 5L5 15"/></svg></span>
                                 <span class="mc-menu-item-text">Удалить из "Смотрю"</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatched ? `
                             <button class="mc-menu-item" data-action="remove-from-watched"
                                     data-movie-id="${canonicalMovieId || ''}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></span>
+                                <span class="mc-menu-item-icon"><svg data-icon="CLOSE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5L15 15M15 5L5 15"/></svg></span>
                                 <span class="mc-menu-item-text">Удалить из "Просмотрено"</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatchlist ? `
                             <button class="mc-menu-item" data-action="remove-from-watchlist"
                                     data-movie-id="${canonicalMovieId || ''}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
+                                <span class="mc-menu-item-icon"><svg data-icon="TRASH" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7 4V3A1 1 0 0 1 8 2H12A1 1 0 0 1 13 3V4H16A1 1 0 0 1 17 5V6A1 1 0 0 1 16 7H4A1 1 0 0 1 3 6V5A1 1 0 0 1 4 4Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8V15A2 2 0 0 0 7 17H13A2 2 0 0 0 15 15V8M10 10V13"/></svg></span>
                                 <span class="mc-menu-item-text">${window.i18n?.get('movie_card.remove')}</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromBookmarks ? `
                             <button class="mc-menu-item" data-action="remove-from-bookmarks"
                                     data-movie-id="${canonicalMovieId || ''}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
+                                <span class="mc-menu-item-icon"><svg data-icon="TRASH" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7 4V3A1 1 0 0 1 8 2H12A1 1 0 0 1 13 3V4H16A1 1 0 0 1 17 5V6A1 1 0 0 1 16 7H4A1 1 0 0 1 3 6V5A1 1 0 0 1 4 4Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8V15A2 2 0 0 0 7 17H13A2 2 0 0 0 15 15V8M10 10V13"/></svg></span>
                                 <span class="mc-menu-item-text">Удалить из закладок</span>
                             </button>
                         ` : ''}
@@ -520,42 +519,42 @@ class MovieCard {
                                     data-movie-id="${canonicalMovieId || ''}"
                                     data-rating="${rating}"
                                     data-comment="${this.escapeHtml(Utils.normalizeRatingComment(data.comment))}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></span>
+                                <span class="mc-menu-item-icon"><svg data-icon="EDIT" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16L4.8 12.2L12.6 4.4A1.7 1.7 0 0 1 15 4.4L15.6 5A1.7 1.7 0 0 1 15.6 7.4L7.8 15.2Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10.4 6.6L12.6 4.4A1.7 1.7 0 0 1 15 4.4L15.6 5A1.7 1.7 0 0 1 15.6 7.4L13.4 9.6Z"/></svg></span>
                                 <span class="mc-menu-item-text">${window.i18n?.get('movie_card.edit_rating')}</span>
                             </button>
                         ` : ''}
                         ${showAddToCollection ? `
                             <button class="mc-menu-item" data-action="add-to-collection"
                                     data-movie-id="${canonicalMovieId || ''}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>
+                                <span class="mc-menu-item-icon"><svg data-icon="FOLDER" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 9V6A2 2 0 0 1 4 4H7.6A2 2 0 0 1 9 4.6L10.4 6H16A2 2 0 0 1 18 8V9Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9V14A2 2 0 0 0 5 16H15A2 2 0 0 0 17 14V9"/></svg></span>
                                 <span class="mc-menu-item-text">${window.i18n?.get('movie_card.add_collection')}</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatching ? `
                             <button class="mc-menu-item" data-action="remove-from-watching"
                                     data-movie-id="${canonicalMovieId || ''}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></span>
+                                <span class="mc-menu-item-icon"><svg data-icon="CLOSE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5L15 15M15 5L5 15"/></svg></span>
                                 <span class="mc-menu-item-text">Удалить из "Смотрю"</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatched ? `
                             <button class="mc-menu-item" data-action="remove-from-watched"
                                     data-movie-id="${canonicalMovieId || ''}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></span>
+                                <span class="mc-menu-item-icon"><svg data-icon="CLOSE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5L15 15M15 5L5 15"/></svg></span>
                                 <span class="mc-menu-item-text">Удалить из "Просмотрено"</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromWatchlist ? `
                             <button class="mc-menu-item" data-action="remove-from-watchlist"
                                     data-movie-id="${canonicalMovieId || ''}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
+                                <span class="mc-menu-item-icon"><svg data-icon="TRASH" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7 4V3A1 1 0 0 1 8 2H12A1 1 0 0 1 13 3V4H16A1 1 0 0 1 17 5V6A1 1 0 0 1 16 7H4A1 1 0 0 1 3 6V5A1 1 0 0 1 4 4Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8V15A2 2 0 0 0 7 17H13A2 2 0 0 0 15 15V8M10 10V13"/></svg></span>
                                 <span class="mc-menu-item-text">${window.i18n?.get('movie_card.remove')}</span>
                             </button>
                         ` : ''}
                         ${showRemoveFromBookmarks ? `
                             <button class="mc-menu-item" data-action="remove-from-bookmarks"
                                     data-movie-id="${canonicalMovieId || ''}">
-                                <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
+                                <span class="mc-menu-item-icon"><svg data-icon="TRASH" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7 4V3A1 1 0 0 1 8 2H12A1 1 0 0 1 13 3V4H16A1 1 0 0 1 17 5V6A1 1 0 0 1 16 7H4A1 1 0 0 1 3 6V5A1 1 0 0 1 4 4Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8V15A2 2 0 0 0 7 17H13A2 2 0 0 0 15 15V8M10 10V13"/></svg></span>
                                 <span class="mc-menu-item-text">Удалить из закладок</span>
                             </button>
                         ` : ''}
@@ -596,7 +595,7 @@ class MovieCard {
                          data-movie-id="${canonicalMovieId || ''}"
                          title="Нажмите, чтобы продолжить просмотр"
                          style="margin-top: 6px; font-size: 13px; color: #4da6ff; font-weight: 500; display: flex; align-items: center; gap: 5px; cursor: pointer; transition: opacity 0.2s;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+                        <svg data-icon="PLAY_BOX" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V6A3 3 0 0 1 6 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M8 7.2C8 6.6 8.7 6.2 9.2 6.6L13 9.3C13.5 9.7 13.5 10.3 13 10.7L9.2 13.4C8.7 13.8 8 13.4 8 12.8Z"/></svg>
                         <span>${this.escapeHtml(watchingProgress)}</span>
                     </div>
                 ` : ''}
@@ -608,22 +607,13 @@ class MovieCard {
                 ${animeStyle ? `
                     <${(options.watchingProgress || isWatched) ? 'div' : 'a href="' + detailsUrl + '"'} class="mc-progress-display" data-action="${options.watchingProgress || isWatched ? 'resume-watching' : 'view-details'}" data-movie-id="${canonicalMovieId || ''}">
                         ${isWatched ? `
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #4ade80;">
-                                    <polyline points="20 6 9 17 4 12"></polyline>
-                                </svg>
+                                <svg data-icon="CHECK" style="color: #4ade80;" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.6L8 14.6L16 5.4"/></svg>
                                 <span class="mc-progress-text" style="color: #4ade80;"> ${window.i18n?.get('movie_card.add_watched') || 'Просмотрено'}</span>
                             ` : options.watchingProgress ? `
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #4ade80;">
-                                    <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path>
-                                    <polyline points="12 6 12 12 16 14"></polyline>
-                                </svg>
+                                <svg data-icon="CLOCK" style="color: #4ade80;" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 0 10 17A7 7 0 1 0 10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6V10L12.6 12"/></svg>
                                 <span class="mc-progress-text">${this.escapeHtml(options.watchingProgress)}</span>
                             ` : `
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #94a3b8;">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                                </svg>
+                                <svg data-icon="INFO" style="color: #94a3b8;" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V6A3 3 0 0 1 6 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 10V13.4"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 5.5A1.3 1.3 0 1 0 10 8.1A1.3 1.3 0 1 0 10 5.5Z"/></svg>
                                 <span class="mc-progress-text placeholder">Не смотрели</span>
                             `}
                     </${(options.watchingProgress || isWatched) ? 'div' : 'a'}>
@@ -664,7 +654,7 @@ class MovieCard {
                 ` : `
                 <div class="mc-ratings-row mc-ratings-unreleased">
                     <div class="mc-unreleased-badge" title="${this.escapeHtml((Number.isFinite(parseInt(year, 10)) && parseInt(year, 10) >= new Date().getFullYear()) ? this.t('not_released_title', 'Not released yet') : this.t('no_ratings_title', 'No ratings yet'))}">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mc-unreleased-icon"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        <svg data-icon="CLOCK" class="mc-unreleased-icon" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 0 10 17A7 7 0 1 0 10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6V10L12.6 12"/></svg>
                         <span>${this.escapeHtml((Number.isFinite(parseInt(year, 10)) && parseInt(year, 10) >= new Date().getFullYear()) ? this.t('coming_soon', 'Coming soon') : this.t('no_ratings', 'Awaiting ratings'))}</span>
                     </div>
                 </div>
@@ -1079,11 +1069,7 @@ class MovieCard {
                         ${movieAltName ? `<p class="cmc-subtitle">${this.escapeHtml(movieAltName)}</p>` : ''}
                         
                         <button class="cmc-reload-btn" data-action="reload" title="Найти другой фильм">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M23 4v6h-6"></path>
-                                <path d="M1 20v-6h6"></path>
-                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                            </svg>
+                            <svg data-icon="REFRESH" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9A7 7 0 0 1 15.6 5.6L17 7M17 3V7H13M17 11A7 7 0 0 1 4.4 14.4L3 13M3 17V13H7"/></svg>
                         </button>
                     </div>
                     
@@ -1099,9 +1085,7 @@ class MovieCard {
             </div>
             
             <button class="cmc-watch-btn" data-action="watch" data-movie-id="${canonicalMovieId || ''}">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M8 5v14l11-7z"/>
-                </svg>
+                <svg data-icon="PLAY" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3.9C5 2.9 5.9 2.3 6.7 2.9L16.2 8.9C17 9.5 17 10.5 16.2 11.1L6.7 17.1C5.9 17.7 5 17.1 5 16.1Z"/></svg>
                 Смотреть
             </button>
         `;

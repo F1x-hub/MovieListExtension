@@ -860,7 +860,7 @@ class MovieDetailsManager {
                     if (!placeholder) {
                         placeholder = document.createElement('div');
                         placeholder.className = 'actor-placeholder';
-                        placeholder.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>`;
+                        placeholder.innerHTML = `<svg data-icon="USER" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 2A4 4 0 1 0 10 10A4 4 0 1 0 10 2Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 12C13.6 12 16 13.8 16.6 16.2C16.7 16.7 16.4 17 15.9 17H4.1C3.6 17 3.3 16.7 3.4 16.2C4 13.8 6.4 12 10 12Z"/></svg>`;
                         container.appendChild(placeholder);
                     }
                     placeholder.style.display = 'flex';
@@ -3379,7 +3379,7 @@ class MovieDetailsManager {
                     <div class="movie-detail-poster-container">
                         ${/^https?:/.test(String(posterUrl)) ? `<img src="${this.escapeHtml(posterUrl)}" alt="" class="movie-detail-poster-glow" aria-hidden="true" decoding="async">` : ''}
                         <img src="${this.escapeHtml(posterUrl)}" alt="${this.escapeHtml(movieName)}" class="movie-detail-page-poster" data-fallback="detail" decoding="async" fetchpriority="high">
-                        <div class="movie-poster-placeholder" style="display: none;"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg></div>
+                        <div class="movie-poster-placeholder" style="display: none;"><svg data-icon="FILM" aria-hidden="true" width="40" height="40" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3H15A3 3 0 0 1 18 6V14A3 3 0 0 1 15 17H5A3 3 0 0 1 2 14V6A3 3 0 0 1 5 3ZM7.5 5H12.5A0.5 0.5 0 0 1 13 5.5V8.5A0.5 0.5 0 0 1 12.5 9H7.5A0.5 0.5 0 0 1 7 8.5V5.5A0.5 0.5 0 0 1 7.5 5ZM7.5 11H12.5A0.5 0.5 0 0 1 13 11.5V14.5A0.5 0.5 0 0 1 12.5 15H7.5A0.5 0.5 0 0 1 7 14.5V11.5A0.5 0.5 0 0 1 7.5 11ZM4 5H5A0.5 0.5 0 0 1 5.5 5.5V6.5A0.5 0.5 0 0 1 5 7H4A0.5 0.5 0 0 1 3.5 6.5V5.5A0.5 0.5 0 0 1 4 5ZM4 9H5A0.5 0.5 0 0 1 5.5 9.5V10.5A0.5 0.5 0 0 1 5 11H4A0.5 0.5 0 0 1 3.5 10.5V9.5A0.5 0.5 0 0 1 4 9ZM4 13H5A0.5 0.5 0 0 1 5.5 13.5V14.5A0.5 0.5 0 0 1 5 15H4A0.5 0.5 0 0 1 3.5 14.5V13.5A0.5 0.5 0 0 1 4 13ZM15 5H16A0.5 0.5 0 0 1 16.5 5.5V6.5A0.5 0.5 0 0 1 16 7H15A0.5 0.5 0 0 1 14.5 6.5V5.5A0.5 0.5 0 0 1 15 5ZM15 9H16A0.5 0.5 0 0 1 16.5 9.5V10.5A0.5 0.5 0 0 1 16 11H15A0.5 0.5 0 0 1 14.5 10.5V9.5A0.5 0.5 0 0 1 15 9ZM15 13H16A0.5 0.5 0 0 1 16.5 13.5V14.5A0.5 0.5 0 0 1 16 15H15A0.5 0.5 0 0 1 14.5 14.5V13.5A0.5 0.5 0 0 1 15 13Z"/></svg></div>
                         
 
                         <div class="movie-detail-ratings-container" data-rendered-ratings="${this.escapeHtml(this.providerRatingsRenderKey(movie, knownRatings, ratingsPending))}">
@@ -3388,7 +3388,7 @@ class MovieDetailsManager {
                         
                         <div class="movie-actions-container">
                             <button class="btn btn-primary btn-lg watch-movie-btn" data-movie-id="${movie.kinopoiskId}">
-                                <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+                                <span class="btn-icon"><svg data-icon="PLAY" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3.9C5 2.9 5.9 2.3 6.7 2.9L16.2 8.9C17 9.5 17 10.5 16.2 11.1L6.7 17.1C5.9 17.7 5 17.1 5 16.1Z"/></svg></span>
                                 ${i18n.get('movie_details.watch_movie')}
                             </button>
                             <button class="btn btn-secondary btn-lg rate-movie-btn" data-movie-id="${movie.kinopoiskId}"${typeof isSeriesMedia === 'function' && isSeriesMedia(movie) && !(Number(movie.kinopoiskId) > 0) ? ` disabled aria-disabled="true" title="${this.escapeHtml(i18n.get('movie_details.series_rating_disabled_hint'))}"` : ''}>
@@ -3417,35 +3417,35 @@ class MovieDetailsManager {
                                             data-rating-id="${ratingId || 'null'}" 
                                             data-movie-id="${movie.kinopoiskId}"
                                             data-is-favorite="${isFavorite}">
-                                        <span class="mc-menu-item-icon">${isFavorite ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'}</span>
+                                        <span class="mc-menu-item-icon">${isFavorite ? '<svg data-icon="HEART_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 16.6L4.2 10.8A3.9 3.9 0 0 1 9.7 5.3L10 5.6L10.3 5.3A3.9 3.9 0 0 1 15.8 10.8Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 16.6L4.2 10.8A3.9 3.9 0 0 1 9.7 5.3L10 5.6L10.3 5.3A3.9 3.9 0 0 1 15.8 10.8Z"/></svg>' : '<svg data-icon="HEART" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 16.6L4.2 10.8A3.9 3.9 0 0 1 9.7 5.3L10 5.6L10.3 5.3A3.9 3.9 0 0 1 15.8 10.8Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 5.6L10 16.6L15.8 10.8C17.13 9.25 17.04 6.94 15.6 5.5C14.16 4.06 11.85 3.97 10.3 5.3L10 5.6Z"/></svg>'}</span>
                                         <span class="mc-menu-item-text">${isFavorite ? i18n.get('movie_card.remove_favorite') : i18n.get('movie_card.add_favorite')}</span>
                                     </button>
                                     
                                     <button class="mc-menu-item ${isWatching ? 'active' : ''}" data-action="toggle-watching"
                                             data-movie-id="${movie.kinopoiskId}"
                                             data-is-watching="${isWatching}">
-                                        <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></span>
+                                        <span class="mc-menu-item-icon">${isWatching ? '<svg data-icon="EYE_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10ZM10 7.6A2.4 2.4 0 1 0 10 12.4A2.4 2.4 0 1 0 10 7.6Z"/></svg>' : '<svg data-icon="EYE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 7.5A2.5 2.5 0 1 0 10 12.5A2.5 2.5 0 1 0 10 7.5Z"/></svg>'}</span>
                                         <span class="mc-menu-item-text">${isWatching ? i18n.get('movie_card.remove_watching') : i18n.get('movie_card.add_watching')}</span>
                                     </button>
 
                                     <button class="mc-menu-item ${isWatched ? 'active' : ''}" data-action="toggle-watched"
                                             data-movie-id="${movie.kinopoiskId}"
                                             data-is-watched="${isWatched}">
-                                        <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></span>
+                                        <span class="mc-menu-item-icon">${isWatched ? '<svg data-icon="WATCHED_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M6 2H14A4 4 0 0 1 18 6V14A4 4 0 0 1 14 18H6A4 4 0 0 1 2 14V6A4 4 0 0 1 6 2ZM5.2 10.2L6.6 8.8L9 11.2L12.6 6.9L14.1 8.3L9 14.1Z"/></svg>' : '<svg data-icon="WATCHED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V6A3 3 0 0 1 6 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.6 10.2L9 12.6L13.4 7.6"/></svg>'}</span>
                                         <span class="mc-menu-item-text">${isWatched ? i18n.get('movie_card.remove_watched') : i18n.get('movie_card.add_watched')}</span>
                                     </button>
                                     
                                     <button class="mc-menu-item ${isInWatchlist ? 'active' : ''}" data-action="toggle-watchlist"
                                             data-movie-id="${movie.kinopoiskId}"
                                             data-is-in-watchlist="${isInWatchlist}">
-                                        <span class="mc-menu-item-icon">${isInWatchlist ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'}</span>
+                                        <span class="mc-menu-item-icon">${isInWatchlist ? '<svg data-icon="BOOKMARK_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/></svg>' : '<svg data-icon="BOOKMARK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3L10 13.6L15 17L15 5C15 3.9 14.1 3 13 3L10 3Z"/></svg>'}</span>
                                         <span class="mc-menu-item-text">${isInWatchlist ? i18n.get('movie_card.remove_watchlist') : i18n.get('movie_card.add_watchlist')}</span>
                                     </button>
 
                                     <div class="mc-menu-divider"></div>
                                     <button class="mc-menu-item" data-action="add-to-random-pool"
                                             data-movie-id="${movie.kinopoiskId}" aria-pressed="false">
-                                        <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"></rect><circle cx="8" cy="8" r="1"></circle><circle cx="16" cy="8" r="1"></circle><circle cx="8" cy="16" r="1"></circle><circle cx="16" cy="16" r="1"></circle><circle cx="12" cy="12" r="1"></circle></svg></span>
+                                        <span class="mc-menu-item-icon"><svg data-icon="DICE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V6A3 3 0 0 1 6 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7 5.4A1.6 1.6 0 1 0 7 8.6A1.6 1.6 0 1 0 7 5.4ZM10 8.4A1.6 1.6 0 1 0 10 11.6A1.6 1.6 0 1 0 10 8.4ZM13 11.4A1.6 1.6 0 1 0 13 14.6A1.6 1.6 0 1 0 13 11.4Z"/></svg></span>
                                         <span class="mc-menu-item-text">${i18n.get('movie_card.add_random_pool')}</span>
                                     </button>
                                     
@@ -3455,7 +3455,7 @@ class MovieDetailsManager {
                                     <button class="mc-menu-item" data-action="force-refresh-movie"
                                             data-movie-id="${movie.kinopoiskId}"
                                             title="${this.escapeHtml(i18n.get('movie_details.refresh_data') || 'Обновить данные')}">
-                                        <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg></span>
+                                        <span class="mc-menu-item-icon"><svg data-icon="REFRESH" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9A7 7 0 0 1 15.6 5.6L17 7M17 3V7H13M17 11A7 7 0 0 1 4.4 14.4L3 13M3 17V13H7"/></svg></span>
                                         <span class="mc-menu-item-text">${i18n.get('movie_details.refresh_data') || 'Обновить данные'}</span>
                                     </button>
                                 </div>
@@ -3499,9 +3499,7 @@ class MovieDetailsManager {
                                         <div class="meta-item meta-item--secondary-crew">
                                             <button type="button" class="meta-toggle-btn meta-crew-toggle" data-action="toggle-crew" aria-expanded="${isCrewExpanded}" aria-controls="metaSecondaryCrew">
                                                 <span class="meta-toggle-text">${this.metaLabel('movie_details.meta.crew')}</span>
-                                                <svg class="meta-toggle-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
-                                                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
-                                                </svg>
+                                                <svg data-icon="CHEVRON_DOWN" class="meta-toggle-icon" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 7.5L10 12.5L15 7.5"/></svg>
                                             </button>
                                             <div class="meta-secondary-crew" id="metaSecondaryCrew" ${isCrewExpanded ? '' : 'hidden'}>
                                                 ${operatorsStr ? `<div class="meta-item meta-item--nested"><span class="meta-label">${this.metaLabel('movie_details.meta.operator')}</span><span class="meta-value">${operatorsStr}</span></div>` : ''}
@@ -3645,7 +3643,7 @@ class MovieDetailsManager {
                                 data-collection-id="${col.id}">
                             <span class="mc-menu-item-icon">${iconHtml}</span>
                             <span class="mc-menu-item-text" style="${isInCollection ? 'font-weight: 500;' : ''}">${col.name}</span>
-                            ${isInCollection ? '<span class="mc-collection-check" style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' : ''}
+                            ${isInCollection ? '<span class="mc-collection-check" style="margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);"><svg data-icon="CHECK" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.6L8 14.6L16 5.4"/></svg></span>' : ''}
                         </button>
                     `;
                 }).join('')}
@@ -4018,10 +4016,10 @@ class MovieDetailsManager {
                     <h3 class="movie-recommendations-title">${sectionTitle}</h3>
                     <div class="movie-recommendations-nav" id="movieRecommendationsNav" style="display: none;">
                         <button type="button" class="movie-carousel-btn movie-carousel-btn--prev" data-action="scroll-recommendations-prev" aria-label="Предыдущие">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                            <svg data-icon="CHEVRON_LEFT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.5 5L7.5 10L12.5 15"/></svg>
                         </button>
                         <button type="button" class="movie-carousel-btn movie-carousel-btn--next" data-action="scroll-recommendations-next" aria-label="Следующие">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                            <svg data-icon="CHEVRON_RIGHT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 5L12.5 10L7.5 15"/></svg>
                         </button>
                     </div>
                 </div>
@@ -4665,10 +4663,7 @@ class MovieDetailsManager {
                     <img src="${this.escapeHtml(photoUrl)}" alt="${this.escapeHtml(name)}" class="actor-photo" loading="lazy" decoding="async">
                     ` : `
                     <div class="actor-placeholder">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="12" cy="7" r="4"></circle>
-                        </svg>
+                        <svg data-icon="USER" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 2A4 4 0 1 0 10 10A4 4 0 1 0 10 2Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 12C13.6 12 16 13.8 16.6 16.2C16.7 16.7 16.4 17 15.9 17H4.1C3.6 17 3.3 16.7 3.4 16.2C4 13.8 6.4 12 10 12Z"/></svg>
                     </div>
                     `}
                 </div>
@@ -5060,7 +5055,7 @@ class MovieDetailsManager {
                                      data-fallback="youtube-thumb" 
                                      data-key="${encodeURIComponent(video.key)}">
                                 <div class="movie-video-play-badge" aria-hidden="true">
-                                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                                    <svg data-icon="PLAY" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3.9C5 2.9 5.9 2.3 6.7 2.9L16.2 8.9C17 9.5 17 10.5 16.2 11.1L6.7 17.1C5.9 17.7 5 17.1 5 16.1Z"/></svg>
                                 </div>
                                 <div class="movie-video-badges">
                                     ${video.official ? '<span class="movie-video-badge badge-official">Официальный</span>' : ''}
@@ -5157,10 +5152,10 @@ class MovieDetailsManager {
                     </div>
                     <div class="movie-franchise-nav" id="movieFranchiseNav" style="display: none;">
                         <button type="button" class="movie-carousel-btn movie-carousel-btn--prev" data-action="scroll-franchise-prev" aria-label="Предыдущие">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                            <svg data-icon="CHEVRON_LEFT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.5 5L7.5 10L12.5 15"/></svg>
                         </button>
                         <button type="button" class="movie-carousel-btn movie-carousel-btn--next" data-action="scroll-franchise-next" aria-label="Следующие">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                            <svg data-icon="CHEVRON_RIGHT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 5L12.5 10L7.5 15"/></svg>
                         </button>
                     </div>
                 </div>
@@ -5558,7 +5553,7 @@ class MovieDetailsManager {
                     <div class="fact-item fact-item--spoiler">
                         <div class="fact-spoiler-guard">
                             <button class="btn-reveal-spoiler" type="button">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                                <svg data-icon="WARNING" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3.2L17.4 16H2.6Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3.2L17.4 16H2.6ZM10 7H10A1 1 0 0 1 11 8V10.6A1 1 0 0 1 10 11.6H10A1 1 0 0 1 9 10.6V8A1 1 0 0 1 10 7ZM10 12.45A1.15 1.15 0 1 0 10 14.75A1.15 1.15 0 1 0 10 12.45Z"/></svg>
                                 <span>Факт содержит спойлер (показать)</span>
                             </button>
                         </div>
@@ -6661,7 +6656,7 @@ class MovieDetailsManager {
             ].filter(Boolean).join(' ');
             const fillerBadge = isFiller ? '<span class="picker-episode-btn__filler" aria-hidden="true">F</span>' : '';
             const watchedBadge = isWatched
-                ? '<span class="picker-episode-btn__watched" aria-hidden="true"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>'
+                ? '<span class="picker-episode-btn__watched" aria-hidden="true"><svg data-icon="CHECK" aria-hidden="true" width="12" height="12" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.6L8 14.6L16 5.4"/></svg></span>'
                 : '';
             return `<button type="button" class="${classes}" data-season-number="${browsingSeason}" data-episode-number="${escape(ep.episodeNumber)}" aria-current="${isPlaying ? 'true' : 'false'}" title="${escape(title)}"${labelAttr}>${escape(ep.episodeNumber)}${fillerBadge}${watchedBadge}</button>`;
         }).join('');
@@ -10237,8 +10232,8 @@ class MovieDetailsManager {
                         active: i18n.get('movie_card.remove_favorite'),
                         inactive: i18n.get('movie_card.add_favorite')
                     }, {
-                        active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>',
-                        inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'
+                        active: '<svg data-icon="HEART_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 16.6L4.2 10.8A3.9 3.9 0 0 1 9.7 5.3L10 5.6L10.3 5.3A3.9 3.9 0 0 1 15.8 10.8Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 16.6L4.2 10.8A3.9 3.9 0 0 1 9.7 5.3L10 5.6L10.3 5.3A3.9 3.9 0 0 1 15.8 10.8Z"/></svg>',
+                        inactive: '<svg data-icon="HEART" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 16.6L4.2 10.8A3.9 3.9 0 0 1 9.7 5.3L10 5.6L10.3 5.3A3.9 3.9 0 0 1 15.8 10.8Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 5.6L10 16.6L15.8 10.8C17.13 9.25 17.04 6.94 15.6 5.5C14.16 4.06 11.85 3.97 10.3 5.3L10 5.6Z"/></svg>'
                     });
                 } else if (action === 'toggle-watching') {
                     const isWatching = bookmark?.status === 'watching';
@@ -10246,8 +10241,8 @@ class MovieDetailsManager {
                         active: i18n.get('movie_card.remove_watching'),
                         inactive: i18n.get('movie_card.add_watching')
                     }, {
-                        active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
-                        inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
+                        active: '<svg data-icon="EYE_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10ZM10 7.6A2.4 2.4 0 1 0 10 12.4A2.4 2.4 0 1 0 10 7.6Z"/></svg>',
+                        inactive: '<svg data-icon="EYE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 7.5A2.5 2.5 0 1 0 10 12.5A2.5 2.5 0 1 0 10 7.5Z"/></svg>'
                     });
                 } else if (action === 'toggle-watched') {
                     const isWatched = bookmark?.status === 'watched';
@@ -10255,8 +10250,8 @@ class MovieDetailsManager {
                         active: i18n.get('movie_card.remove_watched'),
                         inactive: i18n.get('movie_card.add_watched')
                     }, {
-                        active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
-                        inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
+                        active: '<svg data-icon="WATCHED_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M6 2H14A4 4 0 0 1 18 6V14A4 4 0 0 1 14 18H6A4 4 0 0 1 2 14V6A4 4 0 0 1 6 2ZM5.2 10.2L6.6 8.8L9 11.2L12.6 6.9L14.1 8.3L9 14.1Z"/></svg>',
+                        inactive: '<svg data-icon="WATCHED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V6A3 3 0 0 1 6 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.6 10.2L9 12.6L13.4 7.6"/></svg>'
                     });
                 } else if (action === 'toggle-watchlist') {
                     const isInWatchlist = bookmark?.status === 'plan_to_watch';
@@ -10264,8 +10259,8 @@ class MovieDetailsManager {
                         active: i18n.get('movie_card.remove_watchlist'),
                         inactive: i18n.get('movie_card.add_watchlist')
                     }, {
-                        active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>',
-                        inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'
+                        active: '<svg data-icon="BOOKMARK_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/></svg>',
+                        inactive: '<svg data-icon="BOOKMARK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3L10 13.6L15 17L15 5C15 3.9 14.1 3 13 3L10 3Z"/></svg>'
                     });
                 }
             } catch (e) { console.error('Error updating button:', e); }
@@ -10284,8 +10279,8 @@ class MovieDetailsManager {
         }
         if (icon) {
             icon.innerHTML = isInPool
-                ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"></path></svg>'
-                : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"></rect><circle cx="8" cy="8" r="1"></circle><circle cx="16" cy="8" r="1"></circle><circle cx="8" cy="16" r="1"></circle><circle cx="16" cy="16" r="1"></circle><circle cx="12" cy="12" r="1"></circle></svg>';
+                ? '<svg data-icon="CHECK" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.6L8 14.6L16 5.4"/></svg>'
+                : '<svg data-icon="DICE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V6A3 3 0 0 1 6 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7 5.4A1.6 1.6 0 1 0 7 8.6A1.6 1.6 0 1 0 7 5.4ZM10 8.4A1.6 1.6 0 1 0 10 11.6A1.6 1.6 0 1 0 10 8.4ZM13 11.4A1.6 1.6 0 1 0 13 14.6A1.6 1.6 0 1 0 13 11.4Z"/></svg>';
         }
     }
 
@@ -10344,8 +10339,8 @@ class MovieDetailsManager {
                 active: i18n.get('movie_card.remove_favorite'),
                 inactive: i18n.get('movie_card.add_favorite')
             }, {
-                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>',
-                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>'
+                active: '<svg data-icon="HEART_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 16.6L4.2 10.8A3.9 3.9 0 0 1 9.7 5.3L10 5.6L10.3 5.3A3.9 3.9 0 0 1 15.8 10.8Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 16.6L4.2 10.8A3.9 3.9 0 0 1 9.7 5.3L10 5.6L10.3 5.3A3.9 3.9 0 0 1 15.8 10.8Z"/></svg>',
+                inactive: '<svg data-icon="HEART" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 16.6L4.2 10.8A3.9 3.9 0 0 1 9.7 5.3L10 5.6L10.3 5.3A3.9 3.9 0 0 1 15.8 10.8Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 5.6L10 16.6L15.8 10.8C17.13 9.25 17.04 6.94 15.6 5.5C14.16 4.06 11.85 3.97 10.3 5.3L10 5.6Z"/></svg>'
             });
             
             if (typeof Utils !== 'undefined') Utils.showToast(newStatus ? i18n.get('movie_card.add_favorite') : i18n.get('movie_card.remove_favorite'), 'success', 3000, { actionLabel: i18n.get('confirm_dialog.undo'), onAction: () => this.toggleFavorite(ratingId, newStatus, buttonElement, movieId) });
@@ -10389,8 +10384,8 @@ class MovieDetailsManager {
                 active: i18n.get('movie_card.remove_watching'),
                 inactive: i18n.get('movie_card.add_watching')
             }, {
-                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
-                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
+                active: '<svg data-icon="EYE_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10ZM10 7.6A2.4 2.4 0 1 0 10 12.4A2.4 2.4 0 1 0 10 7.6Z"/></svg>',
+                inactive: '<svg data-icon="EYE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 7.5A2.5 2.5 0 1 0 10 12.5A2.5 2.5 0 1 0 10 7.5Z"/></svg>'
             });
             if (typeof Utils !== 'undefined') Utils.showToast(newState ? i18n.get('movie_card.add_watching') : i18n.get('movie_card.remove_watching'), 'success');
         } catch (error) { console.error('Error toggling watching:', error); }
@@ -10416,8 +10411,8 @@ class MovieDetailsManager {
                 active: i18n.get('movie_card.remove_watched'),
                 inactive: i18n.get('movie_card.add_watched')
             }, {
-                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>',
-                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
+                active: '<svg data-icon="WATCHED_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M6 2H14A4 4 0 0 1 18 6V14A4 4 0 0 1 14 18H6A4 4 0 0 1 2 14V6A4 4 0 0 1 6 2ZM5.2 10.2L6.6 8.8L9 11.2L12.6 6.9L14.1 8.3L9 14.1Z"/></svg>',
+                inactive: '<svg data-icon="WATCHED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V6A3 3 0 0 1 6 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.6 10.2L9 12.6L13.4 7.6"/></svg>'
             });
             if (typeof Utils !== 'undefined') Utils.showToast(newState ? i18n.get('movie_card.add_watched') : i18n.get('movie_card.remove_watched'), 'success');
         } catch (error) { console.error('Error toggling watched:', error); }
@@ -10443,8 +10438,8 @@ class MovieDetailsManager {
                 active: i18n.get('movie_card.remove_watchlist'),
                 inactive: i18n.get('movie_card.add_watchlist')
             }, {
-                active: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>',
-                inactive: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'
+                active: '<svg data-icon="BOOKMARK_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/></svg>',
+                inactive: '<svg data-icon="BOOKMARK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3L10 13.6L15 17L15 5C15 3.9 14.1 3 13 3L10 3Z"/></svg>'
             });
             if (typeof Utils !== 'undefined') Utils.showToast(newState ? i18n.get('movie_card.add_watchlist') : i18n.get('movie_card.remove_watchlist'), 'success');
         } catch (error) { console.error('Error toggling watchlist:', error); }
@@ -10467,7 +10462,7 @@ class MovieDetailsManager {
             else {
                 const newCheck = document.createElement('span');
                 newCheck.className = 'mc-collection-check';
-                newCheck.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+                newCheck.innerHTML = '<svg data-icon="CHECK" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.6L8 14.6L16 5.4"/></svg>';
                 newCheck.style.cssText = 'margin-left: auto; font-weight: bold; color: var(--accent-color, #4CAF50);';
                 buttonElement.appendChild(newCheck);
             }
@@ -10711,7 +10706,7 @@ class MovieDetailsManager {
             container.style.display = 'flex';
             container.style.alignItems = 'center';
             container.style.justifyContent = 'center';
-            container.innerHTML = '<div style="color: #64748b;"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg></div>';
+            container.innerHTML = '<div style="color: #64748b;"><svg data-icon="FILM" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3H15A3 3 0 0 1 18 6V14A3 3 0 0 1 15 17H5A3 3 0 0 1 2 14V6A3 3 0 0 1 5 3ZM7.5 5H12.5A0.5 0.5 0 0 1 13 5.5V8.5A0.5 0.5 0 0 1 12.5 9H7.5A0.5 0.5 0 0 1 7 8.5V5.5A0.5 0.5 0 0 1 7.5 5ZM7.5 11H12.5A0.5 0.5 0 0 1 13 11.5V14.5A0.5 0.5 0 0 1 12.5 15H7.5A0.5 0.5 0 0 1 7 14.5V11.5A0.5 0.5 0 0 1 7.5 11ZM4 5H5A0.5 0.5 0 0 1 5.5 5.5V6.5A0.5 0.5 0 0 1 5 7H4A0.5 0.5 0 0 1 3.5 6.5V5.5A0.5 0.5 0 0 1 4 5ZM4 9H5A0.5 0.5 0 0 1 5.5 9.5V10.5A0.5 0.5 0 0 1 5 11H4A0.5 0.5 0 0 1 3.5 10.5V9.5A0.5 0.5 0 0 1 4 9ZM4 13H5A0.5 0.5 0 0 1 5.5 13.5V14.5A0.5 0.5 0 0 1 5 15H4A0.5 0.5 0 0 1 3.5 14.5V13.5A0.5 0.5 0 0 1 4 13ZM15 5H16A0.5 0.5 0 0 1 16.5 5.5V6.5A0.5 0.5 0 0 1 16 7H15A0.5 0.5 0 0 1 14.5 6.5V5.5A0.5 0.5 0 0 1 15 5ZM15 9H16A0.5 0.5 0 0 1 16.5 9.5V10.5A0.5 0.5 0 0 1 16 11H15A0.5 0.5 0 0 1 14.5 10.5V9.5A0.5 0.5 0 0 1 15 9ZM15 13H16A0.5 0.5 0 0 1 16.5 13.5V14.5A0.5 0.5 0 0 1 16 15H15A0.5 0.5 0 0 1 14.5 14.5V13.5A0.5 0.5 0 0 1 15 13Z"/></svg></div>';
         }
     }
 
@@ -10768,7 +10763,7 @@ class MovieDetailsManager {
                 <div class="trailer-poster-wrapper">
                     <img src="${this.escapeHtml(posterUrl)}" alt="${this.escapeHtml(title)}" class="trailer-poster" loading="lazy" decoding="async" ${keyAttr}>
                     <div class="trailer-play-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                        <svg data-icon="PLAY" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3.9C5 2.9 5.9 2.3 6.7 2.9L16.2 8.9C17 9.5 17 10.5 16.2 11.1L6.7 17.1C5.9 17.7 5 17.1 5 16.1Z"/></svg>
                     </div>
                     ${duration ? `<span class="trailer-duration">${this.escapeHtml(duration)}</span>` : ''}
                 </div>
@@ -11531,7 +11526,7 @@ class MovieDetailsManager {
                     <div class="seasons-continue-banner__content">
                         <div class="seasons-continue-banner__header">
                             <span class="seasons-continue-banner__badge">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                <svg data-icon="PLAY" aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3.9C5 2.9 5.9 2.3 6.7 2.9L16.2 8.9C17 9.5 17 10.5 16.2 11.1L6.7 17.1C5.9 17.7 5 17.1 5 16.1Z"/></svg>
                                 <span>${this.escapeHtml(i18n.get('movie_details.continue_watching'))}</span>
                             </span>
                             <div class="seasons-continue-banner__target">
@@ -11567,7 +11562,7 @@ class MovieDetailsManager {
                     <div class="seasons-continue-banner__content">
                         <div class="seasons-continue-banner__header">
                             <span class="seasons-continue-banner__badge seasons-continue-banner__badge--next">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                <svg data-icon="CLOCK" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 0 10 17A7 7 0 1 0 10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6V10L12.6 12"/></svg>
                                 <span>${this.escapeHtml(i18n.get('movie_details.continue_watching'))}</span>
                             </span>
                             <div class="seasons-continue-banner__target">

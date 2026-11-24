@@ -274,11 +274,11 @@ class Navigation {
                     <!-- Radio Player (absolute, outside flex flow) -->
                     <div id="navigationLeft" class="nav-radio" style="display: none;">
                         <span class="nav-radio-controls">
-                            <button class="nav-radio-btn" id="radioPlayBtn" title="Play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></button>
-                            <button class="nav-radio-btn" id="radioStopBtn" title="Stop" style="display:none;"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg></button>
+                            <button class="nav-radio-btn" id="radioPlayBtn" title="Play"><svg data-icon="PLAY" aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3.9C5 2.9 5.9 2.3 6.7 2.9L16.2 8.9C17 9.5 17 10.5 16.2 11.1L6.7 17.1C5.9 17.7 5 17.1 5 16.1Z"/></svg></button>
+                            <button class="nav-radio-btn" id="radioStopBtn" title="Stop" style="display:none;"><svg data-icon="STOP" aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M6.5 4H13.5A2.5 2.5 0 0 1 16 6.5V13.5A2.5 2.5 0 0 1 13.5 16H6.5A2.5 2.5 0 0 1 4 13.5V6.5A2.5 2.5 0 0 1 6.5 4Z"/></svg></button>
                         </span>
                         <span id="volumeControl" class="nav-radio-volume">
-                            <span id="volumeIcon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg></span>
+                            <span id="volumeIcon"><svg data-icon="VOLUME_HIGH" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 8A1 1 0 0 1 3 7H5.4L9.3 3.4A1 1 0 0 1 11 4.1V15.9A1 1 0 0 1 9.3 16.6L5.4 13H3A1 1 0 0 1 2 12Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.6 7.4A3.8 3.8 0 0 1 13.6 12.6M15.8 4.6A7.6 7.6 0 0 1 15.8 15.4"/></svg></span>
                             <input type="range" id="volumeSlider" class="nav-radio-slider"
                                 min="0" max="1" step="0.05" value="0.8">
                         </span>
@@ -299,28 +299,28 @@ class Navigation {
 
                     <!-- Mobile Toggle -->
                     <button type="button" class="nav-mobile-toggle" id="navMobileToggle" aria-controls="navMenu" aria-expanded="false" aria-label="${this.i18n?.get('navbar.open_menu') || 'Открыть меню'}">
-                        <span>${typeof Icons !== 'undefined' ? Icons.MENU : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>'}</span>
+                        <span>${this.icon('MENU')}</span>
                     </button>
 
                     <!-- Navigation Menu -->
                     <nav class="nav-menu" id="navMenu">
                         <div class="nav-item">
                             <a href="${this.getPageUrl('random')}" class="nav-link" data-page="random" id="navRandom">
-                                <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.DICE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><circle cx="16" cy="16" r="2"></circle><circle cx="16" cy="8" r="2"></circle><circle cx="8" cy="16" r="2"></circle><circle cx="8" cy="8" r="2"></circle><circle cx="12" cy="12" r="2"></circle></svg>'}</span>
+                                <span class="nav-icon">${this.icon('DICE')}</span>
                                 <span data-i18n="navbar.random">Random</span>
                             </a>
                         </div>
 
                         <div class="nav-item">
                             <a href="${this.getPageUrl('ratings')}" class="nav-link" data-page="ratings" id="navRatings">
-                                <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.STAR : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>'}</span>
+                                <span class="nav-icon">${this.icon('RATED')}</span>
                                 <span data-i18n="navbar.rated">Rated</span>
                             </a>
                         </div>
 
                         <div class="nav-item">
                             <a href="${this.getPageUrl('live')}" class="nav-link" data-page="live" id="navLive">
-                                <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="2"></circle><path d="M16.24 7.76a6 6 0 0 1 0 8.49"></path><path d="M7.76 16.24a6 6 0 0 1 0-8.49"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path><path d="M4.93 19.07a10 10 0 0 1 0-14.14"></path></svg></span>
+                                <span class="nav-icon">${this.icon('LIVE')}</span>
                                 <span data-i18n="navbar.live">Эфир</span>
                             </a>
                         </div>
@@ -329,7 +329,7 @@ class Navigation {
                     <!-- Search & Bookmarks Section -->
                     <div class="nav-search-container">
                         <button type="button" class="nav-search-toggle" id="navSearchToggle" aria-controls="navSearchInputWrapper" aria-expanded="false" aria-label="${this.i18n?.get('navbar.search') || 'Поиск фильмов'}" title="Search Movies" style="margin-right: 5px;">
-                            <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.SEARCH : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>'}</span>
+                            <span class="nav-icon">${this.icon('SEARCH')}</span>
                         </button>
                         <div class="nav-search-input-wrapper" id="navSearchInputWrapper">
                             <input type="text" class="nav-search-input" id="navSearchInput" data-i18n="navbar.search_placeholder" placeholder="Search movies...">
@@ -337,22 +337,22 @@ class Navigation {
 
                         <!-- Bookmarks Button -->
                         <a href="${this.getPageUrl('bookmarks')}" class="nav-icon-btn" id="navBookmarksBtn" data-page="bookmarks" aria-label="${this.i18n?.get('bookmarks.title') || 'Закладки'}" title="Bookmarks">
-                            <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.BOOKMARK : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>'}</span>
+                            <span class="nav-icon">${this.icon('BOOKMARK')}</span>
                         </a>
 
                         <!-- Calendar Button -->
                         <a href="${this.getPageUrl('calendar')}" class="nav-icon-btn" id="navCalendarBtn" data-page="calendar" aria-label="${this.i18n?.get('navbar.calendar') || 'Календарь'}" title="Calendar">
-                            <span class="nav-icon">${typeof Icons !== 'undefined' ? Icons.CALENDAR : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>'}</span>
+                            <span class="nav-icon">${this.icon('CALENDAR')}</span>
                         </a>
 
                         <!-- Downloads: only once MediaPlayer is connected in Settings -->
                         <a href="${this.getPageUrl('downloads')}" class="nav-icon-btn" id="navDownloadsBtn" data-page="downloads" aria-label="${this.i18n?.get('navbar.downloads') || 'Загрузки'}" title="${this.i18n?.get('navbar.downloads') || 'Загрузки'}" style="display: ${this.showDownloads ? 'inline-flex' : 'none'};">
-                            <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></span>
+                            <span class="nav-icon">${this.icon('DOWNLOADS')}</span>
                         </a>
 
                         <!-- Games Button -->
                         <button class="nav-icon-btn" id="navGamesBtn" title="Мини-игры" style="display: ${this.showGames ? 'inline-flex' : 'none'}; margin-left: 2px;">
-                            <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="12" x2="10" y2="12"></line><line x1="8" y1="10" x2="8" y2="14"></line><line x1="15" y1="13" x2="15.01" y2="13"></line><line x1="18" y1="11" x2="18.01" y2="11"></line><rect x="2" y="6" width="20" height="12" rx="6"></rect></svg></span>
+                            <span class="nav-icon">${this.icon('GAMES')}</span>
                         </button>
                     </div>
 
@@ -363,32 +363,32 @@ class Navigation {
                             <button type="button" class="nav-user-trigger" id="navUserTrigger" aria-controls="navUserDropdown" aria-expanded="false">
                                 <span class="nav-user-avatar-wrap"><img src="${cachedAvatar}" alt="User" class="nav-user-avatar" id="navUserAvatar"><span class="nav-rank-frame" id="navRankFrame" hidden></span></span>
                                 <span class="nav-user-name" id="navUserName">${this.escapeHtml(cachedName)}</span>
-                                <span class="nav-dropdown-arrow">${typeof Icons !== 'undefined' && Icons.CHEVRON_DOWN ? Icons.CHEVRON_DOWN : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>'}</span>
+                                <span class="nav-dropdown-arrow">${this.icon('CHEVRON_DOWN')}</span>
                             </button>
                             
                             <!-- Dropdown Menu -->
                             <div class="nav-user-dropdown" id="navUserDropdown">
                                 <a href="${this.getPageUrl('profile')}" class="nav-dropdown-item" id="navDropdownSettings">
-                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.USER : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>'}</span>
+                                    <span class="nav-dropdown-icon">${this.icon('USER')}</span>
                                     <span data-i18n="navbar.view_profile">View Profile</span>
                                 </a>
                                 <a href="${this.getPageUrl('settings')}" class="nav-dropdown-item" id="navDropdownSettingsPage">
-                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.SETTINGS : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>'}</span>
+                                    <span class="nav-dropdown-icon">${this.icon('SETTINGS')}</span>
                                     <span data-i18n="navbar.settings">Settings</span>
                                 </a>
                                 <a href="${this.getPageUrl('admin')}" class="nav-dropdown-item" id="navDropdownAdmin" style="display: none;">
-                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.ADMIN : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>'}</span>
+                                    <span class="nav-dropdown-icon">${this.icon('ADMIN')}</span>
                                     <span data-i18n="navbar.admin_panel">Admin Panel</span>
                                 </a>
                                 <div class="nav-dropdown-item" id="navDropdownTheme">
                                     <span class="nav-dropdown-icon" id="navThemeIcon">
-                                        ${typeof Icons !== 'undefined' ? Icons.THEME : '<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20" style="width: 16px; height: 16px;"><path fill-rule="evenodd" d="M10.606 1.987a.75.75 0 0 1-.217.835 5.795 5.795 0 0 0 6.387 9.58.75.75 0 0 1 1.031.965A8.502 8.502 0 0 1 1.5 10a8.5 8.5 0 0 1 8.395-8.5.75.75 0 0 1 .711.487M8.004 3.288a7 7 0 1 0 7.421 11.137A7.295 7.295 0 0 1 8.004 3.288" clip-rule="evenodd"></path></svg>'}
+                                        ${this.icon('MOON')}
                                     </span>
                                     <span id="navThemeText" data-i18n="navbar.theme">Theme</span>
                                 </div>
                                 <div class="nav-dropdown-divider"></div>
                                 <div class="nav-dropdown-item nav-dropdown-logout" id="navDropdownLogout">
-                                    <span class="nav-dropdown-icon">${typeof Icons !== 'undefined' ? Icons.LOGOUT : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>'}</span>
+                                    <span class="nav-dropdown-icon">${this.icon('LOGOUT')}</span>
                                     <span data-i18n="navbar.log_out">Log Out</span>
                                 </div>
                             </div>
@@ -396,7 +396,7 @@ class Navigation {
                         
                         <!-- Sign In Button (for non-authenticated users) -->
                         <button class="nav-signin-btn" id="navSignInBtn" style="display: ${isSignedIn ? 'none' : 'flex'};">
-                            <span class="nav-signin-icon">${typeof Icons !== 'undefined' ? Icons.USER : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>'}</span>
+                            <span class="nav-signin-icon">${this.icon('USER')}</span>
                             <span data-i18n="navbar.sign_in">Sign In</span>
                         </button>
                     </div>
@@ -812,9 +812,9 @@ class Navigation {
 
         const updateVolumeIcon = (vol) => {
             if (!volumeIcon) return;
-            if (vol == 0) volumeIcon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
-            else if (vol < 0.5) volumeIcon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
-            else volumeIcon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
+            if (vol == 0) volumeIcon.innerHTML = `<svg data-icon="VOLUME_MUTE" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 8A1 1 0 0 1 3 7H5.4L9.3 3.4A1 1 0 0 1 11 4.1V15.9A1 1 0 0 1 9.3 16.6L5.4 13H3A1 1 0 0 1 2 12Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.6 7.8L18 12.2M18 7.8L13.6 12.2"/></svg>`;
+            else if (vol < 0.5) volumeIcon.innerHTML = `<svg data-icon="VOLUME_LOW" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 8A1 1 0 0 1 3 7H5.4L9.3 3.4A1 1 0 0 1 11 4.1V15.9A1 1 0 0 1 9.3 16.6L5.4 13H3A1 1 0 0 1 2 12Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.6 7.4A3.8 3.8 0 0 1 13.6 12.6"/></svg>`;
+            else volumeIcon.innerHTML = `<svg data-icon="VOLUME_HIGH" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 8A1 1 0 0 1 3 7H5.4L9.3 3.4A1 1 0 0 1 11 4.1V15.9A1 1 0 0 1 9.3 16.6L5.4 13H3A1 1 0 0 1 2 12Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.6 7.4A3.8 3.8 0 0 1 13.6 12.6M15.8 4.6A7.6 7.6 0 0 1 15.8 15.4"/></svg>`;
         };
 
         // --- Metadata display for Anison.FM ---
@@ -1707,6 +1707,11 @@ class Navigation {
         return state.theme;
     }
 
+    /** Markup from the shared icon set; every page loads Icons.js before the header is built. */
+    icon(name) {
+        return (typeof Icons !== 'undefined' && Icons[name]) || '';
+    }
+
     updateThemeButton(theme) {
         const themeText = document.getElementById('navThemeText');
         const themeIcon = document.getElementById('navThemeIcon');
@@ -1725,21 +1730,11 @@ class Navigation {
 
         if (themeIcon) {
             if (theme === 'light') {
-                themeIcon.innerHTML = typeof Icons !== 'undefined' && Icons.SUN ? Icons.SUN : `
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
-                        <path d="M12.002 1a.9.9 0 0 1 .9.9v2.2a.9.9 0 0 1-1.8 0V1.9a.9.9 0 0 1 .9-.9m.002 18a.9.9 0 0 1 .9.9v2.2a.9.9 0 0 1-1.8 0v-2.2a.9.9 0 0 1 .9-.9M4.661 8.884a.9.9 0 0 0 .9-1.559L3.355 6.128a.9.9 0 0 0-.9 1.559zm17.223 8.663a.9.9 0 0 1-1.23.33l-2.205-1.193a.9.9 0 1 1 .9-1.56l2.205 1.193a.9.9 0 0 1 .33 1.23m-3.43-10.23a.9.9 0 1 0 .9 1.56l2.198-1.197a.9.9 0 1 0-.9-1.558zM2.128 17.547a.9.9 0 0 1 .33-1.23l2.191-1.2a.9.9 0 0 1 .9 1.559l-2.19 1.2a.9.9 0 0 1-1.23-.33ZM12.004 7a5 5 0 0 0-3.536 1.464A4.98 4.98 0 0 0 7.003 12c0 1.38.56 2.63 1.465 3.536A4.99 4.99 0 0 0 12.004 17c1.382 0 2.632-.56 3.537-1.464A4.98 4.98 0 0 0 17.006 12c0-1.38-.56-2.63-1.465-3.536A4.99 4.99 0 0 0 12.004 7M9.741 9.737a3.19 3.19 0 0 1 2.263-.937c.885 0 1.683.356 2.264.937s.938 1.379.938 2.263-.357 1.682-.938 2.263a3.19 3.19 0 0 1-2.264.937 3.19 3.19 0 0 1-2.263-.937A3.18 3.18 0 0 1 8.803 12c0-.884.357-1.682.938-2.263" clip-rule="evenodd"></path>
-                    </svg>
-                `;
+                themeIcon.innerHTML = this.icon('SUN');
             } else if (theme === 'dark') {
-                themeIcon.innerHTML = typeof Icons !== 'undefined' && Icons.MOON ? Icons.MOON : `
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20" style="width: 16px; height: 16px;">
-                        <path fill-rule="evenodd" d="M10.606 1.987a.75.75 0 0 1-.217.835 5.795 5.795 0 0 0 6.387 9.58.75.75 0 0 1 1.031.965A8.502 8.502 0 0 1 1.5 10a8.5 8.5 0 0 1 8.395-8.5.75.75 0 0 1 .711.487M8.004 3.288a7 7 0 1 0 7.421 11.137A7.295 7.295 0 0 1 8.004 3.288" clip-rule="evenodd"></path>
-                    </svg>
-                `;
+                themeIcon.innerHTML = this.icon('MOON');
             } else {
-                themeIcon.innerHTML = typeof Icons !== 'undefined' && Icons.PALETTE ? Icons.PALETTE : `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-                `;
+                themeIcon.innerHTML = this.icon('PALETTE');
             }
         }
     }
@@ -1809,13 +1804,13 @@ class Navigation {
             customThemes = this.getCustomThemes();
             const isLight = document.documentElement.classList.contains('light-theme');
 
-            const checkIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-            const plusIcon = typeof Icons !== 'undefined' && Icons.PLUS ? Icons.PLUS : '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
-            const moonIcon = typeof Icons !== 'undefined' && Icons.MOON ? Icons.MOON : '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10.606 1.987a.75.75 0 0 1-.217.835 5.795 5.795 0 0 0 6.387 9.58.75.75 0 0 1 1.031.965A8.502 8.502 0 0 1 1.5 10a8.5 8.5 0 0 1 8.395-8.5.75.75 0 0 1 .711.487M8.004 3.288a7 7 0 1 0 7.421 11.137A7.295 7.295 0 0 1 8.004 3.288" clip-rule="evenodd"></path></svg>';
-            const sunIcon = typeof Icons !== 'undefined' && Icons.SUN ? Icons.SUN : '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12.002 1a.9.9 0 0 1 .9.9v2.2a.9.9 0 0 1-1.8 0V1.9a.9.9 0 0 1 .9-.9m.002 18a.9.9 0 0 1 .9.9v2.2a.9.9 0 0 1-1.8 0v-2.2a.9.9 0 0 1 .9-.9M4.661 8.884a.9.9 0 0 0 .9-1.559L3.355 6.128a.9.9 0 0 0-.9 1.559zm17.223 8.663a.9.9 0 0 1-1.23.33l-2.205-1.193a.9.9 0 1 1 .9-1.56l2.205 1.193a.9.9 0 0 1 .33 1.23m-3.43-10.23a.9.9 0 1 0 .9 1.56l2.198-1.197a.9.9 0 1 0-.9-1.558zM2.128 17.547a.9.9 0 0 1 .33-1.23l2.191-1.2a.9.9 0 0 1 .9 1.559l-2.19 1.2a.9.9 0 0 1-1.23-.33ZM12.004 7a5 5 0 0 0-3.536 1.464A4.98 4.98 0 0 0 7.003 12c0 1.38.56 2.63 1.465 3.536A4.99 4.99 0 0 0 12.004 17c1.382 0 2.632-.56 3.537-1.464A4.98 4.98 0 0 0 17.006 12c0-1.38-.56-2.63-1.465-3.536A4.99 4.99 0 0 0 12.004 7M9.741 9.737a3.19 3.19 0 0 1 2.263-.937c.885 0 1.683.356 2.264.937s.938 1.379.938 2.263-.357 1.682-.938 2.263a3.19 3.19 0 0 1-2.264.937 3.19 3.19 0 0 1-2.263-.937A3.18 3.18 0 0 1 8.803 12c0-.884.357-1.682.938-2.263" clip-rule="evenodd"></path></svg>';
-            const paletteIcon = typeof Icons !== 'undefined' && Icons.PALETTE ? Icons.PALETTE : '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.92 0 1.7-.71 1.7-1.63 0-.44-.18-.85-.46-1.15-.27-.3-.44-.71-.44-1.17 0-.92.78-1.67 1.7-1.67h2.5c2.76 0 5-2.24 5-5 0-4.97-4.48-9.38-10-9.38z"/></svg>';
-            const editIcon = typeof Icons !== 'undefined' && Icons.EDIT ? Icons.EDIT : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
-            const trashIcon = typeof Icons !== 'undefined' && Icons.TRASH ? Icons.TRASH : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>';
+            const checkIcon = this.icon('CHECK');
+            const plusIcon = this.icon('PLUS');
+            const moonIcon = this.icon('MOON');
+            const sunIcon = this.icon('SUN');
+            const paletteIcon = this.icon('PALETTE');
+            const editIcon = this.icon('EDIT');
+            const trashIcon = this.icon('TRASH');
 
             return `
                 <div class="theme-modal-content" style="

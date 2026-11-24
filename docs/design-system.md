@@ -235,6 +235,42 @@ minus the inset (`calc(var(--radius-xl) - 1px)` inside a 1px border).
 Files that load without `common.css` keep fallbacks; see "Files loaded without
 `common.css`" below.
 
+### Icons
+
+The product has its own icon set, drawn for it on a 20px grid and shown at 20px, so one
+unit is one pixel: a whole outline (2px, round caps and joins) with one solid part. A
+simple shape has its right half solid; a compound one has a part of its own solid (a
+calendar's header, a person's head, the download arrow).
+
+- The drawings live in `scripts/icon-set/icons.cjs`; `node scripts/icon-set/build.cjs`
+  writes them into the `<icon-set>` block of `src/shared/utils/Icons.js` and into every
+  `<svg data-icon="NAME" viewBox="0 0 20 20" fill="none">` in `src` and `content-scripts`,
+  HTML and script strings alike. Never edit either by hand; change the drawing and run the script. `kit.cjs` cuts
+  the right half of any outline.
+- A toggled icon has a second, fully solid drawing, `NAME_FILLED`. Switch the drawing, not
+  the svg's `fill`.
+- An icon alone in a wrapper sits in a `span` whose class names an icon (`btn-icon`,
+  `sidebar-icon`): `common.css` centres it there. In a bare `span` it stands above the
+  text's centre.
+- Sizes are 20px, or 16px next to small text and 40px in empty states and poster
+  placeholders. Utility marks may be 14px; smaller ones blur.
+- Readability at the real size comes first. Judge a drawing at 20px and 100% display
+  scaling (device pixel ratio 1), then at 125% and 150%, never only enlarged. Put the edges
+  of straight lines on whole pixels. Keep the silhouette whole: a wave inside the shape and
+  a gap between its halves were tried and fell apart at this size.
+- Icons are plain paths in `currentColor`: no masks, clips, gradients or ids.
+- Small utility marks (close, check, plus, chevrons, arrows, menus, refresh) are plain
+  lines of the same weight. REFRESH (two arrows) loads again, RESET (one arrow back) undoes
+  or turns; do not swap them. Brands, franchise tiles, achievement badges and game pieces
+  are not part of the set.
+
+The whole interface uses the set, the buttons inside the player included
+(`content-scripts/player-cleaner.js`: 20px in the dock, 30px on the centre button). The rating
+star stays an outline: half filled, it would read as half a point. The collection picker
+offers the set's icons, but a collection keeps the icon saved in its data as markup, so
+collections made earlier show the older drawings.
+`npm run test:visual-design` checks that everything generated is up to date.
+
 ### Scrollbars
 
 The extension has one scrollbar, in `src/shared/styles/scrollbars.css`. Pages get it
@@ -506,6 +542,7 @@ Each generic visual primitive has one owner:
 | Rating dialog (Movie Details and Ratings) | `src/shared/styles/rating-dialog.css` and `RatingDialog.js` |
 | Awards and nominations (film tab, person page) | `src/shared/styles/awards.css` and `AwardsList.js` |
 | Navigation | `src/shared/styles/navigation.css` and `Navigation.js` |
+| Icons | `scripts/icon-set/` (drawings) and `src/shared/utils/Icons.js` (generated block) |
 | Player geometry and overlays | `src/shared/styles/player.css` |
 | Page layout and content variants | The owning page CSS, scoped below its page root |
 

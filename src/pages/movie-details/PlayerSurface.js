@@ -93,7 +93,7 @@ class MovieDetailsPlayerSurface {
     showPoster(posterUrl) {
         const container = this.container;
         if (!container) return null;
-        container.innerHTML = '<div class="player-surface__poster"><button class="player-surface__primary-action" id="mainPlayBtn" type="button" aria-label="Play"><svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></button></div>';
+        container.innerHTML = '<div class="player-surface__poster"><button class="player-surface__primary-action" id="mainPlayBtn" type="button" aria-label="Play"><svg data-icon="PLAY" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3.9C5 2.9 5.9 2.3 6.7 2.9L16.2 8.9C17 9.5 17 10.5 16.2 11.1L6.7 17.1C5.9 17.7 5 17.1 5 16.1Z"/></svg></button></div>';
         const safeUrl = MovieDetailsPlayerSurface.getSafeWebUrl(posterUrl);
         const poster = container.querySelector?.('.player-surface__poster');
         if (poster && safeUrl) poster.style.backgroundImage = `url(${JSON.stringify(safeUrl)})`;

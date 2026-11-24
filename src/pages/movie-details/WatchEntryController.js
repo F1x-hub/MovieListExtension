@@ -31,7 +31,7 @@
             this.toggle.setAttribute('aria-haspopup', 'dialog');
             this.toggle.setAttribute('aria-controls', 'sourcePopover');
             this.toggle.setAttribute('aria-expanded', 'false');
-            this.toggle.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>';
+            this.toggle.innerHTML = '<svg data-icon="CHEVRON_DOWN" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 7.5L10 12.5L15 7.5"/></svg>';
             this.torrent = button('torrentEntryBtn', 'Торрент');
             this.torrent.hidden = true;
             this.torrent.setAttribute('aria-controls', 'torrentSourcePanel');

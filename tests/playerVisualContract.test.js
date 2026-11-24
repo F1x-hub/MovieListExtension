@@ -80,8 +80,8 @@ assert.match(cleaner, /centerPlayBtn\.dataset\.icon = currentVid\.paused \? 'pla
 assert.match(cleaner, /\.native-player-wrapper \.player-center-action\[data-icon="play"\] svg/, 'only the Play glyph may receive its optical offset');
 assert.match(css, /\.video-container \.player-center-action\[data-icon="play"\] svg/, 'shared player CSS must scope the optical offset to Play');
 assert.match(cleaner, /playPauseBtn\.dataset\.icon = currentVid\.paused \? 'play' : 'pause'/, 'bottom Play and Pause states must be distinguishable for optical alignment');
-assert.match(cleaner, /player-control-button--primary\[data-icon="play"\] svg\s*\{[\s\S]*?translate\(-1\.5px, -0\.5px\)/, 'bottom Play glyph must compensate for its horizontal and vertical optical offset');
-assert.match(css, /player-control-button--primary\[data-icon="play"\] svg\s*\{[\s\S]*?translate\(-1\.5px, -0\.5px\)/, 'shared player CSS must keep the bottom Play glyph optically centered');
+assert.match(cleaner, /player-control-button--primary\[data-icon="play"\] svg\s*\{[\s\S]*?translateX\(-1px\)/, 'bottom Play glyph must compensate for its horizontal optical offset');
+assert.match(css, /player-control-button--primary\[data-icon="play"\] svg\s*\{[\s\S]*?translateX\(-1px\)/, 'shared player CSS must keep the bottom Play glyph optically centered');
 assert.match(cleaner, /progressContainer\.className = 'player-progress-track'/);
 assert.doesNotMatch(cleaner, /const thumbTooltip = document\.createElement\('div'\)/, 'progress track must not create a duplicate time tooltip');
 assert.match(cleaner, /new GhostPlayer\(/, 'GhostPlayer must remain the single hover-preview owner');

@@ -8,24 +8,22 @@
             ? import(chrome.runtime.getURL('src/shared/services/player/PlayerLocale.js')).then(() => window.PlayerLocale?.init()).catch(() => false)
             : Promise.resolve(false));
 
-    // One icon set for the whole control dock: 24px grid, 2px rounded stroke,
-    // currentColor. Play/Pause are solid so the primary action reads first.
-    const playerIcon = (body, { size = 24, solid = false } = {}) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${solid ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+    // The product's icon set, 20px = 1:1. Drawings are written here by
+    // scripts/icon-set/build.cjs; sizes come from the styles below.
     const PLAYER_ICONS = {
-        play: (size) => playerIcon('<path d="M8 5v14l11-7z"/>', { size, solid: true }),
-        pause: (size) => playerIcon('<rect x="6" y="5" width="3.5" height="14" rx="1"/><rect x="14.5" y="5" width="3.5" height="14" rx="1"/>', { size, solid: true }),
-        prev: playerIcon('<path d="M15 18l-6-6 6-6"/>'),
-        next: playerIcon('<path d="M9 18l6-6-6-6"/>'),
-        volumeHigh: playerIcon('<path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>'),
-        // Same footprint as volumeHigh (faint outer wave) so the speaker stays centered and does not jump.
-        volumeLow: playerIcon('<path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13" opacity=".3"/>'),
-        volumeMute: playerIcon('<g transform="translate(-0.5 0)"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="m16 9 6 6"/><path d="m22 9-6 6"/></g>'),
-        subtitles: playerIcon('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 11h3"/><path d="M13 11h4"/><path d="M7 15h6"/><path d="M16 15h1"/>'),
-        pip: playerIcon('<rect x="3" y="5" width="18" height="14" rx="3"/><rect x="12" y="11" width="6" height="5" rx="1"/>'),
-        pipActive: playerIcon('<rect x="3" y="5" width="18" height="14" rx="3"/><rect x="12" y="11" width="6" height="5" rx="1" fill="currentColor"/>'),
-        settings: playerIcon('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'),
-        fullscreen: playerIcon('<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>'),
-        fullscreenExit: playerIcon('<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>')
+        play: '<svg data-icon="PLAY" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3.9C5 2.9 5.9 2.3 6.7 2.9L16.2 8.9C17 9.5 17 10.5 16.2 11.1L6.7 17.1C5.9 17.7 5 17.1 5 16.1Z"/></svg>',
+        pause: '<svg data-icon="PAUSE" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5.2 3H6.8A1.2 1.2 0 0 1 8 4.2V15.8A1.2 1.2 0 0 1 6.8 17H5.2A1.2 1.2 0 0 1 4 15.8V4.2A1.2 1.2 0 0 1 5.2 3ZM13.2 3H14.8A1.2 1.2 0 0 1 16 4.2V15.8A1.2 1.2 0 0 1 14.8 17H13.2A1.2 1.2 0 0 1 12 15.8V4.2A1.2 1.2 0 0 1 13.2 3Z"/></svg>',
+        prev: '<svg data-icon="CHEVRON_LEFT" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.5 5L7.5 10L12.5 15"/></svg>',
+        next: '<svg data-icon="CHEVRON_RIGHT" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 5L12.5 10L7.5 15"/></svg>',
+        volumeHigh: '<svg data-icon="VOLUME_HIGH" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 8A1 1 0 0 1 3 7H5.4L9.3 3.4A1 1 0 0 1 11 4.1V15.9A1 1 0 0 1 9.3 16.6L5.4 13H3A1 1 0 0 1 2 12Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.6 7.4A3.8 3.8 0 0 1 13.6 12.6M15.8 4.6A7.6 7.6 0 0 1 15.8 15.4"/></svg>',
+        volumeLow: '<svg data-icon="VOLUME_LOW" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 8A1 1 0 0 1 3 7H5.4L9.3 3.4A1 1 0 0 1 11 4.1V15.9A1 1 0 0 1 9.3 16.6L5.4 13H3A1 1 0 0 1 2 12Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.6 7.4A3.8 3.8 0 0 1 13.6 12.6"/></svg>',
+        volumeMute: '<svg data-icon="VOLUME_MUTE" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 8A1 1 0 0 1 3 7H5.4L9.3 3.4A1 1 0 0 1 11 4.1V15.9A1 1 0 0 1 9.3 16.6L5.4 13H3A1 1 0 0 1 2 12Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.6 7.8L18 12.2M18 7.8L13.6 12.2"/></svg>',
+        subtitles: '<svg data-icon="SUBTITLES" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.5 4H14.5A2.5 2.5 0 0 1 17 6.5V13.5A2.5 2.5 0 0 1 14.5 16H5.5A2.5 2.5 0 0 1 3 13.5V6.5A2.5 2.5 0 0 1 5.5 4Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 8H7M10 8H14M6 12H10M13 12H14"/></svg>',
+        pip: '<svg data-icon="PIP" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H5A2 2 0 0 1 3 14V6A2 2 0 0 1 5 4H15A2 2 0 0 1 17 6V8"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M12 10H16A2 2 0 0 1 18 12V15A2 2 0 0 1 16 17H12A2 2 0 0 1 10 15V12A2 2 0 0 1 12 10Z"/></svg>',
+        pipActive: '<svg data-icon="PIP_EXIT" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.5 4H14.5A2.5 2.5 0 0 1 17 6.5V13.5A2.5 2.5 0 0 1 14.5 16H5.5A2.5 2.5 0 0 1 3 13.5V6.5A2.5 2.5 0 0 1 5.5 4Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7 7H13A1 1 0 0 1 14 8V12A1 1 0 0 1 13 13H7A1 1 0 0 1 6 12V8A1 1 0 0 1 7 7Z"/></svg>',
+        settings: '<svg data-icon="SETTINGS" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10.58 1.22C10.96 1.25 11.41 1.12 11.58 2.04C11.76 2.97 11.88 3.57 12.13 3.71C12.39 3.85 12.66 3.96 12.94 4.04C13.22 4.13 13.73 3.78 14.51 3.25C15.29 2.73 15.51 3.14 15.8 3.38C16.1 3.63 16.37 3.9 16.62 4.2C16.86 4.49 17.27 4.71 16.75 5.49C16.22 6.27 15.87 6.78 15.96 7.06C16.04 7.34 16.15 7.61 16.29 7.87C16.43 8.12 17.03 8.24 17.96 8.42C18.88 8.59 18.75 9.04 18.78 9.42C18.82 9.81 18.82 10.19 18.78 10.58C18.75 10.96 18.88 11.41 17.96 11.58C17.03 11.76 16.43 11.88 16.29 12.13C16.15 12.39 16.04 12.66 15.96 12.94C15.87 13.22 16.22 13.73 16.75 14.51C17.27 15.29 16.86 15.51 16.62 15.8C16.37 16.1 16.1 16.37 15.8 16.62C15.51 16.86 15.29 17.27 14.51 16.75C13.73 16.22 13.22 15.87 12.94 15.96C12.66 16.04 12.39 16.15 12.13 16.29C11.88 16.43 11.76 17.03 11.58 17.96C11.41 18.88 10.96 18.75 10.58 18.78C10.19 18.82 9.81 18.82 9.42 18.78C9.04 18.75 8.59 18.88 8.42 17.96C8.24 17.03 8.12 16.43 7.87 16.29C7.61 16.15 7.34 16.04 7.06 15.96C6.78 15.87 6.27 16.22 5.49 16.75C4.71 17.27 4.49 16.86 4.2 16.62C3.9 16.37 3.63 16.1 3.38 15.8C3.14 15.51 2.73 15.29 3.25 14.51C3.78 13.73 4.13 13.22 4.04 12.94C3.96 12.66 3.85 12.39 3.71 12.13C3.57 11.88 2.97 11.76 2.04 11.58C1.12 11.41 1.25 10.96 1.22 10.58C1.18 10.19 1.18 9.81 1.22 9.42C1.25 9.04 1.12 8.59 2.04 8.42C2.97 8.24 3.57 8.12 3.71 7.87C3.85 7.61 3.96 7.34 4.04 7.06C4.13 6.78 3.78 6.27 3.25 5.49C2.73 4.71 3.14 4.49 3.38 4.2C3.63 3.9 3.9 3.63 4.2 3.38C4.49 3.14 4.71 2.73 5.49 3.25C6.27 3.78 6.78 4.13 7.06 4.04C7.34 3.96 7.61 3.85 7.87 3.71C8.12 3.57 8.24 2.97 8.42 2.04C8.59 1.12 9.04 1.25 9.42 1.22C9.81 1.18 10.19 1.18 10.58 1.22ZM10 6.8A3.2 3.2 0 1 0 10 13.2A3.2 3.2 0 1 0 10 6.8Z"/></svg>',
+        fullscreen: '<svg data-icon="FULLSCREEN" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7V5A2 2 0 0 1 5 3H7M13 3H15A2 2 0 0 1 17 5V7M17 13V15A2 2 0 0 1 15 17H13M7 17H5A2 2 0 0 1 3 15V13"/></svg>',
+        fullscreenExit: '<svg data-icon="FULLSCREEN_EXIT" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 3V5A2 2 0 0 1 5 7H3M13 3V5A2 2 0 0 0 15 7H17M17 13H15A2 2 0 0 0 13 15V17M7 17V15A2 2 0 0 0 5 13H3"/></svg>'
     };
 
 
@@ -2519,8 +2517,8 @@
                     backdrop-filter: blur(14px) saturate(130%) !important;
                 }
                 .native-player-wrapper .player-center-action svg {
-                    width: 40px !important;
-                    height: 40px !important;
+                    width: 30px !important;
+                    height: 30px !important;
                     transform: none !important;
                 }
                 .native-player-wrapper .player-center-action[data-icon="play"] svg {
@@ -2639,14 +2637,14 @@
                     transform: none;
                 }
                 .native-player-wrapper .player-control-dock .player-control-button--primary[data-icon="play"] svg {
-                    /* M8 5v14l11-7z is optically right- and bottom-heavy. */
-                    transform: translate(-1.5px, -0.5px);
+                    /* The triangle's box sits 1px right of the grid's centre. */
+                    transform: translateX(-1px);
                 }
                 .native-player-wrapper .player-control-dock .player-control-button--primary {
                     line-height: 0 !important;
                 }
-                /* Buttons have a fixed size; padding would shrink the content box below the glyph
-                   (26px Play, 22px icons at the 32px mobile size) and push it off-center. */
+                /* Buttons have a fixed size; padding would shrink the content box below the 20px
+                   glyph (at the 32px mobile size) and push it off-center. */
                 .native-player-wrapper .player-control-dock button.player-control-button {
                     padding: 0 !important;
                 }
@@ -2671,12 +2669,8 @@
                     transform: none !important;
                 }
                 .native-player-wrapper .player-control-dock .player-control-button svg {
-                    width: 22px !important;
-                    height: 22px !important;
-                }
-                .native-player-wrapper .player-control-dock .player-control-button--primary svg {
-                    width: 26px !important;
-                    height: 26px !important;
+                    width: 20px !important;
+                    height: 20px !important;
                 }
                 .native-player-wrapper .player-timecode {
                     margin-left: 2px;
@@ -3681,14 +3675,14 @@
                 
                 if (currentVid.paused) {
                     // Bottom Btn: Play
-                    playPauseBtn.innerHTML = PLAYER_ICONS.play(32);
+                    playPauseBtn.innerHTML = PLAYER_ICONS.play;
                     // Center Btn: Play (Large)
-                    centerPlayBtn.innerHTML = PLAYER_ICONS.play(48);
+                    centerPlayBtn.innerHTML = PLAYER_ICONS.play;
                 } else {
                     // Bottom Btn: Pause
-                    playPauseBtn.innerHTML = PLAYER_ICONS.pause(32);
+                    playPauseBtn.innerHTML = PLAYER_ICONS.pause;
                     // Center Btn: Pause (Large)
-                    centerPlayBtn.innerHTML = PLAYER_ICONS.pause(48);
+                    centerPlayBtn.innerHTML = PLAYER_ICONS.pause;
                 }
             };
             
@@ -5143,7 +5137,7 @@
                 header.type = 'button';
                 header.className = 'player-settings-menu__back';
                 header.setAttribute('aria-label', pt('back_subtitles', 'Назад к дорожкам субтитров'));
-                header.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg><span>Настройки субтитров</span>';
+                header.innerHTML = '<svg data-icon="CHEVRON_LEFT" width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.5 5L7.5 10L12.5 15"/></svg><span>Настройки субтитров</span>';
                 header.querySelector('span').textContent = pt('subtitle_settings', 'Настройки субтитров');
                 header.onclick = (e) => { e.stopPropagation(); renderSubsView(); };
                 settingsMenu.appendChild(header);
@@ -5848,9 +5842,7 @@
             skipButton = document.createElement('button');
             skipButton.id = 'skipOpeningBtn';
             skipButton.innerHTML = `
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
-                    <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
-                </svg>
+                <svg data-icon="SKIP" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style="margin-right: 8px;"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M3 4.3C3 3.3 3.9 2.7 4.7 3.3L12.2 8.9C13 9.5 13 10.5 12.2 11.1L4.7 16.7C3.9 17.3 3 16.7 3 15.7ZM14.8 3H15.2A0.8 0.8 0 0 1 16 3.8V16.2A0.8 0.8 0 0 1 15.2 17H14.8A0.8 0.8 0 0 1 14 16.2V3.8A0.8 0.8 0 0 1 14.8 3Z"/></svg>
                 <span>Пропустить опенинг</span>
             `;
             skipButton.querySelector('span').textContent = pt('skip_opening', 'Пропустить опенинг');

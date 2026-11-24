@@ -135,7 +135,7 @@ class MovieDetailsMetaRendererMethods {
                 <summary class="the-numbers-chart__summary">
                     <span class="the-numbers-chart__title">Динамика сборов</span>
                     <span class="the-numbers-chart__summary-meta">Domestic · накопительный итог</span>
-                    <span class="the-numbers-chart__chevron" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
+                    <span class="the-numbers-chart__chevron" aria-hidden="true"><svg data-icon="CHEVRON_DOWN" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 7.5L10 12.5L15 7.5"/></svg></span>
                 </summary>
                 <div class="the-numbers-chart__content">
                     <div class="the-numbers-chart__legend" aria-label="Легенда графика">

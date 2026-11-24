@@ -1,8 +1,8 @@
 (function (global) {
     'use strict';
-    const CHEVRON = '<svg class="player-settings-menu__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>';
-    const BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>';
-    const CHECK = '<span class="player-settings-menu__option-label"></span><span class="player-settings-menu__check" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>';
+    const CHEVRON = '<svg data-icon="CHEVRON_RIGHT" class="player-settings-menu__chevron" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 5L12.5 10L7.5 15"/></svg>';
+    const BACK = '<svg data-icon="CHEVRON_LEFT" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.5 5L7.5 10L12.5 15"/></svg>';
+    const CHECK = '<span class="player-settings-menu__option-label"></span><span class="player-settings-menu__check" aria-hidden="true"><svg data-icon="CHECK" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.6L8 14.6L16 5.4"/></svg></span>';
     function createItem(doc, label, value) {
         const item = doc.createElement('button');
         item.type = 'button'; item.className = 'player-settings-menu__item'; item.setAttribute('role', 'menuitem');

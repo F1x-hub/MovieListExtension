@@ -92,7 +92,7 @@
             const doc = this.host.ownerDocument;
             const button = doc.createElement('button');
             button.type = 'button'; button.className = 'modal-close player-diagnostics-trigger';
-            button.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
+            button.innerHTML = '<svg data-icon="MORE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M4 8.4A1.6 1.6 0 1 0 4 11.6A1.6 1.6 0 1 0 4 8.4ZM10 8.4A1.6 1.6 0 1 0 10 11.6A1.6 1.6 0 1 0 10 8.4ZM16 8.4A1.6 1.6 0 1 0 16 11.6A1.6 1.6 0 1 0 16 8.4Z"/></svg>';
             const dialog = doc.createElement('dialog');
             dialog.className = 'player-diagnostics-dialog';
             const titleId = `playerDiagnosticsTitle${++sequence}`;

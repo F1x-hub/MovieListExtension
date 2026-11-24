@@ -296,8 +296,8 @@ class HomeRenderer {
         const watching = kind === 'watching';
         return {
             icon: watching
-                ? '<svg class="section-header-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>'
-                : '<svg class="section-header-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>',
+                ? '<svg data-icon="CLOCK" class="section-header-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 0 10 17A7 7 0 1 0 10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6V10L12.6 12"/></svg>'
+                : '<svg data-icon="BOOKMARK" class="section-header-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3L10 13.6L15 17L15 5C15 3.9 14.1 3 13 3L10 3Z"/></svg>',
             title: watching ? this.t('continue_watching', 'Продолжить просмотр') : this.t('watchlist', 'Буду смотреть'),
             total,
             href: watching ? '../bookmarks/bookmarks.html?filter=watching' : '../bookmarks/bookmarks.html?filter=plan_to_watch',
@@ -486,7 +486,7 @@ class HomeRenderer {
                 </div>
                 <a href="${href}" class="section-see-all">
                     <span>${this.escapeHtml(linkText)}</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                    <svg data-icon="ARROW_RIGHT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10H16M11 5L16 10L11 15"/></svg>
                 </a>
             </div>
         `;
@@ -544,9 +544,7 @@ class HomeRenderer {
                 <div class="home-cta-card">
                     <div class="home-cta-content">
                         <div class="home-cta-icon">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
-                            </svg>
+                            <svg data-icon="BOOKMARK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3L10 13.6L15 17L15 5C15 3.9 14.1 3 13 3L10 3Z"/></svg>
                         </div>
                         <div class="home-cta-text">
                             <h2>${this.escapeHtml(titleText)}</h2>
@@ -745,29 +743,20 @@ class HomeRenderer {
             <div class="home-dashboard-grid">
                 <div class="home-dashboard-card">
                     <h2>
-                        <svg class="dashboard-header-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <line x1="18" y1="20" x2="18" y2="10"></line>
-                            <line x1="12" y1="20" x2="12" y2="4"></line>
-                            <line x1="6" y1="20" x2="6" y2="14"></line>
-                        </svg>
+                        <svg data-icon="CHART_BARS" class="dashboard-header-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M4 10H6A1 1 0 0 1 7 11V16A1 1 0 0 1 6 17H4A1 1 0 0 1 3 16V11A1 1 0 0 1 4 10ZM9 3H11A1 1 0 0 1 12 4V16A1 1 0 0 1 11 17H9A1 1 0 0 1 8 16V4A1 1 0 0 1 9 3ZM14 7H16A1 1 0 0 1 17 8V16A1 1 0 0 1 16 17H14A1 1 0 0 1 13 16V8A1 1 0 0 1 14 7Z"/></svg>
                         ${this.escapeHtml(this.t('dashboard.activity', 'Ваша активность'))}
                     </h2>
                     <div class="home-stats-grid">
                         ${statBox('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>', stats.totalRatings, this.t('dashboard.total_ratings', 'Оценок всего'))}
-                        ${statBox('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>', stats.averageRating, this.t('dashboard.average_rating', 'Средний балл'))}
-                        ${statBox('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>', stats.watchingCount, this.t('dashboard.watching', 'В процессе'))}
-                        ${statBox('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>', stats.watchlistCount, this.t('dashboard.watchlist', 'В закладках'))}
+                        ${statBox('<svg data-icon="CLOCK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 0 10 17A7 7 0 1 0 10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6V10L12.6 12"/></svg>', stats.averageRating, this.t('dashboard.average_rating', 'Средний балл'))}
+                        ${statBox('<svg data-icon="PLAY" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3.9C5 2.9 5.9 2.3 6.7 2.9L16.2 8.9C17 9.5 17 10.5 16.2 11.1L6.7 17.1C5.9 17.7 5 17.1 5 16.1Z"/></svg>', stats.watchingCount, this.t('dashboard.watching', 'В процессе'))}
+                        ${statBox('<svg data-icon="BOOKMARK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3L10 13.6L15 17L15 5C15 3.9 14.1 3 13 3L10 3Z"/></svg>', stats.watchlistCount, this.t('dashboard.watchlist', 'В закладках'))}
                     </div>
                 </div>
 
                 <div class="home-dashboard-card">
                     <h2>
-                        <svg class="dashboard-header-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="9" cy="7" r="4"></circle>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                        </svg>
+                        <svg data-icon="USERS" class="dashboard-header-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7.5 2.5A3.5 3.5 0 1 0 7.5 9.5A3.5 3.5 0 1 0 7.5 2.5Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 12C10.4 12 12.4 13.6 13 16C13.1 16.6 12.7 17 12.1 17H2.9C2.3 17 1.9 16.6 2 16C2.6 13.6 4.6 12 7.5 12Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.4 3.2A3 3 0 0 1 13.4 8.8M15.6 12.4C17.2 13.2 18 14.6 18.2 16.4"/></svg>
                         ${this.escapeHtml(this.t('dashboard.community', 'Выбор сообщества'))}
                     </h2>
                     <div class="home-community-list" id="home-community-grid">

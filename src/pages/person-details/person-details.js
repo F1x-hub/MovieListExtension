@@ -365,10 +365,7 @@ class PersonDetailsPageController {
                             placeholder = document.createElement('div');
                             placeholder.className = 'person-hero__portrait-placeholder';
                             placeholder.innerHTML = `
-                                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                                    <circle cx="12" cy="7" r="4"></circle>
-                                </svg>
+                                <svg data-icon="USER" aria-hidden="true" width="40" height="40" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 2A4 4 0 1 0 10 10A4 4 0 1 0 10 2Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 12C13.6 12 16 13.8 16.6 16.2C16.7 16.7 16.4 17 15.9 17H4.1C3.6 17 3.3 16.7 3.4 16.2C4 13.8 6.4 12 10 12Z"/></svg>
                             `;
                             wrapper.appendChild(placeholder);
                         }
@@ -481,10 +478,7 @@ class PersonDetailsPageController {
                     <img src="${this.escapeHtml(person.photoUrl)}" alt="${this.escapeHtml(primaryName)}" class="person-hero__portrait" decoding="async">
                     ` : `
                     <div class="person-hero__portrait-placeholder">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="12" cy="7" r="4"></circle>
-                        </svg>
+                        <svg data-icon="USER" aria-hidden="true" width="40" height="40" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 2A4 4 0 1 0 10 10A4 4 0 1 0 10 2Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 12C13.6 12 16 13.8 16.6 16.2C16.7 16.7 16.4 17 15.9 17H4.1C3.6 17 3.3 16.7 3.4 16.2C4 13.8 6.4 12 10 12Z"/></svg>
                     </div>
                     `}
                 </div>
@@ -588,8 +582,8 @@ class PersonDetailsPageController {
     getBiographyIcon(type) {
         const fallbackIcons = {
             star: '<svg class="person-bio__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>',
-            award: '<svg class="person-bio__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v4a4 4 0 0 1-8 0V4Z"></path><path d="M8 6H5a3 3 0 0 0 3 3"></path><path d="M16 6h3a3 3 0 0 1-3 3"></path><path d="M12 12v5"></path><path d="M8 21h8"></path><path d="M9 17h6"></path></svg>',
-            film: '<svg class="person-bio__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m8 5 3 4"></path><path d="m14 5 3 4"></path><path d="M3 9h18"></path><path d="M3 15h18"></path><path d="m8 19 3-4"></path><path d="m14 19 3-4"></path></svg>'
+            award: '<svg data-icon="TROPHY" class="person-bio__icon" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14V8A4 4 0 0 1 6 8Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3L10 12C12.21 12 14 10.21 14 8L14 3L10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 5H2.6V5.6A3.6 3.6 0 0 0 6.2 9.2M14 5H17.4V5.6A3.6 3.6 0 0 1 13.8 9.2M10 12V16M6 17H14"/></svg>',
+            film: '<svg data-icon="FILM" class="person-bio__icon" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3H15A3 3 0 0 1 18 6V14A3 3 0 0 1 15 17H5A3 3 0 0 1 2 14V6A3 3 0 0 1 5 3ZM7.5 5H12.5A0.5 0.5 0 0 1 13 5.5V8.5A0.5 0.5 0 0 1 12.5 9H7.5A0.5 0.5 0 0 1 7 8.5V5.5A0.5 0.5 0 0 1 7.5 5ZM7.5 11H12.5A0.5 0.5 0 0 1 13 11.5V14.5A0.5 0.5 0 0 1 12.5 15H7.5A0.5 0.5 0 0 1 7 14.5V11.5A0.5 0.5 0 0 1 7.5 11ZM4 5H5A0.5 0.5 0 0 1 5.5 5.5V6.5A0.5 0.5 0 0 1 5 7H4A0.5 0.5 0 0 1 3.5 6.5V5.5A0.5 0.5 0 0 1 4 5ZM4 9H5A0.5 0.5 0 0 1 5.5 9.5V10.5A0.5 0.5 0 0 1 5 11H4A0.5 0.5 0 0 1 3.5 10.5V9.5A0.5 0.5 0 0 1 4 9ZM4 13H5A0.5 0.5 0 0 1 5.5 13.5V14.5A0.5 0.5 0 0 1 5 15H4A0.5 0.5 0 0 1 3.5 14.5V13.5A0.5 0.5 0 0 1 4 13ZM15 5H16A0.5 0.5 0 0 1 16.5 5.5V6.5A0.5 0.5 0 0 1 16 7H15A0.5 0.5 0 0 1 14.5 6.5V5.5A0.5 0.5 0 0 1 15 5ZM15 9H16A0.5 0.5 0 0 1 16.5 9.5V10.5A0.5 0.5 0 0 1 16 11H15A0.5 0.5 0 0 1 14.5 10.5V9.5A0.5 0.5 0 0 1 15 9ZM15 13H16A0.5 0.5 0 0 1 16.5 13.5V14.5A0.5 0.5 0 0 1 16 15H15A0.5 0.5 0 0 1 14.5 14.5V13.5A0.5 0.5 0 0 1 15 13Z"/></svg>'
         };
 
         const sharedIcon = typeof Icons !== 'undefined' && type === 'star'
@@ -658,7 +652,7 @@ class PersonDetailsPageController {
             : '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>';
         const nextIcon = typeof Icons !== 'undefined' && Icons.CHEVRON_RIGHT
             ? Icons.CHEVRON_RIGHT
-            : '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+            : '<svg data-icon="CHEVRON_RIGHT" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 5L12.5 10L7.5 15"/></svg>';
 
         return `
             <section class="person-section" id="knownForSection" aria-labelledby="knownForHeading">
@@ -1632,7 +1626,7 @@ class PersonDetailsPageController {
     getPersonMoviePosterPlaceholder() {
         const sharedIcon = typeof Icons !== 'undefined' && Icons.MOVIE_CLAPPER
             ? Icons.MOVIE_CLAPPER
-            : '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4h16v16H4z"></path><path d="m4 8 16-4"></path><path d="m4 12 16-4"></path><path d="M8 4v4"></path><path d="M14 4v4"></path><path d="M20 4v4"></path></svg>';
+            : '<svg data-icon="MOVIE_CLAPPER" aria-hidden="true" width="40" height="40" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2.27 3.28L5.78 2.47L5.12 6.73L2.2 7.4L1.53 4.48Q1.3 3.5 2.27 3.28ZM7.54 2.06L11.04 1.25L10.38 5.51L6.88 6.32ZM12.8 0.85L15.92 0.13Q16.89 -0.1 17.12 0.88L17.79 3.8L12.14 5.11Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9H17V15A2 2 0 0 1 15 17H5A2 2 0 0 1 3 15Z"/></svg>';
         return sharedIcon.replace('<svg ', '<svg class="person-details-poster-placeholder__icon" aria-hidden="true" ');
     }
 

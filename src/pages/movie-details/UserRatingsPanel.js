@@ -500,7 +500,7 @@ class MovieDetailsUserRatingsMethods {
         if (ratingsSection.querySelector('.ratings-offline-banner')) return;
         const banner = document.createElement('div');
         banner.className = 'ratings-offline-banner';
-        banner.innerHTML = '<span style="display:inline-flex;align-items:center;margin-right:6px;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></span> Нет соединения — данные могут быть устаревшими';
+        banner.innerHTML = '<span style="display:inline-flex;align-items:center;margin-right:6px;"><svg data-icon="BOLT" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 2.6L4.4 11H9.4L8.6 17.4L15.6 8.6H10.2Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M11 2.6L4.4 11H9.4L8.6 17.4L15.6 8.6H10.2Z"/></svg></span> Нет соединения — данные могут быть устаревшими';
         ratingsSection.prepend(banner);
     }
 
@@ -516,15 +516,15 @@ class MovieDetailsUserRatingsMethods {
         return `
             <div class="mc-menu-container user-rating-menu-container">
                 <button type="button" class="mc-menu-btn" data-rating-id="${this.escapeHtml(ratingId)}" aria-haspopup="true" aria-expanded="false" aria-label="${i18n.get('movie_details.user_ratings_title')}" title="${i18n.get('movie_details.user_ratings_title')}">
-                    <span class="mc-menu-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg></span>
+                    <span class="mc-menu-icon"><svg data-icon="MORE_VERTICAL" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 2.4A1.6 1.6 0 1 0 10 5.6A1.6 1.6 0 1 0 10 2.4ZM10 8.4A1.6 1.6 0 1 0 10 11.6A1.6 1.6 0 1 0 10 8.4ZM10 14.4A1.6 1.6 0 1 0 10 17.6A1.6 1.6 0 1 0 10 14.4Z"/></svg></span>
                 </button>
                 <div class="mc-menu-dropdown">
                     <button class="mc-menu-item" data-rating-id="${this.escapeHtml(ratingId)}" data-action="edit-user-rating">
-                        <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></span>
+                        <span class="mc-menu-item-icon"><svg data-icon="EDIT" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16L4.8 12.2L12.6 4.4A1.7 1.7 0 0 1 15 4.4L15.6 5A1.7 1.7 0 0 1 15.6 7.4L7.8 15.2Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10.4 6.6L12.6 4.4A1.7 1.7 0 0 1 15 4.4L15.6 5A1.7 1.7 0 0 1 15.6 7.4L13.4 9.6Z"/></svg></span>
                         <span class="mc-menu-item-text">${i18n.get('movie_details.edit')}</span>
                     </button>
                     <button class="mc-menu-item delete-item" data-rating-id="${this.escapeHtml(ratingId)}" data-action="delete-user-rating">
-                        <span class="mc-menu-item-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></span>
+                        <span class="mc-menu-item-icon"><svg data-icon="TRASH" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7 4V3A1 1 0 0 1 8 2H12A1 1 0 0 1 13 3V4H16A1 1 0 0 1 17 5V6A1 1 0 0 1 16 7H4A1 1 0 0 1 3 6V5A1 1 0 0 1 4 4Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8V15A2 2 0 0 0 7 17H13A2 2 0 0 0 15 15V8M10 10V13"/></svg></span>
                         <span class="mc-menu-item-text">${i18n.get('movie_details.delete')}</span>
                     </button>
                 </div>

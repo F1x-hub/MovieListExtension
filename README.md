@@ -466,6 +466,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Features
 
+- The product has its own icons: a whole outline with one solid part, drawn for 20px so they stay sharp at 100% display scaling. The set now covers navigation, cinema, actions, utility marks (close, check, arrows, chevrons, refresh), warnings and states, playback and volume (the buttons inside the player included), statistics, Settings sections, awards, the mini-games and the default icons of new collections; collections made earlier keep their saved icon. It is used in the header, the account menu, the theme chooser, the popup and the pages: search fields, bookmark statuses, edit and delete on cards and the film page, the Bookmarks and Downloads lists, Home sections, Random, Search, Profile, Settings, watch rooms, chess and Battleship lobbies, sign-in, empty states and poster placeholders. Icons in buttons stand on the text's centre line. «Обновить» and «Сбросить» no longer share a mark: two arrows load again, one arrow goes back. An active status has a fully solid icon, so «Смотрю» and «Просмотрено» now differ from their inactive state by shape too; a won award has a solid cup, a nomination a half one.
 - Profile: a new «Статистика» tab next to «Обзор» and «Достижения» (`?tab=statistics`) holds genres with the average score, release years, favourite actors and directors, movie marathons and reactions to reviews. Reactions and marathons are read only when the tab first opens. Empty decades keep their place on the axis, and bars are proportional instead of having a minimum length that drew 1, 2 and 3 films alike.
 - Profile: «Оценки по дням» is a full-width year of rounded squares of about 16 px (they were 7 px dots). Choosing a day lists its films; buttons walk the days with ratings; the keyboard moves by day, week and month with one tab stop. Shades have fixed steps (0, 1, 2, 3–4, 5 and more), each at least 3:1 against the page in both themes, so one record day no longer fades the rest. The header says how many ratings, active days and days in a row the year had.
 - Profile: the main numbers, with hours watched, stand beside the name; «Продолжить просмотр» is three cards in a row with the time left; another user's profile opens with the taste match; a profile without ratings shows one next step instead of empty sections.
@@ -479,11 +480,13 @@ keeps npm-compatible three-component semver metadata.
 
 ### Refactor
 
+- Icons have one source. `scripts/icon-set/` draws them into a generated block of `Icons.js` and into every `<svg data-icon>` in the markup; the inline copies in `Navigation.js` are gone, and Settings, which drew its header from those copies, loads `Icons.js`.
 - Numbers on favourite posters, photos of people and plus signs on the profile are rounded squares, and so are the last 13 round containers elsewhere: icons of empty, error, approval and resume states, the chess result and upload icons, Play badges on trailers, letters of quiz answers and the add button of Random's search. Status dots, slider and switch knobs, counters and the player's progress knob followed: the only circle left in the interface is a user's avatar, besides spinners and objects inside games. The rule is written down, and `npm run test:visual-design` fails on a new circle and on a scrollbar styled outside its file.
 - Removed `genreStats.js`, its test and `scripts/backfillTopGenres.js`: nothing reads `users.topGenres` any more. The end-to-end rig seeds dates and nested fields, and `specs/profile.spec.cjs` covers the profile.
 
 ### Docs
 
+- `docs/design-system.md` describes the icon set.
 - `docs/design-system.md` and `AGENTS.md` describe the corner rule and the single scrollbar.
 
 </details>

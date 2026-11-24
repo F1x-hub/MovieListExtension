@@ -163,12 +163,11 @@ assert(
     source.includes('(resolvedLogoUrl && renderedLogoUrl !== resolvedLogoUrl)'),
     'Recovered provider logo must invalidate an already-painted text-title instant cache'
 );
-const watchingEyePath = 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z';
 const malformedWatchingEyePath = 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8z';
 assert(!source.includes(malformedWatchingEyePath), 'MovieDetails must not emit the malformed watching-eye SVG path');
 assert(
-    source.includes(`d="${watchingEyePath}"`),
-    'MovieDetails watching action must retain the canonical project eye SVG path'
+    source.includes('data-icon="EYE"') && source.includes('data-icon="EYE_FILLED"'),
+    'MovieDetails watching action must use the eye of the project icon set'
 );
 
 const context = vm.createContext({

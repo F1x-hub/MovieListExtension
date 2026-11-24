@@ -164,7 +164,7 @@ class FullPageAuth {
             closeBtn.type = 'button';
             closeBtn.className = 'full-page-auth-close-btn';
             closeBtn.setAttribute('aria-label', this.t('popup.auth.close', 'Закрыть'));
-            closeBtn.innerHTML = (typeof Icons !== 'undefined' && Icons.CLOSE) ? Icons.CLOSE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+            closeBtn.innerHTML = (typeof Icons !== 'undefined' && Icons.CLOSE) ? Icons.CLOSE : '<svg data-icon="CLOSE" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5L15 15M15 5L5 15"/></svg>';
             closeBtn.addEventListener('click', () => {
                 if (typeof this.options.onCancel === 'function') {
                     this.options.onCancel();
@@ -324,7 +324,7 @@ class FullPageAuth {
             <div class="full-page-auth-input-wrapper">
                 <input type="password" id="fpaLoginPassword" class="full-page-auth-input has-toggle" placeholder="${this.t('popup.auth.password_placeholder', 'Ваш пароль')}" required autocomplete="current-password" aria-invalid="false" aria-describedby="fpaLoginPassError">
                 <button type="button" class="full-page-auth-password-toggle" aria-label="${this.t('popup.auth.password_show', 'Показать пароль')}">
-                    ${(typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'}
+                    ${(typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg data-icon="EYE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 7.5A2.5 2.5 0 1 0 10 12.5A2.5 2.5 0 1 0 10 7.5Z"/></svg>'}
                 </button>
             </div>
             <div class="full-page-auth-field-error" id="fpaLoginPassError" role="alert" aria-live="polite" style="display:none;"></div>
@@ -341,8 +341,8 @@ class FullPageAuth {
                 ? this.t('popup.auth.password_hide', 'Скрыть пароль')
                 : this.t('popup.auth.password_show', 'Показать пароль'));
             toggleBtn.innerHTML = isPass
-                ? ((typeof Icons !== 'undefined' && Icons.EYE_OFF) ? Icons.EYE_OFF : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>')
-                : ((typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>');
+                ? ((typeof Icons !== 'undefined' && Icons.EYE_OFF) ? Icons.EYE_OFF : '<svg data-icon="EYE_OFF" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 8C4 11.6 6.8 13 10 13C13.2 13 16 11.6 18 8M10 13V16M5.2 11.8L3.6 14.4M14.8 11.8L16.4 14.4"/></svg>')
+                : ((typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg data-icon="EYE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 7.5A2.5 2.5 0 1 0 10 12.5A2.5 2.5 0 1 0 10 7.5Z"/></svg>');
         });
         form.appendChild(passGroup);
 
@@ -446,7 +446,7 @@ class FullPageAuth {
             <div class="full-page-auth-input-wrapper">
                 <input type="password" id="fpaRegPassword" class="full-page-auth-input has-toggle" placeholder="${this.t('popup.auth.password_placeholder', 'Придумайте пароль')}" required autocomplete="new-password" aria-invalid="false" aria-describedby="fpaRegPassError">
                 <button type="button" class="full-page-auth-password-toggle" aria-label="${this.t('popup.auth.password_show', 'Показать пароль')}">
-                    ${(typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'}
+                    ${(typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg data-icon="EYE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 7.5A2.5 2.5 0 1 0 10 12.5A2.5 2.5 0 1 0 10 7.5Z"/></svg>'}
                 </button>
             </div>
             <div class="full-page-auth-field-error" id="fpaRegPassError" role="alert" aria-live="polite" style="display:none;"></div>
@@ -461,8 +461,8 @@ class FullPageAuth {
                 ? this.t('popup.auth.password_hide', 'Скрыть пароль')
                 : this.t('popup.auth.password_show', 'Показать пароль'));
             toggleBtn1.innerHTML = isPass
-                ? ((typeof Icons !== 'undefined' && Icons.EYE_OFF) ? Icons.EYE_OFF : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>')
-                : ((typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>');
+                ? ((typeof Icons !== 'undefined' && Icons.EYE_OFF) ? Icons.EYE_OFF : '<svg data-icon="EYE_OFF" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 8C4 11.6 6.8 13 10 13C13.2 13 16 11.6 18 8M10 13V16M5.2 11.8L3.6 14.4M14.8 11.8L16.4 14.4"/></svg>')
+                : ((typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg data-icon="EYE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 7.5A2.5 2.5 0 1 0 10 12.5A2.5 2.5 0 1 0 10 7.5Z"/></svg>');
         });
         form.appendChild(passGroup);
 
@@ -474,7 +474,7 @@ class FullPageAuth {
             <div class="full-page-auth-input-wrapper">
                 <input type="password" id="fpaRegConfirmPassword" class="full-page-auth-input has-toggle" placeholder="${this.t('popup.auth.confirm_password_placeholder', 'Повторите пароль')}" required autocomplete="new-password" aria-invalid="false" aria-describedby="fpaRegConfirmPassError">
                 <button type="button" class="full-page-auth-password-toggle" aria-label="${this.t('popup.auth.password_show', 'Показать пароль')}">
-                    ${(typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'}
+                    ${(typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg data-icon="EYE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 7.5A2.5 2.5 0 1 0 10 12.5A2.5 2.5 0 1 0 10 7.5Z"/></svg>'}
                 </button>
             </div>
             <div class="full-page-auth-field-error" id="fpaRegConfirmPassError" role="alert" aria-live="polite" style="display:none;"></div>
@@ -489,8 +489,8 @@ class FullPageAuth {
                 ? this.t('popup.auth.password_hide', 'Скрыть пароль')
                 : this.t('popup.auth.password_show', 'Показать пароль'));
             toggleBtn2.innerHTML = isPass
-                ? ((typeof Icons !== 'undefined' && Icons.EYE_OFF) ? Icons.EYE_OFF : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>')
-                : ((typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>');
+                ? ((typeof Icons !== 'undefined' && Icons.EYE_OFF) ? Icons.EYE_OFF : '<svg data-icon="EYE_OFF" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 8C4 11.6 6.8 13 10 13C13.2 13 16 11.6 18 8M10 13V16M5.2 11.8L3.6 14.4M14.8 11.8L16.4 14.4"/></svg>')
+                : ((typeof Icons !== 'undefined' && Icons.EYE) ? Icons.EYE : '<svg data-icon="EYE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 7.5A2.5 2.5 0 1 0 10 12.5A2.5 2.5 0 1 0 10 7.5Z"/></svg>');
         });
         form.appendChild(confirmPassGroup);
 
@@ -532,9 +532,9 @@ class FullPageAuth {
         const iconWrapper = document.createElement('div');
         iconWrapper.className = `full-page-auth-approval-icon status-${status}`;
         if (status === 'pending') {
-            iconWrapper.innerHTML = (typeof Icons !== 'undefined' && Icons.CLOCK) ? Icons.CLOCK : '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
+            iconWrapper.innerHTML = (typeof Icons !== 'undefined' && Icons.CLOCK) ? Icons.CLOCK : '<svg data-icon="CLOCK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 0 10 17A7 7 0 1 0 10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6V10L12.6 12"/></svg>';
         } else {
-            iconWrapper.innerHTML = (typeof Icons !== 'undefined' && Icons.SHIELD_ALERT) ? Icons.SHIELD_ALERT : '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
+            iconWrapper.innerHTML = (typeof Icons !== 'undefined' && Icons.SHIELD_ALERT) ? Icons.SHIELD_ALERT : '<svg data-icon="SHIELD_ALERT" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 2.4C11.8 3.7 13.8 4.4 16 4.5V9.6C16 13.2 13.8 15.9 10 17.6C6.2 15.9 4 13.2 4 9.6V4.5C6.2 4.4 8.2 3.7 10 2.4Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6.6V9.6"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 11.55A1.25 1.25 0 1 0 10 14.05A1.25 1.25 0 1 0 10 11.55Z"/></svg>';
         }
         container.appendChild(iconWrapper);
 

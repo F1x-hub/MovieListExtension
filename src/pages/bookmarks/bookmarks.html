@@ -31,27 +31,27 @@
                 </div>
                 <nav class="sidebar-nav" aria-label="Списки фильмов">
                     <button type="button" class="sidebar-item filter-choice active" data-filter="all" aria-pressed="true">
-                        <span class="sidebar-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></span>
+                        <span class="sidebar-icon"><svg data-icon="DOCUMENT" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3H6A2 2 0 0 0 4 5V15A2 2 0 0 0 6 17H14A2 2 0 0 0 16 15V8"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M11 2H11.2A2 2 0 0 1 12.6 2.6L16.4 6.4A2 2 0 0 1 17 7.8V8H12A1 1 0 0 1 11 7Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12H12"/></svg></span>
                         <span class="sidebar-label" data-i18n="bookmarks.sidebar.all">All</span>
                         <span class="sidebar-count" id="count-all">0</span>
                     </button>
                     <button type="button" class="sidebar-item filter-choice" data-filter="watching" aria-pressed="false">
-                        <span class="sidebar-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></span>
+                        <span class="sidebar-icon"><svg data-icon="EYE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 10C3.8 6.6 6.6 5 10 5C13.4 5 16.2 6.6 18 10C16.2 13.4 13.4 15 10 15C6.6 15 3.8 13.4 2 10Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 7.5A2.5 2.5 0 1 0 10 12.5A2.5 2.5 0 1 0 10 7.5Z"/></svg></span>
                         <span class="sidebar-label" data-i18n="bookmarks.sidebar.watching">Watching</span>
                         <span class="sidebar-count" id="count-watching">0</span>
                     </button>
                     <button type="button" class="sidebar-item filter-choice" data-filter="watched" aria-pressed="false">
-                        <span class="sidebar-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+                        <span class="sidebar-icon"><svg data-icon="WATCHED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V6A3 3 0 0 1 6 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.6 10.2L9 12.6L13.4 7.6"/></svg></span>
                         <span class="sidebar-label" data-i18n="bookmarks.sidebar.watched">Watched</span>
                         <span class="sidebar-count" id="count-watched">0</span>
                     </button>
                     <button type="button" class="sidebar-item filter-choice" data-filter="plan_to_watch" aria-pressed="false">
-                        <span class="sidebar-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg></span>
+                        <span class="sidebar-icon"><svg data-icon="BOOKMARK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5A2 2 0 0 1 7 3H13A2 2 0 0 1 15 5V17L10 13.6L5 17Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3L10 13.6L15 17L15 5C15 3.9 14.1 3 13 3L10 3Z"/></svg></span>
                         <span class="sidebar-label" data-i18n="bookmarks.sidebar.plan_to_watch">Plan to Watch</span>
                         <span class="sidebar-count" id="count-plan_to_watch">0</span>
                     </button>
                     <button type="button" class="sidebar-item filter-choice" data-filter="favorite" aria-pressed="false">
-                        <span class="sidebar-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg></span>
+                        <span class="sidebar-icon"><svg data-icon="HEART" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 16.6L4.2 10.8A3.9 3.9 0 0 1 9.7 5.3L10 5.6L10.3 5.3A3.9 3.9 0 0 1 15.8 10.8Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 5.6L10 16.6L15.8 10.8C17.13 9.25 17.04 6.94 15.6 5.5C14.16 4.06 11.85 3.97 10.3 5.3L10 5.6Z"/></svg></span>
                         <span class="sidebar-label" data-i18n="bookmarks.sidebar.favorites">Favorites</span>
                         <span class="sidebar-count" id="count-favorite">0</span>
                     </button>
@@ -63,7 +63,7 @@
                     <div class="sidebar-header-sm">
                         <span data-i18n="bookmarks.sidebar.collections">COLLECTIONS</span>
                         <button class="icon-btn" id="createCollectionBtn" title="Create Collection">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            <svg data-icon="PLUS" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 4V16M4 10H16"/></svg>
                         </button>
                     </div>
                     <div id="customCollectionsList" class="custom-collections-list">
@@ -81,18 +81,14 @@
                         <h1 id="pageTitle" data-i18n="bookmarks.header.all_bookmarks">All Bookmarks</h1>
                         <div class="collection-menu-anchor">
                             <button type="button" id="collectionMenuBtn" class="collection-menu-btn" style="display: none;" title="Collection options" aria-label="Collection options" aria-haspopup="menu" aria-expanded="false">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <circle cx="12" cy="12" r="1"></circle>
-                                    <circle cx="12" cy="5" r="1"></circle>
-                                    <circle cx="12" cy="19" r="1"></circle>
-                                </svg>
+                                <svg data-icon="MORE_VERTICAL" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 2.4A1.6 1.6 0 1 0 10 5.6A1.6 1.6 0 1 0 10 2.4ZM10 8.4A1.6 1.6 0 1 0 10 11.6A1.6 1.6 0 1 0 10 8.4ZM10 14.4A1.6 1.6 0 1 0 10 17.6A1.6 1.6 0 1 0 10 14.4Z"/></svg>
                             </button>
                         </div>
                     </div>
                     <div class="header-controls">
                         <div class="search-wrapper">
                             <input type="text" id="bookmarksSearchInput" data-i18n="bookmarks.search.placeholder" placeholder="Search in bookmarks...">
-                            <span class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
+                            <span class="search-icon"><svg data-icon="SEARCH" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3A6 6 0 1 0 9 15A6 6 0 1 0 9 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M9 3L9 15C12.32 15 15 12.31 15 9C15 5.69 12.32 3 9 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13.6 13.6L17.6 17.6"/></svg></span>
                         </div>
                         <div class="sort-wrapper">
                             <label class="sort-control__label--sr-only" for="sortFilter" data-i18n="ratings.filters.sort">Sort By</label>
@@ -116,7 +112,7 @@
                 </div>
 
                 <div id="emptyState" class="empty-state" style="display: none;">
-                    <div class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></div>
+                    <div class="empty-icon"><svg data-icon="FOLDER" aria-hidden="true" width="40" height="40" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M2 9V6A2 2 0 0 1 4 4H7.6A2 2 0 0 1 9 4.6L10.4 6H16A2 2 0 0 1 18 8V9Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9V14A2 2 0 0 0 5 16H15A2 2 0 0 0 17 14V9"/></svg></div>
                     <h3 data-i18n="bookmarks.empty.title">No bookmarks found</h3>
                     <p data-i18n="bookmarks.empty.message">Add using the bookmarks menu on any movie.</p>
                 </div>

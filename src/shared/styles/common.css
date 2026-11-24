@@ -122,6 +122,10 @@ details[open] > .disclosure-summary::after { transform: translateY(2px) rotate(2
     box-sizing: border-box;
 }
 
+/* An icon alone in its wrapper: as inline text it would stand above the row's centre. */
+span[class*="icon"] > svg[data-icon]:only-child,
+.modal-close > svg[data-icon]:only-child { display: block; }
+
 /* Prevent horizontal overflow */
 body, html {
     overflow-x: hidden;

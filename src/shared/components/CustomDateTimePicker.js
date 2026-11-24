@@ -118,12 +118,12 @@ export class CustomDatePicker {
                 <button type="button" class="custom-picker-trigger" aria-haspopup="dialog" aria-expanded="false">
                     <div class="custom-picker-trigger-content">
                         <span class="custom-picker-icon">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                            <svg data-icon="CALENDAR" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3H15A3 3 0 0 1 18 6V8H2V6A3 3 0 0 1 5 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 1H7V4H5ZM13 1H15V4H13Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8V15A2 2 0 0 0 5 17H15A2 2 0 0 0 17 15V8"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M11.75 11H13.25A0.75 0.75 0 0 1 14 11.75V13.25A0.75 0.75 0 0 1 13.25 14H11.75A0.75 0.75 0 0 1 11 13.25V11.75A0.75 0.75 0 0 1 11.75 11Z"/></svg>
                         </span>
                         <span class="custom-picker-value">${formatDateHuman(this.selectedDate)}</span>
                     </div>
                     <span class="custom-picker-chevron">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        <svg data-icon="CHEVRON_DOWN" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 7.5L10 12.5L15 7.5"/></svg>
                     </span>
                 </button>
                 <div class="custom-picker-dropdown custom-date-picker-dropdown" style="display: none;"></div>
@@ -279,10 +279,10 @@ export class CustomDatePicker {
                 <span class="custom-calendar-title">${monthTitle}</span>
                 <div class="custom-calendar-nav">
                     <button type="button" class="custom-calendar-nav-btn prev-month" aria-label="Предыдущий месяц">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                        <svg data-icon="CHEVRON_LEFT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.5 5L7.5 10L12.5 15"/></svg>
                     </button>
                     <button type="button" class="custom-calendar-nav-btn next-month" aria-label="Следующий месяц">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        <svg data-icon="CHEVRON_RIGHT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 5L12.5 10L7.5 15"/></svg>
                     </button>
                 </div>
             </div>
@@ -423,12 +423,12 @@ export class CustomTimePicker {
                 <div class="custom-picker-trigger custom-time-trigger" aria-haspopup="dialog" aria-expanded="false">
                     <div class="custom-picker-trigger-content">
                         <span class="custom-picker-icon custom-time-toggle-btn" title="Выбрать время">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            <svg data-icon="CLOCK" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 0 10 17A7 7 0 1 0 10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6V10L12.6 12"/></svg>
                         </span>
                         <input type="text" class="custom-time-direct-input" maxlength="5" value="${formattedTime}" placeholder="12:00" spellcheck="false" autocomplete="off" aria-label="Время отправки">
                     </div>
                     <span class="custom-picker-chevron custom-time-toggle-btn" title="Открыть выбор времени">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        <svg data-icon="CHEVRON_DOWN" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 7.5L10 12.5L15 7.5"/></svg>
                     </span>
                 </div>
                 <div class="custom-picker-dropdown custom-time-picker-dropdown" style="display: none;"></div>
@@ -575,7 +575,7 @@ export class CustomTimePicker {
             `
             : `
                 <button type="button" class="custom-time-add-trigger-btn" title="Добавить свое время для быстрого выбора">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    <svg data-icon="PLUS" aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 4V16M4 10H16"/></svg>
                     <span>Добавить</span>
                 </button>
             `;
@@ -618,21 +618,21 @@ export class CustomTimePicker {
             <div class="custom-time-stepper-header">
                 <div class="custom-time-stepper-cell">
                     <button type="button" class="custom-time-step-btn step-hour-up" aria-label="Увеличить час">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                        <svg data-icon="CHEVRON_UP" aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12.5L10 7.5L15 12.5"/></svg>
                     </button>
                     <span class="custom-time-stepper-value custom-time-stepper-value-hour">${hh}</span>
                     <button type="button" class="custom-time-step-btn step-hour-down" aria-label="Уменьшить час">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        <svg data-icon="CHEVRON_DOWN" aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 7.5L10 12.5L15 7.5"/></svg>
                     </button>
                 </div>
                 <span class="custom-time-stepper-colon">:</span>
                 <div class="custom-time-stepper-cell">
                     <button type="button" class="custom-time-step-btn step-min-up" aria-label="Увеличить минуту">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                        <svg data-icon="CHEVRON_UP" aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12.5L10 7.5L15 12.5"/></svg>
                     </button>
                     <span class="custom-time-stepper-value custom-time-stepper-value-min">${mm}</span>
                     <button type="button" class="custom-time-step-btn step-min-down" aria-label="Уменьшить минуту">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        <svg data-icon="CHEVRON_DOWN" aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 7.5L10 12.5L15 7.5"/></svg>
                     </button>
                 </div>
             </div>

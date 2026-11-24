@@ -28,11 +28,7 @@ class BackToTop {
         button.tabIndex = -1;
         button.title = 'Наверх';
         button.innerHTML = `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M12 19V5"></path>
-                <path d="m5 12 7-7 7 7"></path>
-            </svg>
+            <svg data-icon="ARROW_UP" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 16V4M5 9L10 4L15 9"/></svg>
         `;
 
         const popupContainer = document.querySelector('.popup-container');

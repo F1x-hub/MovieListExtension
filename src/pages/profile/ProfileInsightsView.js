@@ -739,7 +739,7 @@ export class ProfileInsightsView {
             aria-label="${this.escape(label)}" title="${this.escape(label)}"
             data-pin-movie="${this.escape(movie.movieId)}" data-pin-title="${this.escape(movie.title)}"
             data-pin-poster="${this.escape(movie.posterUrl)}" data-pin-year="${this.escape(movie.year || '')}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="${pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"></path><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path></svg>
+            ${pinned ? '<svg data-icon="PIN_FILLED" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14L13 5V8.4L15 11V12H5V11L7 8.4V5Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M6 3H14L13 5V8.4L15 11V12H5V11L7 8.4V5Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 13V18"/></svg>' : '<svg data-icon="PIN" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14L13 5V8.4L15 11V12H5V11L7 8.4V5Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 13V18"/></svg>'}
         </button>`;
     }
 

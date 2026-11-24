@@ -58,19 +58,19 @@ class ImageLightbox {
             
             const closeBtn = document.createElement('button');
             closeBtn.className = 'image-lightbox-close';
-            closeBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+            closeBtn.innerHTML = '<svg data-icon="CLOSE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5L15 15M15 5L5 15"/></svg>';
             closeBtn.setAttribute('title', 'Закрыть (Esc)');
 
             const prevBtn = document.createElement('button');
             prevBtn.id = 'shared-image-lightbox-prev';
             prevBtn.className = 'image-lightbox-nav prev';
-            prevBtn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>';
+            prevBtn.innerHTML = '<svg data-icon="CHEVRON_LEFT" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.5 5L7.5 10L12.5 15"/></svg>';
             prevBtn.setAttribute('title', 'Предыдущее фото (←)');
 
             const nextBtn = document.createElement('button');
             nextBtn.id = 'shared-image-lightbox-next';
             nextBtn.className = 'image-lightbox-nav next';
-            nextBtn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+            nextBtn.innerHTML = '<svg data-icon="CHEVRON_RIGHT" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 5L12.5 10L7.5 15"/></svg>';
             nextBtn.setAttribute('title', 'Следующее фото (→)');
             
             overlay.appendChild(img);

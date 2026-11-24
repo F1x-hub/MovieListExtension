@@ -502,7 +502,7 @@ class AdminPanelManager {
                     <div>
                         <div class="user-name">
                             ${this.escapeHtml(user.displayName || 'Пользователь без имени')}
-                            ${user.isAdmin ? '<span class="admin-badge"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg> Админ</span>' : ''}
+                            ${user.isAdmin ? '<span class="admin-badge"><svg data-icon="ADMIN" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 2.4C11.8 3.7 13.8 4.4 16 4.5V9.6C16 13.2 13.8 15.9 10 17.6C6.2 15.9 4 13.2 4 9.6V4.5C6.2 4.4 8.2 3.7 10 2.4Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 2.4L10 17.6C13.8 15.9 16 13.2 16 9.6L16 4.5C13.8 4.4 11.8 3.7 10 2.4Z"/></svg> Админ</span>' : ''}
                             ${isCurrentUser ? '<span class="you-badge">Вы</span>' : ''}
                         </div>
                     </div>
@@ -3021,7 +3021,7 @@ class AdminPanelManager {
                 try {
                     autoMapQueueBtn.disabled = true;
                     autoMapQueueBtn.innerHTML = `
-                        <svg class="spin-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+                        <svg data-icon="LOADING" class="spin-icon" style="animation: spin 1s linear infinite;" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 1 3 10"/></svg>
                         Сопоставление...
                     `;
 
@@ -3057,7 +3057,7 @@ class AdminPanelManager {
                 } finally {
                     autoMapQueueBtn.disabled = false;
                     autoMapQueueBtn.innerHTML = `
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                        <svg data-icon="BOLT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 2.6L4.4 11H9.4L8.6 17.4L15.6 8.6H10.2Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M11 2.6L4.4 11H9.4L8.6 17.4L15.6 8.6H10.2Z"/></svg>
                         Автоматически сопоставить очередь
                     `;
                 }
@@ -3079,7 +3079,7 @@ class AdminPanelManager {
                 try {
                     autoMapKpToImdbBtn.disabled = true;
                     autoMapKpToImdbBtn.innerHTML = `
-                        <svg class="spin-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+                        <svg data-icon="LOADING" class="spin-icon" style="animation: spin 1s linear infinite;" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 1 3 10"/></svg>
                         Поиск IMDb...
                     `;
 
@@ -3122,7 +3122,7 @@ class AdminPanelManager {
                 } finally {
                     autoMapKpToImdbBtn.disabled = false;
                     autoMapKpToImdbBtn.innerHTML = `
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                        <svg data-icon="BOLT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 2.6L4.4 11H9.4L8.6 17.4L15.6 8.6H10.2Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M11 2.6L4.4 11H9.4L8.6 17.4L15.6 8.6H10.2Z"/></svg>
                         Авто-поиск IMDb через TMDB
                     `;
                 }
@@ -3811,7 +3811,7 @@ class AdminPanelManager {
                                             data-kp-type="${kpType}" 
                                             data-title="${this.escapeHtml(kpMovie.name || kpMovie.alternativeName || '')}" 
                                             data-year="${kpYear ? String(kpYear) : ''}">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                        <svg data-icon="CHECK" style="margin-right: 6px;" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.6L8 14.6L16 5.4"/></svg>
                                         Подтвердить привязку
                                     </button>
                                 </div>
@@ -3856,7 +3856,7 @@ class AdminPanelManager {
                                     console.error('Error confirming manual mapping:', err);
                                     Utils.showToast(`Ошибка: ${err.message}`, 'error');
                                     confirmBtn.disabled = false;
-                                    confirmBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><polyline points="20 6 9 17 4 12"></polyline></svg> Подтвердить привязку`;
+                                    confirmBtn.innerHTML = `<svg data-icon="CHECK" style="margin-right: 6px;" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.6L8 14.6L16 5.4"/></svg> Подтвердить привязку`;
                                 }
                             });
                         }

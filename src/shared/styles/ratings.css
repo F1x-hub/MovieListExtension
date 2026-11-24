@@ -189,8 +189,8 @@
 }
 
 .search-icon svg {
-    width: 15px;
-    height: 15px;
+    width: 20px;
+    height: 20px;
 }
 
 /* Keep native controls themed while localization and SortControl initialize. */

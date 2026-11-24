@@ -132,7 +132,7 @@
                 </div>
                 <div class="profile-actions-wrapper" id="profileMenu" style="display: none;">
                     <button class="btn-profile-action" id="headerEditBtn" type="button">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        <svg data-icon="EDIT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16L4.8 12.2L12.6 4.4A1.7 1.7 0 0 1 15 4.4L15.6 5A1.7 1.7 0 0 1 15.6 7.4L7.8 15.2Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10.4 6.6L12.6 4.4A1.7 1.7 0 0 1 15 4.4L15.6 5A1.7 1.7 0 0 1 15.6 7.4L13.4 9.6Z"/></svg>
                         <span data-i18n="profile.edit_profile">Edit Profile</span>
                         </button>
                 </div>
@@ -183,7 +183,7 @@
                     <h2 class="section-title" data-i18n="profile.recent_ratings">Recent Ratings</h2>
                     <button class="btn-view-all" id="viewAllRatingsBtn" type="button">
                         <span data-i18n="profile.view_all">View All</span>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                        <svg data-icon="CHEVRON_RIGHT" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 5L12.5 10L7.5 15"/></svg>
                     </button>
                 </div>
                 <div class="recent-ratings-layout">
@@ -193,7 +193,7 @@
                     <span id="ratingFilterStatus"></span>
                     <button class="rating-filter-reset" id="ratingFilterReset" type="button" hidden>
                         <span id="ratingFilterResetLabel"></span>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        <svg data-icon="CLOSE" aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5L15 15M15 5L5 15"/></svg>
                     </button>
                 </div>
                 <div class="recent-ratings-list" id="recentRatingsList">
@@ -262,7 +262,7 @@
             <!-- Error State -->
             <div class="error-state" id="errorState" style="display: none;">
                 <div class="error-state-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <svg data-icon="WARNING" aria-hidden="true" width="40" height="40" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3.2L17.4 16H2.6Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3.2L17.4 16H2.6ZM10 7H10A1 1 0 0 1 11 8V10.6A1 1 0 0 1 10 11.6H10A1 1 0 0 1 9 10.6V8A1 1 0 0 1 10 7ZM10 12.45A1.15 1.15 0 1 0 10 14.75A1.15 1.15 0 1 0 10 12.45Z"/></svg>
                 </div>
                 <h3 class="error-state-title" data-i18n="profile.ui.error_title">Something went wrong</h3>
                 <p class="error-state-text" id="errorMessage" data-i18n="profile.error">Failed to load profile</p>
@@ -278,14 +278,14 @@
             <header class="modal-header">
                 <div class="modal-title-group">
                     <span class="modal-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        <svg data-icon="EDIT" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16L4.8 12.2L12.6 4.4A1.7 1.7 0 0 1 15 4.4L15.6 5A1.7 1.7 0 0 1 15.6 7.4L7.8 15.2Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10.4 6.6L12.6 4.4A1.7 1.7 0 0 1 15 4.4L15.6 5A1.7 1.7 0 0 1 15.6 7.4L13.4 9.6Z"/></svg>
                     </span>
                     <div>
                         <h2 class="modal-title" id="editProfileModalTitle" data-i18n="profile.edit_modal.title">Edit Profile</h2>
                     </div>
                 </div>
                 <button class="modal-close" id="editProfileModalClose" type="button" aria-label="Close" data-i18n="[aria-label]profile.ui.close">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    <svg data-icon="CLOSE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5L15 15M15 5L5 15"/></svg>
                 </button>
             </header>
 
@@ -300,18 +300,18 @@
                                 <div class="banner-preview" id="bannerPreview">
                                     <img id="bannerPreviewImg" src="" alt="Banner preview" data-i18n="[alt]profile.edit_modal.banner_preview_alt" style="display: none;">
                                     <div class="banner-placeholder" id="bannerPlaceholder">
-                                        <span class="banner-icon"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></span>
+                                        <span class="banner-icon"><svg data-icon="PICTURE" aria-hidden="true" width="30" height="30" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V6A3 3 0 0 1 6 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M3 14.6L7 10.4A1 1 0 0 1 8.4 10.4L10.6 12.6L12 11.2A1 1 0 0 1 13.4 11.2L17 14.8V15A2 2 0 0 1 15 17H5A2 2 0 0 1 3 15ZM13 5.5A1.5 1.5 0 1 0 13 8.5A1.5 1.5 0 1 0 13 5.5Z"/></svg></span>
                                         <span data-i18n="profile.edit_modal.upload_banner">Upload Banner</span>
                                     </div>
                                     <div class="preview-overlay">
-                                        <span class="overlay-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
+                                        <span class="overlay-icon"><svg data-icon="CAMERA" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 6H6.6L8 4H12L13.4 6H15A2 2 0 0 1 17 8V14A2 2 0 0 1 15 16H5A2 2 0 0 1 3 14V8A2 2 0 0 1 5 6Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 8.4A2.6 2.6 0 1 0 10 13.6A2.6 2.6 0 1 0 10 8.4Z"/></svg></span>
                                         <span class="overlay-text" data-i18n="profile.edit_modal.change_banner">Change banner</span>
                                     </div>
                                 </div>
                             </label>
                             <input type="file" id="bannerInput" class="profile-file-input" accept="image/png,image/jpeg,image/webp,image/gif">
                             <button type="button" class="btn-remove-overlay banner-remove" id="removeBannerBtn" style="display: none;" title="Remove banner" aria-label="Remove banner" data-i18n="[aria-label]profile.edit_modal.remove_banner">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                <svg data-icon="TRASH" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7 4V3A1 1 0 0 1 8 2H12A1 1 0 0 1 13 3V4H16A1 1 0 0 1 17 5V6A1 1 0 0 1 16 7H4A1 1 0 0 1 3 6V5A1 1 0 0 1 4 4Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8V15A2 2 0 0 0 7 17H13A2 2 0 0 0 15 15V8M10 10V13"/></svg>
                             </button>
                         </div>
 
@@ -324,13 +324,13 @@
                                         <span id="photoInitials">U</span>
                                     </div>
                                     <div class="preview-overlay">
-                                        <span class="overlay-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
+                                        <span class="overlay-icon"><svg data-icon="CAMERA" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 6H6.6L8 4H12L13.4 6H15A2 2 0 0 1 17 8V14A2 2 0 0 1 15 16H5A2 2 0 0 1 3 14V8A2 2 0 0 1 5 6Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 8.4A2.6 2.6 0 1 0 10 13.6A2.6 2.6 0 1 0 10 8.4Z"/></svg></span>
                                     </div>
                                 </div>
                             </label>
                             <input type="file" id="photoInput" class="profile-file-input" accept="image/png,image/jpeg,image/webp,image/gif">
                             <button type="button" class="btn-remove-overlay photo-remove" id="removePhotoBtn" style="display: none;" title="Remove photo" aria-label="Remove photo" data-i18n="[aria-label]profile.edit_modal.remove_photo">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                <svg data-icon="TRASH" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7 4V3A1 1 0 0 1 8 2H12A1 1 0 0 1 13 3V4H16A1 1 0 0 1 17 5V6A1 1 0 0 1 16 7H4A1 1 0 0 1 3 6V5A1 1 0 0 1 4 4Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8V15A2 2 0 0 0 7 17H13A2 2 0 0 0 15 15V8M10 10V13"/></svg>
                             </button>
                         </div>
                     </div>
@@ -385,7 +385,7 @@
                 <div class="form-section" id="passwordSection" style="display: none;">
                     <div class="form-section-header">
                         <div class="form-section-title-group">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                            <svg data-icon="LOCK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5.5 8H14.5A2.5 2.5 0 0 1 17 10.5V15.5A2.5 2.5 0 0 1 14.5 18H5.5A2.5 2.5 0 0 1 3 15.5V10.5A2.5 2.5 0 0 1 5.5 8ZM10 11H10A1 1 0 0 1 11 12V14A1 1 0 0 1 10 15H10A1 1 0 0 1 9 14V12A1 1 0 0 1 10 11Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 8V6A4 4 0 0 1 14 6V8"/></svg>
                             <h3 class="form-section-title" data-i18n="profile.edit_modal.security_title">Security &amp; password</h3>
                         </div>
                         <button type="button" class="btn-toggle-password" id="togglePasswordBtn" aria-expanded="false" aria-controls="passwordFields" data-i18n="profile.edit_modal.change_password">Change password</button>
@@ -429,12 +429,12 @@
             <div class="modal-header">
                 <div class="modal-title-group">
                     <span class="modal-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"></path><path d="M18 22V8a2 2 0 0 0-2-2H2"></path></svg>
+                        <svg data-icon="CROP" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 2V12A2 2 0 0 0 8 14H18M2 6H12A2 2 0 0 1 14 8V18"/></svg>
                     </span>
                     <h2 class="modal-title" id="cropperModalTitle" data-i18n="profile.cropper.title">Crop Image</h2>
                 </div>
                 <button class="modal-close" id="cropperModalClose" type="button" aria-label="Close the cropper" data-i18n="[aria-label]profile.cropper.close">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    <svg data-icon="CLOSE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5L15 15M15 5L5 15"/></svg>
                 </button>
             </div>
 

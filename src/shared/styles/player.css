@@ -1027,7 +1027,7 @@ body.player-modal-open {
 .player-surface__primary-action svg {
     width: 40px;
     height: 40px;
-    fill: var(--theme-bg-primary);
+    color: var(--theme-bg-primary);
     margin-left: 4px; /* Optical adjustment for play icon */
 }
 
@@ -1049,8 +1049,8 @@ body.player-modal-open {
 }
 
 .video-container .player-center-action svg {
-    width: 40px;
-    height: 40px;
+    width: 30px;
+    height: 30px;
     transform: none;
 }
 
@@ -1139,20 +1139,18 @@ body.player-modal-open {
 }
 
 .video-container .player-control-dock .player-control-button svg {
-    width: 22px !important;
-    height: 22px !important;
+    width: 20px !important;
+    height: 20px !important;
 }
 
 .video-container .player-control-dock .player-control-button--primary svg {
-    width: 26px !important;
-    height: 26px !important;
     display: block;
     transform: none;
 }
 
 .video-container .player-control-dock .player-control-button--primary[data-icon="play"] svg {
-    /* The Play path is optically right- and bottom-heavy inside its viewBox. */
-    transform: translate(-1.5px, -0.5px);
+    /* The triangle's box sits 1px right of the grid's centre. */
+    transform: translateX(-1px);
 }
 
 .video-container .player-control-dock .player-control-button--primary {

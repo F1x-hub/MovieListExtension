@@ -63,9 +63,7 @@ function formatWeekday(date) {
 }
 
 function renderChevron() {
-    return `<svg class="calendar-month-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <polyline points="6 9 12 15 18 9"></polyline>
-    </svg>`;
+    return `<svg data-icon="CHEVRON_DOWN" class="calendar-month-chevron" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 7.5L10 12.5L15 7.5"/></svg>`;
 }
 
 function renderEpisode(episode, dateString, now) {
@@ -136,12 +134,7 @@ export function renderMonths(grouped, { openMonths = null, now = new Date() } = 
 }
 
 function renderCalendarIcon() {
-    return `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <rect x="3" y="4" width="18" height="18" rx="2"></rect>
-                <line x1="16" y1="2" x2="16" y2="6"></line>
-                <line x1="8" y1="2" x2="8" y2="6"></line>
-                <line x1="3" y1="10" x2="21" y2="10"></line>
-            </svg>`;
+    return `<svg data-icon="CALENDAR" aria-hidden="true" width="40" height="40" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3H15A3 3 0 0 1 18 6V8H2V6A3 3 0 0 1 5 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 1H7V4H5ZM13 1H15V4H13Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8V15A2 2 0 0 0 5 17H15A2 2 0 0 0 17 15V8"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M11.75 11H13.25A0.75 0.75 0 0 1 14 11.75V13.25A0.75 0.75 0 0 1 13.25 14H11.75A0.75 0.75 0 0 1 11 13.25V11.75A0.75 0.75 0 0 1 11.75 11Z"/></svg>`;
 }
 
 export function renderEmptyState() {
@@ -168,11 +161,7 @@ export function renderSignedOutState() {
 export function renderErrorState(message) {
     return `
         <div class="calendar-error">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                <line x1="12" y1="9" x2="12" y2="13"></line>
-                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-            </svg>
+            <svg data-icon="WARNING" aria-hidden="true" width="40" height="40" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3.2L17.4 16H2.6Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3.2L17.4 16H2.6ZM10 7H10A1 1 0 0 1 11 8V10.6A1 1 0 0 1 10 11.6H10A1 1 0 0 1 9 10.6V8A1 1 0 0 1 10 7ZM10 12.45A1.15 1.15 0 1 0 10 14.75A1.15 1.15 0 1 0 10 12.45Z"/></svg>
             <strong>${escapeHtml(t('error_title'))}</strong>
             <span>${escapeHtml(message || t('error_fallback'))}</span>
         </div>

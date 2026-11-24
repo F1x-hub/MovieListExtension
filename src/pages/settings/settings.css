@@ -126,13 +126,12 @@
     align-items: center;
     justify-content: center;
     color: var(--theme-text-muted);
-    transition: color var(--motion-duration-base) var(--motion-ease-out), transform var(--motion-duration-base) var(--ease-spring);
+    transition: color var(--motion-duration-base) var(--motion-ease-out);
 }
 
 .sidebar-link.active .icon,
 .sidebar-link:hover .icon {
     color: var(--theme-text-primary);
-    transform: scale(1.08);
 }
 
 /* ==========================================================================

@@ -223,6 +223,10 @@
 }
 
 .mc-menu-item-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
     font-size: var(--font-size-base);
     flex-shrink: 0;
 }

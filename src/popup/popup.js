@@ -1704,7 +1704,7 @@ class PopupManager {
         
         if (status === 'pending') {
             if (iconWrapper) iconWrapper.className = 'approval-status-icon-wrapper status-pending';
-            if (iconEl) iconEl.innerHTML = (typeof Icons !== 'undefined' && Icons.CLOCK) ? Icons.CLOCK : '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
+            if (iconEl) iconEl.innerHTML = (typeof Icons !== 'undefined' && Icons.CLOCK) ? Icons.CLOCK : '<svg data-icon="CLOCK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 0 10 17A7 7 0 1 0 10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6V10L12.6 12"/></svg>';
             
             if (isNewRegistration) {
                 if (titleEl) titleEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.pending_registered_title') : 'Заявка на рассмотрении';
@@ -1715,7 +1715,7 @@ class PopupManager {
             }
         } else if (status === 'rejected') {
             if (iconWrapper) iconWrapper.className = 'approval-status-icon-wrapper status-rejected';
-            if (iconEl) iconEl.innerHTML = (typeof Icons !== 'undefined' && Icons.SHIELD_ALERT) ? Icons.SHIELD_ALERT : '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
+            if (iconEl) iconEl.innerHTML = (typeof Icons !== 'undefined' && Icons.SHIELD_ALERT) ? Icons.SHIELD_ALERT : '<svg data-icon="SHIELD_ALERT" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 2.4C11.8 3.7 13.8 4.4 16 4.5V9.6C16 13.2 13.8 15.9 10 17.6C6.2 15.9 4 13.2 4 9.6V4.5C6.2 4.4 8.2 3.7 10 2.4Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6.6V9.6"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 11.55A1.25 1.25 0 1 0 10 14.05A1.25 1.25 0 1 0 10 11.55Z"/></svg>';
             if (titleEl) titleEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.rejected_title') : 'Доступ ограничен';
             if (msgEl) msgEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.rejected_msg') : 'Ваша регистрация была отклонена администратором.';
         }

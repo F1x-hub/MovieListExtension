@@ -13,10 +13,10 @@
 const MOVIE_DETAILS_TORRENT_SOURCE = 'mediaplayer:torrent';
 
 const TORRENT_ACTION_ICONS = Object.freeze({
-    play: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"></path></svg>',
-    pause: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"></rect><rect x="14" y="5" width="4" height="14" rx="1"></rect></svg>',
-    resume: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="m6 13 6 6 6-6"></path></svg>',
-    delete: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="m6 6 1 14h10l1-14"></path></svg>'
+    play: '<svg data-icon="PLAY" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5 3.9C5 2.9 5.9 2.3 6.7 2.9L16.2 8.9C17 9.5 17 10.5 16.2 11.1L6.7 17.1C5.9 17.7 5 17.1 5 16.1Z"/></svg>',
+    pause: '<svg data-icon="PAUSE" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M5.2 3H6.8A1.2 1.2 0 0 1 8 4.2V15.8A1.2 1.2 0 0 1 6.8 17H5.2A1.2 1.2 0 0 1 4 15.8V4.2A1.2 1.2 0 0 1 5.2 3ZM13.2 3H14.8A1.2 1.2 0 0 1 16 4.2V15.8A1.2 1.2 0 0 1 14.8 17H13.2A1.2 1.2 0 0 1 12 15.8V4.2A1.2 1.2 0 0 1 13.2 3Z"/></svg>',
+    resume: '<svg data-icon="ARROW_DOWN" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 4V16M5 11L10 16L15 11"/></svg>',
+    delete: '<svg data-icon="TRASH" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7 4V3A1 1 0 0 1 8 2H12A1 1 0 0 1 13 3V4H16A1 1 0 0 1 17 5V6A1 1 0 0 1 16 7H4A1 1 0 0 1 3 6V5A1 1 0 0 1 4 4Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8V15A2 2 0 0 0 7 17H13A2 2 0 0 0 15 15V8M10 10V13"/></svg>'
 });
 
 class MovieDetailsTorrentPanelMethods {
@@ -1193,7 +1193,7 @@ class MovieDetailsTorrentPanelMethods {
             const seeds = document.createElement('span');
             seeds.className = `torrent-source-card__seeds${seeders <= 2 ? ' is-low' : ''}`;
             seeds.title = `Сиды: ${seeders}, личеры: ${this.getTorrentNumber(source.leechers, '—')}`;
-            seeds.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>';
+            seeds.innerHTML = '<svg data-icon="ARROW_UP" aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 16V4M5 9L10 4L15 9"/></svg>';
             seeds.append(String(seeders));
 
             card.append(main, seeds);

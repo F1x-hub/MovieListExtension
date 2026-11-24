@@ -87,8 +87,11 @@ const movie = { kinopoiskId: 101, name: 'Film' };
         assert.equal(button(card, 'toggle-watching').style.backgroundColor, '', 'old highlight cleared');
         assert.ok(button(card, 'toggle-favorite').style.backgroundColor, 'new highlight painted');
         assert.equal(button(card, 'toggle-favorite').querySelector('.mc-menu-item-text').textContent, 'movie_card.remove_favorite');
-        assert.equal(button(card, 'toggle-favorite').querySelector('svg').getAttribute('fill'), 'currentColor');
+        const iconNames = () => ['favorite', 'watching', 'watched', 'watchlist']
+            .map(status => button(card, `toggle-${status}`).querySelector('svg').dataset.icon);
+        assert.deepEqual(iconNames(), ['HEART_FILLED', 'EYE', 'WATCHED', 'BOOKMARK'], 'only the active status is drawn solid');
         MovieCard.setStatusButtons(card, null);
+        assert.deepEqual(iconNames(), ['HEART', 'EYE', 'WATCHED', 'BOOKMARK'], 'no status, no solid icon');
         assert.equal(MovieCard.statusFromCard(card), null);
     }
 
