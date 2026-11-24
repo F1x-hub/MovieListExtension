@@ -1,5 +1,14 @@
 export const whatsNew = [
     {
+        id: '1.5.11', version: '1.5.11', date: '2026-11-25',
+        highlights: [
+            { id: 'profile-statistics', title: { ru: 'Новый профиль', en: 'A rebuilt profile' }, text: { ru: 'Вкладка «Статистика» с жанрами, годами, актёрами и режиссёрами, а в календаре видно, что вы оценили в любой день года.', en: 'A Statistics tab with genres, years, actors and directors, and a calendar that shows what you rated on any day of the year.' } },
+            { id: 'own-icons', title: { ru: 'Свои иконки', en: 'Our own icons' }, text: { ru: 'Во всём интерфейсе один набор, нарисованный для расширения. Активный статус теперь виден и по форме, а не только по цвету.', en: 'One set across the interface, drawn for the extension. An active status now differs by shape, not only by color.' } },
+            { id: 'theme-in-place', title: { ru: 'Тема в одно нажатие', en: 'The theme in one press' }, text: { ru: 'Выбирается в меню аккаунта или в настройках. Есть «Как в системе»: тема меняется вместе с Chrome.', en: 'Choose it in the account menu or in Settings. «Match system» follows Chrome\'s mode.' } },
+            { id: 'secret-frame', title: { ru: 'В достижениях кто-то прячется', en: 'Someone is hiding in Achievements' }, text: { ru: 'В выборе рамок появился силуэт с ушками. На обычные отзывы он не отзывается.', en: 'A silhouette with ears has appeared in the frame picker. Ordinary reviews get no answer from it.' } }
+        ]
+    },
+    {
         id: '1.5.10', version: '1.5.10', date: '2026-11-22',
         highlights: [
             { id: 'auto-updates', title: { ru: 'Обновления ставятся сами', en: 'Updates install on their own' }, text: { ru: 'Больше не нужно заходить в настройки и нажимать «Проверить». Видео на YouTube в другой вкладке установку не задерживает, её откладывает только просмотр в самом расширении.', en: 'No more opening Settings and pressing «Check». A video on YouTube in another tab does not hold the update back; only watching inside the extension does.' } },
