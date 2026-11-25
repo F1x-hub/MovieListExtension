@@ -6262,6 +6262,9 @@
         }
     });
 
+    // Tells the host page that the extension's player is in this frame (BaseParserService).
+    if (!isExtensionPageContext()) postToHost({ type: 'PLAYER_FRAME_HELLO' });
+
     let cancelProviderStart = null;
 
     /** The episode Allplay's menus mark now, as `season:episode`, or null outside Allplay. */

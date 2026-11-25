@@ -365,6 +365,9 @@ test('HDRezka quality expiry reports API access requirements instead of losing t
 test('HDRezka offers its lightest quality to the hover preview once the film shows a frame', async t => {
     const { window, container, video } = await recoveryMount(t);
     const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(container.querySelector('[data-quality-option].active')?.dataset.qualityOption, '720', 'a film starts at its best quality');
+    container.querySelector('[data-quality-option="480"]').click();
+    await settle();
     video.dispatchEvent(new window.Event('loadeddata'));
     await settle();
     assert.equal(video._movieExtensionPreview, null, 'the lightest quality being watched is its own preview');

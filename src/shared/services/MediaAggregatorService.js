@@ -283,6 +283,17 @@ class MediaAggregatorService {
             }
         }
 
+        // A record few people know, holding a famous film's external ID: the shared title
+        // does not excuse another year or another IMDb title.
+        const kpImdb = String(kpMovie.externalId?.imdb || '').trim();
+        const tmdbImdb = String(tmdbData.externalId?.imdb || tmdbData.imdb_id || '').trim();
+        const tmdbVotes = Number(tmdbData.voteCount || tmdbData.vote_count || tmdbData.votes?.tmdb) || 0;
+        const kpVotes = Number(kpMovie.votes?.kp) || 0;
+        if (tmdbVotes >= 1000 && kpVotes > 0 && kpVotes < 1000) {
+            if (kpYear > 0 && tmdbYear > 0 && Math.abs(kpYear - tmdbYear) > 2) return false;
+            if (kpImdb && tmdbImdb && kpImdb !== tmdbImdb) return false;
+        }
+
         // 4. Runtime / Duration discrepancy (e.g. short film <= 40 min vs feature >= 60 min)
         const kpDuration = Number(kpMovie.movieLength || kpMovie.duration) || 0;
         const tmdbDuration = Number(tmdbData.runtime || tmdbData.movieLength || tmdbData.duration) || 0;

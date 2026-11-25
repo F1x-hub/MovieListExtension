@@ -26,6 +26,14 @@ class IdMappingService {
         // Bump when the KP-rooted metadata recovery algorithm changes so
         // fresh negatives from an older algorithm get one controlled retry.
         this.METADATA_RECOVERY_VERSION = 4;
+        // Kinopoisk's catalogue attaches and later corrects external IDs, so an
+        // automatic mapping is asked about again instead of being kept for good.
+        this.RECHECK_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+        this.RECHECK_DELAY_MS = 4000;
+        this.RECHECK_PAGE_LIMIT = 50;
+        this._recheckQueue = new Map();
+        this._recheckedKeys = new Set();
+        this._recheckTimer = null;
 
         // In-memory fallback if chrome.storage is unavailable (e.g. tests)
         this._memoryCache = new Map();
@@ -787,6 +795,172 @@ class IdMappingService {
     }
 
     /**
+     * Verified Kinopoisk IDs for titles a page keeps in a cache of its own, so a corrected
+     * mapping reaches that cache too. Reads the local mappings once, without requests;
+     * the ones due for a recheck are asked about in the background.
+     * @param {Array<{ tmdbId: number, mediaType?: string, title?: string, originalTitle?: string, year?: number, voteCount?: number }>} items
+     * @returns {Promise<Map<string, number>>} mapping key -> Kinopoisk ID
+     */
+    async getKnownKinopoiskIds(items = [], options = {}) {
+        const known = new Map();
+        const due = [];
+        const cache = await this.getMappingCache();
+        for (const raw of items) {
+            const tmdbId = Number(raw?.tmdbId);
+            if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0) continue;
+            const mediaType = this.normalizeMediaType(raw.mediaType);
+            const key = this.buildKey(mediaType, tmdbId);
+            const trusted = this._normalizeTrustedMapping(this.VERIFIED_MAPPING_OVERRIDES[key] || cache[key]);
+            if (!trusted) continue;
+            known.set(key, trusted.kpId);
+            if (this._needsRecheck(cache[key])) due.push({ ...raw, key, tmdbId, mediaType });
+        }
+        this._queueRecheck(due, options.kinopoiskService);
+        return known;
+    }
+
+    /**
+     * The canonical film behind a record that is known by few on Kinopoisk while the TMDB
+     * title attached to it is known by many: a fan short or a namesake that was given the
+     * external ID of a famous film. Its page would show that film without its ratings.
+     * @param {Object} movie Unified DTO of the opened page
+     * @returns {Promise<number|null>} another Kinopoisk ID, or null when this one stands
+     */
+    async findSupersedingKinopoiskId(movie, options = {}) {
+        const kpId = Number(movie?.kinopoiskId || movie?.id);
+        const tmdbId = Number(movie?.tmdbId || movie?.identity?.tmdbId || movie?.externalId?.tmdb);
+        if (!(kpId > 0) || !(tmdbId > 0) || !IdMappingService.isFamousTitleOnObscureRecord(movie?.votes?.kp, movie?.votes?.tmdb)) return null;
+
+        const mediaType = this.normalizeMediaType(movie.isSeries ? 'tv' : movie.type);
+        const key = this.buildKey(mediaType, tmdbId);
+        const item = {
+            key, tmdbId, mediaType,
+            title: movie.name || '',
+            originalTitle: movie.originalName || movie.alternativeName || '',
+            year: null,
+            voteCount: Number(movie.votes.tmdb)
+        };
+        const entry = (await this.getMappingCache())[key];
+        if (!entry?.kpId) {
+            await this.resolveBatch([item], { skipQueue: true, kinopoiskService: options.kinopoiskService });
+        } else if (Number(entry.kpId) === kpId && this._needsRecheck(entry)) {
+            await this.recheckMappings([item], options);
+        }
+        const trusted = await this.findTrustedKinopoiskId(tmdbId, mediaType);
+        return trusted && trusted !== kpId ? trusted : null;
+    }
+
+    /**
+     * Whether a record with these Kinopoisk votes can hardly be the title with these TMDB votes.
+     * No Kinopoisk votes means a record built without Kinopoisk, which proves nothing.
+     */
+    static isFamousTitleOnObscureRecord(kpVotes, tmdbVotes) {
+        return Number(tmdbVotes) >= IdMappingService.FAMOUS_TMDB_VOTES
+            && Number(kpVotes) > 0 && Number(kpVotes) < IdMappingService.SETTLED_KP_VOTES;
+    }
+
+    _needsRecheck(entry, now = Date.now()) {
+        if (!entry || entry.status !== 'resolved' || !entry.kpId || entry.isManual || entry.sharedSource) return false;
+        const method = entry.verificationMethod || (entry.resolutionSource === 'automatic' ? 'exact_external_tmdb' : '');
+        if (!['exact_external_tmdb', 'exact_external_imdb'].includes(method)) return false;
+        return now - (Number(entry.checkedAt) || 0) >= this.RECHECK_AFTER_MS;
+    }
+
+    /** Collects stale mappings seen on a page and rechecks them once its own requests are out. */
+    _queueRecheck(items, kinopoiskService = null) {
+        for (const item of items) {
+            if (this._recheckedKeys.has(item.key) || this._recheckedKeys.size >= this.RECHECK_PAGE_LIMIT) continue;
+            this._recheckedKeys.add(item.key);
+            this._recheckQueue.set(item.key, item);
+        }
+        if (this._recheckQueue.size === 0 || this._recheckTimer) return;
+        this._recheckTimer = setTimeout(async () => {
+            const queued = [...this._recheckQueue.values()];
+            this._recheckQueue.clear();
+            this._recheckTimer = null;
+            try {
+                for (let i = 0; i < queued.length; i += this.BATCH_SIZE) {
+                    await this.recheckMappings(queued.slice(i, i + this.BATCH_SIZE), { kinopoiskService });
+                }
+            } catch (error) {
+                console.warn('[IdMapping] Recheck stopped:', error?.message || error);
+            }
+        }, this.RECHECK_DELAY_MS);
+        // Node only: a pending recheck must not hold a finished test open.
+        this._recheckTimer?.unref?.();
+    }
+
+    /**
+     * Asks Kinopoisk again about automatic mappings. Only a different confirmed record
+     * replaces one; a failed or empty answer leaves it as it was.
+     * @returns {Promise<Map<string, { from: number, to: number }>>} corrected mappings
+     */
+    async recheckMappings(items, options = {}) {
+        const corrected = new Map();
+        const service = options.kinopoiskService || this.kinopoiskService;
+        if (!service || !items?.length) return corrected;
+        const result = await this._queryKinopoiskBatch(items, service, options.signal || null, false, { skipMetadata: true });
+        if (!result?.ok) return corrected;
+
+        const now = Date.now();
+        const failed = new Set(result.failedKeys || []);
+        const cache = await this.getMappingCache();
+        for (const { key } of items) {
+            const entry = cache[key];
+            if (failed.has(key) || !this._needsRecheck(entry, now)) continue;
+            const doc = result.docsMap.get(key);
+            const kpId = Number(doc?.id || doc?.kinopoiskId);
+            if (!kpId || kpId === Number(entry.kpId)) {
+                cache[key] = { ...entry, checkedAt: now };
+                continue;
+            }
+            const next = {
+                ...entry,
+                kpId,
+                kpType: doc.type || entry.kpType || null,
+                verificationMethod: result.resolutionMethodsByKey?.get(key) || 'exact_external_tmdb',
+                resolvedAt: now,
+                checkedAt: now
+            };
+            cache[key] = next;
+            this._writeReverseIndex(cache, next);
+            corrected.set(key, { from: Number(entry.kpId), to: kpId });
+            console.info(`[IdMapping] Corrected ${key}: KP ${entry.kpId} -> ${kpId}`);
+        }
+        await this.saveMappingCache(cache);
+        return corrected;
+    }
+
+    /** A record few people have voted for; unknown votes prove nothing. */
+    _isObscureRecord(doc) {
+        return Boolean(doc?.votes) && !(Number(doc.votes.kp) >= IdMappingService.SETTLED_KP_VOTES);
+    }
+
+    /** The best record among those carrying one external ID: the same IMDb title, then the most voted. */
+    _pickExternalIdCandidate(item, docs) {
+        const rank = doc => [
+            item.imdbId && doc.externalId?.imdb === item.imdbId ? 1 : 0,
+            Number(doc.votes?.kp) || 0
+        ];
+        return docs
+            .filter(doc => this.isCompatibleType(item.mediaType, doc.type, doc)
+                && this._isCandidatePlausibleForExternalId(item, doc))
+            .sort((a, b) => {
+                const [imdbA, votesA] = rank(a);
+                const [imdbB, votesB] = rank(b);
+                return imdbB - imdbA || votesB - votesA;
+            })[0] || null;
+    }
+
+    /** Whether an external-ID match should be compared with TMDB's own IMDb ID. */
+    _isDoubtfulMatch(item, doc, context) {
+        if (!this._isObscureRecord(doc)) return false;
+        // Both sides barely known is what an obscure film looks like.
+        if (item.voteCount) return item.voteCount >= IdMappingService.KNOWN_TMDB_VOTES;
+        return context !== 'person-filmography';
+    }
+
+    /**
      * Check if a Kinopoisk entity type is compatible with a TMDB media type.
      * Strict rule: Never match TMDB movie to KP tv-series or TMDB tv to KP movie.
      * Uses Kinopoisk doc metadata (isSeries, movieLength, seriesLength) to safely disambiguate 'anime'.
@@ -1065,6 +1239,7 @@ class IdMappingService {
             params.append('selectFields', 'movieLength');
             params.append('selectFields', 'seriesLength');
             params.append('selectFields', 'year');
+            params.append('selectFields', 'votes');
 
             for (const item of chunk) {
                 if (item.imdbId) {
@@ -1099,10 +1274,7 @@ class IdMappingService {
             for (const item of chunk) {
                 if (!item.imdbId) continue;
                 const candidateDocs = docsByImdbId.get(item.imdbId) || [];
-                const matched = candidateDocs.find(doc =>
-                    this.isCompatibleType(item.mediaType, doc.type, doc) &&
-                    this._isCandidatePlausibleForExternalId(item, doc)
-                );
+                const matched = this._pickExternalIdCandidate(item, candidateDocs);
                 if (matched) {
                     docsMap.set(item.key, matched);
                 }
@@ -1871,6 +2043,7 @@ class IdMappingService {
 
         const resolvedCount = { cacheHit: 0, negativeHit: 0, unknown: 0 };
         const unknownItems = [];
+        const staleItems = [];
         const markAsUnresolved = (item) => {
             resultMap.set(item.key, {
                 tmdbId: item.tmdbId,
@@ -1928,6 +2101,7 @@ class IdMappingService {
                 if (options.context === 'person-filmography') {
                     globalThis.quotaTracker?.track('PersonDetailsService.kpMatchingPerFilm', 'cacheHit');
                 }
+                if (!sharedMapping && this._needsRecheck(entry, now)) staleItems.push(item);
                 const identityStatus = entry.identityStatus || 'VERIFIED';
                 const verificationMethod = entry.isManual ? 'admin_verified' : (entry.verificationMethod || (entry.resolutionSource === 'automatic' ? 'exact_external_tmdb' : 'legacy_resolved'));
                 const verificationSource = entry.isManual ? 'manual' : (entry.verificationSource || (entry.resolutionSource === 'automatic' ? 'automatic' : 'system_legacy'));
@@ -2054,6 +2228,7 @@ class IdMappingService {
                             kpId,
                             kpType,
                             resolvedAt: now,
+                            ...(isFastRecommendationPath ? {} : { checkedAt: now }),
                             status: 'resolved',
                             identityStatus: 'VERIFIED',
                             verificationMethod,
@@ -2109,6 +2284,8 @@ class IdMappingService {
         if (cacheModified) {
             await this.saveMappingCache(cache);
         }
+
+        this._queueRecheck(staleItems, options.kinopoiskService);
 
         // 6. Record unmapped items to persistent queue for admin review & manual mapping (bypassed if skipQueue is true)
         const skipQueue = Boolean(options?.skipQueue || options?.context === 'recommendations');
@@ -2186,6 +2363,7 @@ class IdMappingService {
             params.append('selectFields', 'movieLength');
             params.append('selectFields', 'seriesLength');
             params.append('selectFields', 'year');
+            params.append('selectFields', 'votes');
 
             for (const item of chunk) {
                 params.append('externalId.tmdb', String(item.tmdbId));
@@ -2256,10 +2434,7 @@ class IdMappingService {
             // Match Tier 1 exact TMDB matches
             for (const item of chunk) {
                 const candidateDocs = docsByTmdbId.get(item.tmdbId) || [];
-                const matched = candidateDocs.find(doc =>
-                    this.isCompatibleType(item.mediaType, doc.type, doc) &&
-                    this._isCandidatePlausibleForExternalId(item, doc)
-                );
+                const matched = this._pickExternalIdCandidate(item, candidateDocs);
 
                 if (matched) {
                     docsMap.set(item.key, matched);
@@ -2270,9 +2445,47 @@ class IdMappingService {
 
             const failedKeys = [];
 
+            const getTmdbService = () => {
+                try {
+                    if (typeof window !== 'undefined' && window.firebaseManager?.getTMDBService) {
+                        return window.firebaseManager.getTMDBService();
+                    }
+                    if (typeof TMDBService !== 'undefined') return new TMDBService();
+                    if (typeof window !== 'undefined' && window.TMDBService) return new window.TMDBService();
+                } catch { /* no TMDB service on this page */ }
+                return this.tmdbService || null;
+            };
+            const loadExternalId = async (item, tmdbService) => {
+                if (item.imdbId) return;
+                try {
+                    const ext = await tmdbService.getExternalIds(item.tmdbId, item.mediaType, { signal });
+                    if (ext?.imdb_id) item.imdbId = ext.imdb_id;
+                } catch { /* ignore individual tmdb failure */ }
+            };
+
+            // A record with few votes may carry a famous film's TMDB ID by mistake: it waits
+            // until Kinopoisk is asked for TMDB's own IMDb ID. The fast recommendation path
+            // has no request to spare; its mappings stay due for a recheck instead.
+            const doubtfulDocs = new Map();
+            if (!isFastRecommendationPath) {
+                const doubtfulItems = chunk.filter(item => docsMap.has(item.key)
+                    && this._isDoubtfulMatch(item, docsMap.get(item.key), options.context));
+                const tmdbService = doubtfulItems.length > 0 ? getTmdbService() : null;
+                if (typeof tmdbService?.getExternalIds === 'function') {
+                    await Promise.all(doubtfulItems.map(item => loadExternalId(item, tmdbService)));
+                    for (const item of doubtfulItems) {
+                        const doc = docsMap.get(item.key);
+                        if (!item.imdbId || doc.externalId?.imdb === item.imdbId) continue;
+                        doubtfulDocs.set(item.key, doc);
+                        docsMap.delete(item.key);
+                        resolutionMethodsByKey.delete(item.key);
+                    }
+                }
+            }
+
             // Tier 1.5 Individual retry for partial batch omissions
             if (allowExactFallback && !isFastRecommendationPath && chunk.length > 1) {
-                const missingItems = chunk.filter(item => !docsMap.has(item.key));
+                const missingItems = chunk.filter(item => !docsMap.has(item.key) && !doubtfulDocs.has(item.key));
                 for (const item of missingItems) {
                     const exactResult = await this._queryKinopoiskBatch(
                         [item], kinopoiskService, signal, false, options
@@ -2296,33 +2509,13 @@ class IdMappingService {
             const itemsForImdbBridge = unresolvedItems.slice(0, maxFallbackCandidates);
             if (itemsForImdbBridge.length > 0) {
                 // Pre-fetch IMDb IDs for candidates if not present in item
-                let tmdbService = null;
-                try {
-                    if (typeof window !== 'undefined' && window.firebaseManager?.getTMDBService) {
-                        tmdbService = window.firebaseManager.getTMDBService();
-                    } else if (typeof TMDBService !== 'undefined') {
-                        tmdbService = new TMDBService();
-                    } else if (typeof window !== 'undefined' && window.TMDBService) {
-                        tmdbService = new window.TMDBService();
-                    }
-                } catch {
-                    tmdbService = null;
-                }
-
-                if (tmdbService && typeof tmdbService.getExternalIds === 'function') {
-                    const loadExternalId = async (item) => {
-                        if (item.imdbId) return;
-                        try {
-                            const ext = await tmdbService.getExternalIds(item.tmdbId, item.mediaType, { signal });
-                            if (ext?.imdb_id) item.imdbId = ext.imdb_id;
-                        } catch { /* ignore individual tmdb failure */ }
-                    };
-
+                const tmdbService = getTmdbService();
+                if (typeof tmdbService?.getExternalIds === 'function') {
                     if (isFastRecommendationPath) {
-                        await Promise.all(itemsForImdbBridge.map(loadExternalId));
+                        await Promise.all(itemsForImdbBridge.map(item => loadExternalId(item, tmdbService)));
                     } else {
                         for (const item of itemsForImdbBridge) {
-                            await loadExternalId(item);
+                            await loadExternalId(item, tmdbService);
                         }
                     }
                 }
@@ -2337,12 +2530,25 @@ class IdMappingService {
                                 resolutionMethodsByKey.set(key, 'exact_external_imdb');
                             }
                         }
+                    } else if (doubtfulDocs.size > 0) {
+                        // Unanswered doubts stay open rather than becoming a mapping.
+                        failedKeys.push(...doubtfulDocs.keys());
                     }
                 }
             }
 
+            // Kinopoisk knows no record with TMDB's IMDb ID. The doubtful one stands when it
+            // names no other IMDb title, or is the same title of the same year.
+            for (const item of chunk) {
+                const doc = doubtfulDocs.get(item.key);
+                if (!doc || docsMap.has(item.key) || failedKeys.includes(item.key)) continue;
+                if (doc.externalId?.imdb && !this._verifyMetadataCandidate(item, doc).accepted) continue;
+                docsMap.set(item.key, doc);
+                resolutionMethodsByKey.set(item.key, 'exact_external_tmdb');
+            }
+
             // Tier 3: Metadata Verification (Title + Year ± 1 + Type)
-            const metadataCandidates = isFastRecommendationPath
+            const metadataCandidates = options.skipMetadata ? [] : isFastRecommendationPath
                 ? unresolvedItems.slice(0, maxFallbackCandidates)
                 : chunk;
             const resolveMetadata = async (item) => {
@@ -2408,6 +2614,12 @@ class IdMappingService {
         }
     }
 }
+
+// Kinopoisk votes below this do not settle which record a title is.
+IdMappingService.SETTLED_KP_VOTES = 1000;
+// TMDB votes from which a title is expected to have votes on Kinopoisk too.
+IdMappingService.KNOWN_TMDB_VOTES = 300;
+IdMappingService.FAMOUS_TMDB_VOTES = 1000;
 
 // Export for module and browser environments
 if (typeof module !== 'undefined' && module.exports) {

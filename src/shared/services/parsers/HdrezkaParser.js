@@ -156,9 +156,12 @@ class HdrezkaParser extends BaseParserService {
                     || value.kinopoiskId && options.movieId && String(value.kinopoiskId) !== String(options.movieId)) throw new Error('HDREZKA_IDENTITY_MISMATCH');
             };
             verifyDetails(details);
+            let qualityChosen = prefs?.providers?.hdrezka?.qualityChosen === true;
             const persist = height => {
                 if (options.movieId) void window.WatchPreferences?.patch(options.movieId, { providers: { hdrezka: {
-                    translationId: details.activeTranslationId, qualityHeight: height
+                    translationId: details.activeTranslationId,
+                    qualityHeight: qualityChosen ? height : null,
+                    qualityChosen: qualityChosen || null
                 } } });
             };
             // The hover preview needs one small picture, not the quality being
@@ -182,11 +185,12 @@ class HdrezkaParser extends BaseParserService {
                     } catch { /* The preview keeps using the playing stream. */ }
                 }, { once: true });
             };
+            let stopStallWatch = () => {};
             const load = async (height, position, paused) => {
                 const request = ++version;
                 phase = 'streams';
                 const variants = HdrezkaProtocol.qualities(details.response);
-                const chosen = variants.find(item => item.height === height) || variants.find(item => item.height === 480) || variants[0];
+                const chosen = variants.find(item => item.height === height) || variants.at(-1);
                 if (!chosen) throw new Error('HDREZKA_NO_STREAMS');
                 let url;
                 phase = 'cdn-resolve';
@@ -210,7 +214,10 @@ class HdrezkaParser extends BaseParserService {
                     button.type = 'button'; button.dataset.qualityOption = String(item.height);
                     button.textContent = `${item.height}p`;
                     button.classList.toggle('active', item.height === chosen.height);
-                    button.addEventListener('click', () => { void load(item.height, video.currentTime, video.paused).catch(fail); });
+                    button.addEventListener('click', () => {
+                        qualityChosen = true;
+                        void load(item.height, video.currentTime, video.paused).catch(fail);
+                    });
                     return button;
                 }));
                 const restore = () => {
@@ -247,6 +254,12 @@ class HdrezkaParser extends BaseParserService {
                 // Every quality of a dub shows the same picture, so prepared preview frames
                 // belong to the film and dub, not to a signed stream address.
                 video.dataset.previewFramesKey = `hdrezka:${details.movieId}:${details.activeTranslationId}`;
+                stopStallWatch();
+                stopStallWatch = window.HlsPlaybackFactory.watchStalls?.(video, () => {
+                    const lower = variants[variants.indexOf(chosen) - 1];
+                    if (qualityChosen || !lower || !active() || request !== version) return;
+                    void load(lower.height, video.currentTime, video.paused).catch(fail);
+                }) || (() => {});
                 offerPreview(variants, chosen, request);
                 persist(chosen.height);
                 return true;
@@ -301,7 +314,7 @@ class HdrezkaParser extends BaseParserService {
                 catch { throw new Error('HDREZKA_HLS_UNAVAILABLE'); }
             }
             if (!active()) { dispose(); return false; }
-            await load(prefs?.providers?.hdrezka?.qualityHeight || Number.parseInt(details.response?.quality, 10), Number(options.resolvedTimestamp ?? options.initialTimestamp) || 0, false);
+            await load(qualityChosen ? prefs.providers.hdrezka.qualityHeight : null, Number(options.resolvedTimestamp ?? options.initialTimestamp) || 0, false);
             if (!active()) { dispose(); return false; }
             publishDubState();
             if (options.lifecycle !== false && window.PlayerSourceLifecycle) watcher = window.PlayerSourceLifecycle.watchVideo(video, {

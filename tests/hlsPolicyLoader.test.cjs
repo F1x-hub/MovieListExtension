@@ -327,3 +327,33 @@ test('HDRezka profile binds every resource to the captured final host and direct
         assert.equal(h.calls.length, 0, 'missing/root session scope fails closed');
     }
 });
+
+// Kodik's CDN moved pieces between its own servers on 2026-11-25 and AnimeGo stopped playing.
+test('a piece may be redirected inside its own reviewed CDN, and nowhere else', async () => {
+    const scope = vm.createContext({ URL });
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/shared/services/player/UrlPolicy.js'), 'utf8'), scope);
+    const policy = scope.UrlPolicy;
+    const piece = 'https://p13.solodcdn.com/s/seg-1.ts';
+    assert.equal(policy.redirectScope(piece, { kind: 'fragment' }), 'solodcdn.com');
+    for (const [url, kind, profile] of [
+        [piece, 'manifest'], [piece, 'key'], [piece, 'level'], [piece, 'fragment', 'hdrezka'], [piece, 'fragment', 'local'],
+        ['http://p13.solodcdn.com/seg.ts', 'fragment'], ['https://solodcdn.com.evil.test/seg.ts', 'fragment'],
+        ['https://evilsolodcdn.com/seg.ts', 'fragment'], ['https://bl.rutube.ru/seg.ts', 'fragment'], ['not a url', 'fragment']
+    ]) assert.equal(policy.redirectScope(url, { kind, profile }), null, `${kind} ${profile} ${url}`);
+
+    const load = async finalUrl => {
+        const h = harness(() => Promise.resolve(response({ url: finalUrl, redirected: true })), { policy });
+        h.start({ url: piece, type: undefined, frag: { sn: 1 }, responseType: 'arraybuffer' });
+        await flush();
+        return h;
+    };
+    const moved = await load('https://p14.solodcdn.com/s/seg-1.ts');
+    assert.equal(moved.calls[0][1].redirect, 'follow');
+    assert.equal(moved.calls[0][1].credentials, 'omit');
+    assert.equal(moved.events.at(-1)[0], 'onSuccess');
+    for (const elsewhere of ['https://cdn.elsewhere.test/seg-1.ts', 'http://p14.solodcdn.com/s/seg-1.ts', 'https://127.0.0.1/seg-1.ts']) {
+        const refused = await load(elsewhere);
+        assert.equal(refused.events.at(-1)[0], 'onError', elsewhere);
+        assert.equal(refused.events.at(-1)[1].text, 'POLICY_VIOLATION');
+    }
+});

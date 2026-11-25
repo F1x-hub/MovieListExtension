@@ -886,6 +886,7 @@ class KinogoParser extends BaseParserService {
      */
     extractKinogoDirectSources(html, pageUrl = '') {
         if (!html) return [];
+        globalThis.BalancerDomains?.noteScript?.(html);
         const foundUrls = [];
         const embedPattern = /(?:https?:)?\/\/[^\s"'<>]+\/(?:embed|player|video|serial|film)\/[^\s"'<>]+/i;
 
@@ -924,7 +925,7 @@ class KinogoParser extends BaseParserService {
 
         // 2. Script & HTML regex scanning
         const scriptPatterns = [
-            /(?:https?:)?\/\/(?:api\.)?(?:femd|ortified|variyt|namy|nextembed)\.ws\/embed\/(?:movie|serial)\/\d+/gi,
+            /(?:https?:)?\/\/(?:api\.)?[a-z0-9-]+\.ws\/embed\/(?:movie|serial)\/\d+/gi,
             /https?:\/\/cinemar\.cc\/embed\/\d+\/[^\s"'<>]+/gi,
             /https?:\/\/[a-zA-Z0-9_-]+\.stravers\.live\/\?token_movie=[^\s"'<>]+/gi,
             /https?:\/\/[a-zA-Z0-9_-]+\.allarknow\.online\/\?token_movie=[^\s"'<>]+/gi,

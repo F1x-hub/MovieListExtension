@@ -119,6 +119,7 @@
                     return;
                 }
 
+                const scope = global.UrlPolicy.redirectScope?.(checked.url, { kind, profile }) || null;
                 this._controller = new global.AbortController();
                 const policy = config.loadPolicy || {};
                 const finiteDelay = value => Number.isFinite(value) && value > 0;
@@ -137,7 +138,7 @@
                         headers.set('Range', `bytes=${context.rangeStart || 0}-${context.rangeEnd - 1}`);
                     }
                     return global.fetch(checked.url, {
-                        method: 'GET', mode: 'cors', credentials: 'omit', redirect: 'manual',
+                        method: 'GET', mode: 'cors', credentials: 'omit', redirect: scope ? 'follow' : 'manual',
                         signal: this._controller.signal, headers
                     });
                 }).then(async response => {
@@ -148,9 +149,11 @@
                         final = global.UrlPolicy.check(response.url, { kind, profile });
                         if (final?.ok && !inScope(final.url)) final = null;
                     } catch { final = null; }
-                    if (response.type === 'opaqueredirect' || response.redirected
+                    const moved = response.redirected || final?.url !== checked.url;
+                    if (response.type === 'opaqueredirect'
                         || (response.status >= 300 && response.status < 400)
-                        || !final?.ok || final.url !== checked.url) {
+                        || !final?.ok
+                        || moved && (!scope || global.UrlPolicy.redirectScope(final.url, { kind, profile }) !== scope)) {
                         this._error(0, 'POLICY_VIOLATION');
                         return;
                     }

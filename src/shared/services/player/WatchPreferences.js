@@ -15,6 +15,8 @@
         if ((typeof value.translationId === 'string' || Number.isSafeInteger(value.translationId))
             && /^[a-zA-Z0-9_-]{1,80}$/.test(String(value.translationId))) clean.translationId = String(value.translationId);
         if (Number.isInteger(value.qualityHeight) && value.qualityHeight >= 0 && value.qualityHeight <= 8640) clean.qualityHeight = value.qualityHeight;
+        // Set only by the viewer's own choice: HDRezka used to save the site's 360p by itself.
+        if (value.qualityChosen === true) clean.qualityChosen = true;
         return clean;
     }
 
@@ -88,6 +90,7 @@
                         if (value && typeof value === 'object') {
                             if (value.translationId === null) delete merged.translationId;
                             if (value.qualityHeight === null) delete merged.qualityHeight;
+                            if (value.qualityChosen === null) delete merged.qualityChosen;
                         }
                         if (Object.keys(merged).length) (current.providers ||= {})[id] = merged;
                         else if (current.providers) delete current.providers[id];

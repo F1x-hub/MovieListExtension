@@ -447,6 +447,9 @@ class AnimeGoParser extends BaseParserService {
         const nativeVideo = rendered && state.stream ? container.querySelector?.('video') : null;
         if (nativeVideo) {
             this.mountNativeBridge(container, state);
+            this._watchNativeStalls(container, state, nativeVideo, () => container.__animegoNativeState === state
+                && container.querySelector?.('video') === nativeVideo
+                && (!options.isRequestCurrent || options.isRequestCurrent()));
             // Dub and quality live in the player's settings menu.
             this.publishDubState(container, null);
         } else {
@@ -742,6 +745,23 @@ class AnimeGoParser extends BaseParserService {
     }
 
     /**
+     * Each Kodik quality is a stream of its own, so hls.js cannot step down by itself.
+     * A quality the viewer chose stays.
+     * @private
+     */
+    _watchNativeStalls(container, state, video, isCurrent) {
+        video._animegoStopStallWatch?.();
+        video._animegoStopStallWatch = window.HlsPlaybackFactory?.watchStalls?.(video, () => {
+            const lower = state.streams[state.streams.indexOf(state.stream) + 1];
+            if (this._preferredHeight || !lower || !isCurrent()) return;
+            state.stream = lower;
+            state.mountSources = this.buildMountSources(state);
+            this.swapNativeStream(container, state);
+            this.mountNativeBridge(container, state);
+        }) || null;
+    }
+
+    /**
      * Replace the HLS source of the mounted video in place, keeping the
      * player chrome, position and play state.
      * @private
@@ -794,6 +814,8 @@ class AnimeGoParser extends BaseParserService {
             if (!hls && isCurrent()) fail('unsupported');
             return false;
         }
+
+        this._watchNativeStalls(container, state, video, isCurrent);
 
         const restore = () => {
             video.removeEventListener('loadedmetadata', restore);

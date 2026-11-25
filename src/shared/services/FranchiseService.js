@@ -278,6 +278,28 @@ class FranchiseService {
                     });
                 }
 
+                // A corrected mapping replaces the ID kept with the collection.
+                if (typeof idMapper?.getKnownKinopoiskIds === 'function' && Array.isArray(cached.parts)) {
+                    try {
+                        const known = await idMapper.getKnownKinopoiskIds(cached.parts.map(part => ({
+                            tmdbId: part.tmdbId,
+                            mediaType: 'movie',
+                            title: part.title,
+                            originalTitle: part.originalTitle,
+                            year: part.year,
+                            voteCount: part.voteCount
+                        })), { kinopoiskService: options.kinopoiskService || this.kinopoiskService });
+                        cached.parts.forEach(part => {
+                            const kinopoiskId = known.get(idMapper.buildKey('movie', part.tmdbId));
+                            if (!kinopoiskId || !(Number(part.kinopoiskId) > 0) || Number(part.kinopoiskId) === kinopoiskId) return;
+                            part.kinopoiskId = kinopoiskId;
+                            overrideUpdated = true;
+                        });
+                    } catch (error) {
+                        console.warn('[FranchiseService] Known mappings unavailable:', error?.message || error);
+                    }
+                }
+
                 const unmappedParts = (cached.parts || []).filter(p => !p.kinopoiskId || Number(p.kinopoiskId) <= 0);
                 if (unmappedParts.length === 0) {
                     if (overrideUpdated) {
@@ -296,7 +318,8 @@ class FranchiseService {
                             title: p.title,
                             originalTitle: p.originalTitle,
                             releaseDate: p.releaseDate,
-                            year: p.year
+                            year: p.year,
+                            voteCount: p.voteCount
                         }));
 
                         const mappingMap = await idMapper.resolveBatch(batchInputs, {
@@ -374,7 +397,8 @@ class FranchiseService {
                             title: p.title,
                             originalTitle: p.originalTitle,
                             releaseDate: p.releaseDate,
-                            year: p.year
+                            year: p.year,
+                            voteCount: p.voteCount
                         }));
 
                         const mappingMap = await idMapper.resolveBatch(batchInputs, {

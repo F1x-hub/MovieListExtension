@@ -11,7 +11,7 @@ const FILL_CHECK_MS = 1000;
 // A short pause between prepared frames keeps the page responsive.
 const FILL_GAP_MS = 15;
 // The playing film keeps this many seconds ahead before preparation takes the network.
-const FILL_MIN_AHEAD_S = 8;
+const FILL_MIN_AHEAD_S = 30;
 // A point that does not decode in this time is skipped.
 const FILL_STEP_TIMEOUT_MS = 20000;
 // Preparation stops for a source after this many points in a row fail.
@@ -495,7 +495,8 @@ class GhostPlayer {
         const ranges = video.buffered;
         for (let index = 0; index < (ranges?.length || 0); index++) {
             if (ranges.start(index) <= time + 0.5 && ranges.end(index) > time) {
-                return ranges.end(index) - time >= FILL_MIN_AHEAD_S;
+                const end = ranges.end(index);
+                return end - time >= FILL_MIN_AHEAD_S || end >= video.duration - 1;
             }
         }
         return false;

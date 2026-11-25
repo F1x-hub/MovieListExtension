@@ -196,12 +196,16 @@ function setup(options = {}) {
     {
         storage.clear();
         const { hls } = setup();
-        assert.equal(hls.config.capLevelToPlayerSize, true, 'renditions are capped to the player size');
-        assert.equal(hls.config.backBufferLength, 90, 'played-back buffer is bounded');
-        assert.equal(hls.config.maxMaxBufferLength, 120);
+        assert.equal(hls.config.capLevelToPlayerSize, false, 'the best rendition plays whatever the player size');
+        assert.equal(hls.config.capLevelOnFPSDrop, true, 'a computer that loses frames steps down');
+        assert.equal(hls.config.backBufferLength, 60, 'played-back buffer is bounded');
+        assert.equal(hls.config.maxBufferLength, 60);
+        assert.equal(hls.config.maxMaxBufferLength, 240);
+        assert.ok(hls.config.maxBufferSize * 8 <= 150e6 * 8, 'inside Chrome\'s media memory');
         assert.equal(hls.config.abrEwmaDefaultEstimate, undefined, 'no estimate without a measurement');
-        const overridden = setup({ config: { capLevelToPlayerSize: false, backBufferLength: 10 } }).hls;
-        assert.equal(overridden.config.capLevelToPlayerSize, false);
+        assert.equal(hls.config.testBandwidth, undefined, 'without one hls.js still measures first');
+        const overridden = setup({ config: { capLevelToPlayerSize: true, backBufferLength: 10 } }).hls;
+        assert.equal(overridden.config.capLevelToPlayerSize, true);
         assert.equal(overridden.config.backBufferLength, 10);
     }
 
@@ -222,6 +226,7 @@ function setup(options = {}) {
 
         const next = setup().hls;
         assert.equal(next.config.abrEwmaDefaultEstimate, 12_000_000, 'the next stream starts from the last estimate');
+        assert.equal(next.config.testBandwidth, false, 'and at that quality, without a low test fragment');
 
         storage.set(factory.BANDWIDTH_STORAGE_KEY, JSON.stringify({ bps: 12_000_000, measuredAt: Date.now() - 8 * 24 * 3600 * 1000 }));
         assert.equal(setup().hls.config.abrEwmaDefaultEstimate, undefined, 'stale estimates are ignored');
@@ -248,7 +253,43 @@ function setup(options = {}) {
         storage.set(factory.BANDWIDTH_STORAGE_KEY, JSON.stringify({ bps: 9_000_000, measuredAt: Date.now() }));
         assert.equal(setup({ policy: 'persistent' }).hls.config.abrEwmaDefaultEstimate, undefined,
             'torrent sessions do not consume the provider estimate');
-        assert.equal(setup({ policy: 'persistent' }).hls.config.capLevelToPlayerSize, true);
+    }
+
+    // Qualities that are separate streams: hls.js cannot step down between them.
+    {
+        const listeners = {};
+        const film = {
+            paused: false, seeking: false, readyState: 2,
+            addEventListener: (type, handler) => { listeners[type] = handler; },
+            removeEventListener: type => { delete listeners[type]; }
+        };
+        const realSetTimeout = context.setTimeout;
+        const timers = [];
+        context.setTimeout = handler => { timers.push(handler); return timers.length; };
+        let reports = 0;
+        const stop = factory.watchStalls(film, () => { reports += 1; });
+        const stall = () => { listeners.waiting(); timers.pop()(); };
+        listeners.waiting();
+        assert.equal(timers.length, 0, 'loading before the first frame is not a stall');
+        listeners.playing();
+        stall();
+        assert.equal(reports, 0, 'one stall is bad luck');
+        listeners.playing();
+        film.seeking = true;
+        listeners.waiting();
+        assert.equal(timers.length, 0, 'a seek is not a stall');
+        film.seeking = false;
+        stall();
+        assert.equal(reports, 1, 'the second one is a connection that does not keep up');
+        stop();
+        assert.deepEqual(Object.keys(listeners), []);
+
+        const slow = factory.watchStalls(film, () => { reports += 1; });
+        listeners.play();
+        timers.pop()();
+        assert.equal(reports, 2, 'so is a start that takes too long');
+        slow();
+        context.setTimeout = realSetTimeout;
     }
 
     console.log('✅ HlsPlaybackFactory recovery tests passed');

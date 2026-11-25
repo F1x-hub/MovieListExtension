@@ -67,7 +67,10 @@
     "https://*.namy.ws/*",
     "https://*.variyt.ws/*",
     "https://*.nextembed.ws/*",
+    "https://*.ws/*",
     "https://*.femd.ws/*",
+    "https://*.datavex.ws/*",
+    "https://*.corevia.ws/*",
     "https://*.lumex.cloud/*",
     "https://myanimelist.net/*",
     "https://api.aniskip.com/*",
@@ -98,6 +101,9 @@
     "http://localhost:3579/*",
     "http://127.0.0.1:3579/*",
     "http://127.0.0.1:3000/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
   ],
   "oauth2": {
     "client_id": "532518163829-5kst3gcs78q6omaljmua2vdrooi6fcb3.apps.googleusercontent.com",
@@ -203,6 +209,8 @@
     },
     {
       "matches": [
+        "*://*.corevia.ws/*",
+        "*://*.datavex.ws/*",
         "*://*.femd.ws/*",
         "*://*.namy.ws/*",
         "*://*.variyt.ws/*",
@@ -232,6 +240,8 @@
     },
     {
       "matches": [
+        "*://*.corevia.ws/*",
+        "*://*.datavex.ws/*",
         "*://*.femd.ws/*",
         "*://*.namy.ws/*",
         "*://*.lumex.cloud/*",

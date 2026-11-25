@@ -1235,6 +1235,7 @@ class MovieDetailsManager {
         if (movieId) {
             const speculativeMovie = await cachePromise;
             const cachedLoaded = Boolean(speculativeMovie);
+            if (await this.openSupersedingFilm(movieId, speculativeMovie)) return;
             await this.loadMovieById(movieId, !cachedLoaded, cachedLoaded, {
                 prefetchedCachedMovie: speculativeMovie,
                 prefetchedCacheResolved: this.speculativeCacheResolved && Boolean(speculativeMovie),
@@ -1285,6 +1286,30 @@ class MovieDetailsManager {
             });
         } catch (error) {
             console.warn('[MovieDetails] Failed to clear reverse mapping cache:', error);
+        }
+    }
+
+    /**
+     * Leaves a record that only borrowed this film's external ID for the film itself,
+     * where its ratings are.
+     * @returns {Promise<boolean>} Whether the page is being replaced
+     */
+    async openSupersedingFilm(movieId, cachedMovie) {
+        const idMapping = firebaseManager.getIdMappingService?.();
+        if (!cachedMovie || typeof idMapping?.findSupersedingKinopoiskId !== 'function') return false;
+        try {
+            const canonicalId = await this.withMovieLoadDeadline(idMapping.findSupersedingKinopoiskId(cachedMovie, {
+                kinopoiskService: firebaseManager.getKinopoiskService?.()
+            }));
+            const url = new URL(window.location.href);
+            if (!canonicalId || url.searchParams.get('movieId') !== String(movieId)) return false;
+            await this.clearMovieCacheForMovie(movieId);
+            url.searchParams.set('movieId', String(canonicalId));
+            window.location.replace(url.toString());
+            return true;
+        } catch (error) {
+            console.warn('[MovieDetails] Could not check the film identity:', error);
+            return false;
         }
     }
 
@@ -4227,7 +4252,7 @@ class MovieDetailsManager {
                             alternativeName: rec.alternativeName,
                             posterUrl: rec.posterUrl,
                             year: rec.year,
-                            genres: rec.genres || rec.genreIds,
+                            genres: rec.genres || RecommendationService.genreNames(rec.genreIds),
                             mediaType: rec.mediaType,
                             kpRating: rec.kpRating || rec.ratingKp,
                             imdbRating: rec.imdbRating,

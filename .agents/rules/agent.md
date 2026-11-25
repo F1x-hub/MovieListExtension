@@ -215,6 +215,13 @@ checklist; `npm run test:visual-design` enforces much of it.
   document, never a title match. Known exceptions: KP `1309570` → `movie:634649`, used only after
   the real external-ID lookup comes back empty; the Raimi trilogy (TMDB 557/558/559 → KP
   838/2898/82441), which wins over conflicting shared mappings.
+- Kinopoisk's `externalId.tmdb` is not unique and can be wrong: an obscure record may carry a
+  famous film's ID. Among candidates `_pickExternalIdCandidate` takes the most voted, a record with
+  few KP votes is accepted only after TMDB's IMDb ID, and automatic `exact_external_*` mappings are
+  rechecked in the background 30 days after `checkedAt` (a failed or empty answer changes nothing;
+  manual and shared ones are never rechecked). A cache that stores its own KP IDs reads
+  `getKnownKinopoiskIds()` so that corrections reach it. Movie Details leaves a record that borrowed
+  a famous title through `findSupersedingKinopoiskId()`, before anything else loads for it.
 - `MediaAggregatorService` builds the `UnifiedMovieDTO` with `kinopoiskId > 0` as the root
   identity. Identity status (`VERIFIED`/`UNVERIFIED`), metadata quality and field provenance
   (`_meta.fieldSources`) stay separate, and so do provider ratings (`rating.kp`, `rating.imdb`,
@@ -372,9 +379,18 @@ checklist; `npm run test:visual-design` enforces much of it.
   season (`effectiveSeasonUrl`) and publishes `SEASONVAR_PLAYBACK_STATE` instead of the cleaner
   reading its DOM. KinoGo must not substitute a trailer for a missing film.
 - Balancer domains: the Venom balancer behind KinoGo and Ex-FS moves between domains, and a domain
-  it left answers 422. `BalancerDomains` rewrites addresses and follows its `actualize.js`, but a
-  new domain still needs `manifest.json` host permissions and an entry in
-  `src/background/provider-embed-rules.json`.
+  it left answers 422. `BalancerDomains` rewrites addresses, follows its `actualize.js` and
+  registers the manifest's frame scripts for a domain the manifest does not name
+  (`attachFrameScripts`, before the address is used). Host permissions and the static Referer rules
+  cover the `.ws` zone; outside it the rules are dynamic (IDs 5200-5299) and access is asked by a
+  click. A domain named in the manifest must not be registered as well: the cleaner would run twice.
+  The domain is also learned from where a site loads the script (`noteScript`) and from a printed
+  address (`adopt`, only when that page names its own host and VenomPlayer). Every balancer frame
+  greets the page (`PLAYER_FRAME_HELLO`); silence remounts it once, then the next source takes over.
+- Provider players never adapt: `provider-ad-guard.js` makes Venom start at its highest quality,
+  seeds Allplay's saved one, disables WebRTC, and lowers a step on stalls. A quality the viewer
+  pressed (Venom's own key, `movieExtension_qualityChosen`, `qualityChosen` in WatchPreferences) is
+  never changed, and an automatic choice is never saved as one.
 - Provider embedding: the iframe itself is `no-referrer`, so the DOM never sees the extension
   URL, and `provider-embed-rules.json` restores the source site's Referer only for
   extension-initiated subframes marked `movieExtensionSite`. Without it providers substitute
@@ -389,7 +405,9 @@ checklist; `npm run test:visual-design` enforces much of it.
 ### HLS and native video
 
 - Extension-owned `<video>` elements create hls.js only through `HlsPlaybackFactory`, whose
-  `DEFAULT_HLS_CONFIG` holds the quality and buffer defaults; do not set them per call site.
+  `DEFAULT_HLS_CONFIG` holds the quality and buffer defaults; do not set them per call site. Quality
+  is not capped to the player's size; `watchStalls` steps down where qualities are separate streams.
+  Redirects are refused except for pieces inside a host in `UrlPolicy.REDIRECTING_HOSTS`.
   Provider streams use the `bounded` policy (expired 401/403/404/410 manifests fail at once and
   `BaseParserService` swaps in the next compatible source); torrents use `persistent`. A handled
   failure never dispatches `extension-hls-fatal`.
@@ -554,6 +572,11 @@ checklist; `npm run test:visual-design` enforces much of it.
 - Random: the personal pool is device-local (`RandomPoolService`). The marathon round is Firestore
   `randomMarathons/current`, with admin actions in transactions; the function's `normalizePoster`
   matches the page's `PosterUrl` (`tests/randomMarathonFunction.test.cjs`).
+- Marathon history (`shared/utils/marathonHistory.js`) is counted on the client: items of every round
+  stay in `randomMarathons/current/items`, while the round document is overwritten. «watched» on an
+  item is the admin's mark for the company; that a person watched a film is their own rating from
+  `selectedAt` to a week after `resolvedAt`. A film's score averages that round's bringers and those
+  raters; one rated only by its own bringer says nothing about the company (`ratedByOthers`). Never show `userName` stored with a rating there: it can be the account's real name.
 - Random filters: included genres and countries combine with OR. The API answers 400 to a type it
   does not know (`tv-show` among them). `_toRequestFilters` drops the upper vote bound at the last
   stop. The votes slider is `RangeControl` with `stops`; the hidden native pair keeps real values.
@@ -572,11 +595,6 @@ checklist; `npm run test:visual-design` enforces much of it.
   toolbar icon follows the browser's mode (`toolbarScheme`), because the worker has no media queries. `SeasonalThemeService` owns the holiday windows, the opt-out, the `season-*`
   class and `#seasonalDecor`, loads `src/shared/seasonal/<id>/` only in season and never changes
   the theme. Seasonal achievements count only ratings inside their window and stay out of
-- Marathon history (`shared/utils/marathonHistory.js`) is counted on the client: items of every round
-  stay in `randomMarathons/current/items`, while the round document is overwritten. «watched» on an
-  item is the admin's mark for the company; that a person watched a film is their own rating from
-  `selectedAt` to a week after `resolvedAt`. A film's score averages that round's bringers and those
-  raters; one rated only by its own bringer says nothing about the company (`ratedByOthers`). Never show `userName` stored with a rating there: it can be the account's real name.
   `maxPoints()`; `tests/seasonalTheme.test.cjs` keeps their dates in step.
 - Avatar frames: `rankFrameLevel` is 1-7 for a reached rank, `CAT_FRAME` (-1) for the cat's frame,
   absent to follow the rank; 0 means no frame and is never stored. `rules/firestore.rules` lists the

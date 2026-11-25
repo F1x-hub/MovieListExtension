@@ -8,6 +8,9 @@
     // appearing. Routing is handled in a bundled resolver frame with a closed CSP, never
     // by this HLS transport.
     const HDREZKA_HOST = /^[a-z0-9-]+\.stream\.voidboost\.one$/;
+    // Kodik's CDN sends a piece on to another of its own servers (p13 -> p14). Only pieces,
+    // only inside that domain; manifests and every other host still may not redirect.
+    const REDIRECTING_HOSTS = Object.freeze(['solodcdn.com']);
     const KINDS = new Set(['manifest', 'level', 'init', 'fragment', 'key', 'file']);
 
     function publicV4(parts) {
@@ -48,6 +51,18 @@
         return Object.hasOwn(types, context?.type) ? types[context.type] : null;
     }
 
+    const hostUnder = (host, base) => host === base || host.endsWith(`.${base}`);
+
+    /** The domain a piece of video may be redirected within, or null. */
+    function redirectScope(value, { kind, profile = 'remote' } = {}) {
+        if (profile !== 'remote' || !['fragment', 'init'].includes(kind)) return null;
+        try {
+            const url = new URL(value);
+            if (url.protocol !== 'https:') return null;
+            return REDIRECTING_HOSTS.find(base => hostUnder(url.hostname.toLowerCase(), base)) || null;
+        } catch { return null; }
+    }
+
     function create({ localOrigin = 'http://127.0.0.1:3000', manifestHosts = MANIFEST_HOSTS } = {}) {
         const local = new URL(localOrigin);
         if (local.protocol !== 'http:' || local.hostname !== '127.0.0.1' || !local.port
@@ -76,5 +91,5 @@
         return Object.freeze({ check, kindOf });
     }
 
-    global.UrlPolicy = Object.freeze({ ...create(), create, kindOf });
+    global.UrlPolicy = Object.freeze({ ...create(), create, kindOf, redirectScope });
 })(typeof window !== 'undefined' ? window : globalThis);

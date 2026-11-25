@@ -208,23 +208,96 @@ class BaseParserService {
             });
         }
 
+        if (playerType === 'iframe' && playerElement) {
+            this._watchFrameHello({ frame: playerElement, container, source, sources, options });
+        }
+
         // Mount first; probe availability in parallel. Ignore stale mounts.
         if (playerType === 'iframe' && playerElement
-            && BaseParserService.isCheckableEmbedUrl(BalancerDomains.actualize(source.url))) {
+            && (BaseParserService.isCheckableEmbedUrl(BalancerDomains.actualize(source.url)) || BalancerDomains.isUnknownEmbed(source.url))) {
             const mountedHost = BalancerDomains.actualHost;
             void this.checkEmbedAvailable(source.url).then(available => {
-                if (available || !playerElement.isConnected
+                if (!playerElement.isConnected
                     || (options.isRequestCurrent && !options.isRequestCurrent())) return;
-                // The balancer moved while this frame loaded: the same sources work from there.
+                // The balancer moved while this frame loaded, or the page printed its new
+                // domain before anyone knew it: the same sources work from there.
                 if (BalancerDomains.actualHost !== mountedHost && container.isConnected) {
                     this.renderPlayer(container, sources, options);
                     return;
                 }
+                if (available) return;
                 this._handleStreamFailure({ container, video: playerElement, failedSource: source,
                     sources, options, reason: 'embed-missing' });
             });
         }
         return true;
+    }
+
+    /**
+     * The extension's scripts greet the page from inside every balancer frame. Silence means
+     * they are not there, and the frame shows the balancer's own player: the scripts are
+     * registered again and the frame is mounted once more, then the next source takes over.
+     * @private
+     */
+    _watchFrameHello({ frame, container, source, sources, options }) {
+        const view = frame.ownerDocument?.defaultView;
+        if (!view || options.frameHello === false || !isVenomProviderUrl(BalancerDomains.actualize(source.url))
+            || typeof view.chrome?.scripting?.registerContentScripts !== 'function') return;
+        let timer = null;
+        const stop = () => {
+            view.clearTimeout(timer);
+            frame.removeEventListener('load', arm);
+            view.removeEventListener('message', listen);
+        };
+        const current = () => frame.isConnected && (!options.isRequestCurrent || options.isRequestCurrent());
+        const listen = event => {
+            if (event.source === frame.contentWindow && /^PLAYER_/.test(String(event.data?.type || ''))) stop();
+        };
+        const expire = async () => {
+            if (!current()) { stop(); return; }
+            // Chrome holds back a hidden page's frames.
+            if (frame.ownerDocument.hidden) { arm(); return; }
+            stop();
+            const domain = BalancerDomains.domainOf(BalancerDomains.actualHost);
+            console.warn('[BaseParserService] The player frame stayed silent', {
+                providerId: globalThis.PlayerDiagnostics?.safeSourceId(this.id) || 'unknown', domain
+            });
+            if (!await BalancerDomains.hasAccess()) {
+                if (current()) this._askForFrameAccess({ container, sources, options });
+                return;
+            }
+            if (!options.frameRecovery) {
+                await BalancerDomains.attachFrameScripts({ force: true });
+                if (current() && container.isConnected) this.renderPlayer(container, sources, { ...options, frameRecovery: true });
+                return;
+            }
+            if (current()) this._handleStreamFailure({ container, video: frame, failedSource: source, sources, options, reason: 'player-missing' });
+        };
+        const arm = () => {
+            view.clearTimeout(timer);
+            timer = view.setTimeout(expire, FRAME_HELLO_TIMEOUT_MS);
+        };
+        frame.addEventListener('load', arm);
+        view.addEventListener('message', listen);
+    }
+
+    /**
+     * The balancer left the zone the extension has access to. Chrome asks the viewer once;
+     * the request needs their click, so the player offers it.
+     * @private
+     */
+    _askForFrameAccess({ container, sources, options }) {
+        const lifecycle = typeof window !== 'undefined' ? window.PlayerSourceLifecycle : null;
+        lifecycle?.setState(options.lifecycleHost || container, 'error', {
+            message: 'Источник переехал на новый адрес. Нажмите «Повторить» и разрешите доступ: Chrome спросит один раз.',
+            onRetry: async () => {
+                await BalancerDomains.requestAccess();
+                this.renderPlayer(container, sources, { ...options, frameRecovery: false });
+            },
+            onResearch: options.onResearch,
+            onTryOther: options.onTryOther
+        });
+        options.onLifecycleState?.('error', { reason: 'frame-access', parserId: this.id });
     }
 
     /**
@@ -749,7 +822,13 @@ class BaseParserService {
         return available;
     }
 
-    checkEmbedAvailable(sourceUrl) {
+    async checkEmbedAvailable(sourceUrl) {
+        if (BalancerDomains.isUnknownEmbed(sourceUrl)) await BalancerDomains.adopt(sourceUrl);
+        return this._checkKnownEmbed(sourceUrl);
+    }
+
+    /** @private */
+    _checkKnownEmbed(sourceUrl) {
         const url = BalancerDomains.actualize(sourceUrl);
         if (!BaseParserService.isCheckableEmbedUrl(url)) return Promise.resolve(true);
         const cached = this._embedChecks.get(url);
@@ -869,7 +948,12 @@ const PARSER_DEBUG_STORAGE_KEY = 'movieExtension.debugParsers';
 // Background availability check for player embeds; a slow answer keeps the source.
 const EMBED_CHECK_TIMEOUT_MS = 4000;
 
+// From a frame's load event to the first message of the extension's scripts in it.
+const FRAME_HELLO_TIMEOUT_MS = 6000;
+
 const VENOM_AD_FREE_HOSTS = new Set([
+    'corevia.ws',
+    'datavex.ws',
     'femd.ws',
     'namy.ws',
     'variyt.ws',
@@ -887,6 +971,15 @@ const BALANCER_STORAGE_KEY = 'venomBalancerDomainsV1';
 const BALANCER_REFRESH_MS = 60 * 60 * 1000;
 const BALANCER_FORCED_REFRESH_GAP_MS = 60 * 1000;
 const BALANCER_SCRIPT_TIMEOUT_MS = 5000;
+// Manifest entries written for this domain are what a balancer frame needs.
+const BALANCER_FRAME_MATCH = '*://*.femd.ws/*';
+const BALANCER_FRAME_SCRIPT_PREFIX = 'venom-balancer-frame-';
+// The sites that embed the balancer name its script; one of these paths is all we accept.
+const BALANCER_SCRIPT_PATTERN = /https:\/\/[a-z0-9.-]+\/(?:[a-z0-9._-]+\/)*actualize\.js/i;
+const BALANCER_EMBED_PATH = /^\/embed\/[a-z]+\/\d+/i;
+// The manifest's Referer rules already cover this zone.
+const BALANCER_ZONE = 'ws';
+const BALANCER_DYNAMIC_RULE_BASE = 5200;
 // A balancer address: the same shape the balancer's own script looks for.
 const BALANCER_HOST_PATTERN = /^(?:mm|app?i\w*)\.((?:[a-z0-9-]+\.)+[a-z]{2,})$/;
 
@@ -896,20 +989,27 @@ const BALANCER_HOST_PATTERN = /^(?:mm|app?i\w*)\.((?:[a-z0-9-]+\.)+[a-z]{2,})$/;
  * on their pages a script of the balancer's own rewrites it (actualize.js). The
  * extension reads the sites' HTML without running it, so it rewrites the address here.
  * It reads the same script, as text and never as code, to follow the next move without
- * a release. A domain missing from the manifest still plays, but through the
- * balancer's own player, because the extension's frame scripts do not run there.
+ * a release. Frame scripts for a domain the manifest does not name are registered
+ * before its address is used (attachFrameScripts); they reach it while it stays inside
+ * the manifest's host permissions, which cover the .ws zone the balancer keeps to;
+ * elsewhere the player asks the viewer once. The next domain is learned from the
+ * balancer's script, wherever the sites load it from, or from an address a film page
+ * already prints.
  */
 const BalancerDomains = {
-    // As published by actualize.js on 2026-11-17 (embf.net joined the retired list).
-    actualHost: 'api.femd.ws',
+    // As published by actualize.js on 2026-11-25.
+    actualHost: 'api.corevia.ws',
     retired: new Set([
         'delivembed.cc', 'buildplayer.com', 'embedstorage.net', 'embf.net', 'mir-dikogo-zapada.com', 'multikland.net',
         'placehere.link', 'synchroncode.com', 'ameytools.club',
         ...['tobaco', 'topdbltj', 'delivembd', 'hostemb', 'loadbox', 'getcodes', 'strvid', 'ebder', 'framprox',
             'embprox', 'bedemp2', 'embr', 'lessornot', 'linktodo', 'insertunit', 'marts', 'ninsel', 'embess',
-            'luxembd', 'domem', 'atomics', 'namy', 'variyt', 'zenithjs', 'ortified', 'nextembed'
+            'luxembd', 'domem', 'atomics', 'namy', 'variyt', 'zenithjs', 'ortified', 'nextembed',
+            'femd', 'datavex'
         ].map(name => `${name}.ws`)
     ]),
+    // Where the sites themselves load that script from, once a page has shown another place.
+    scriptUrl: BALANCER_SCRIPT_URL,
     checkedAt: 0,
     lastForcedAt: 0,
     loading: null,
@@ -936,7 +1036,8 @@ const BalancerDomains = {
         return { actualHost, retired };
     },
 
-    apply({ actualHost, retired = [], checkedAt = 0 } = {}) {
+    apply({ actualHost, retired = [], checkedAt = 0, scriptUrl = null } = {}) {
+        if (BALANCER_SCRIPT_PATTERN.test(scriptUrl || '')) this.scriptUrl = scriptUrl;
         const nextDomain = this.domainOf(actualHost);
         if (!nextDomain) return false;
         const previousDomain = this.domainOf(this.actualHost);
@@ -956,6 +1057,7 @@ const BalancerDomains = {
                 const stored = await globalThis.chrome?.storage?.local?.get?.(BALANCER_STORAGE_KEY);
                 this.apply(stored?.[BALANCER_STORAGE_KEY]);
             } catch { /* The built-in domain still works. */ }
+            await this.attachFrameScripts();
             if (Date.now() - this.checkedAt >= BALANCER_REFRESH_MS) void this.refresh();
         })();
         return this.loading;
@@ -971,17 +1073,24 @@ const BalancerDomains = {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), BALANCER_SCRIPT_TIMEOUT_MS);
             try {
-                const response = await fetch(BALANCER_SCRIPT_URL, { credentials: 'omit', cache: 'no-store', signal: controller.signal });
-                const parsed = response.ok ? this.parseScript(await response.text()) : null;
+                let parsed = null;
+                for (const url of new Set([this.scriptUrl, BALANCER_SCRIPT_URL])) {
+                    try {
+                        const response = await fetch(url, { credentials: 'omit', cache: 'no-store', signal: controller.signal });
+                        parsed = response.ok ? this.parseScript(await response.text()) : null;
+                    } catch (error) {
+                        if (controller.signal.aborted) throw error;
+                    }
+                    if (parsed) break;
+                }
                 if (!parsed) {
                     console.warn('[BalancerDomains] The balancer script has changed; keeping the known domain');
                     return false;
                 }
                 const moved = this.apply({ ...parsed, checkedAt: Date.now() });
                 if (moved) console.info('[BalancerDomains] The balancer moved', { actualHost: this.actualHost });
-                await globalThis.chrome?.storage?.local?.set?.({ [BALANCER_STORAGE_KEY]: {
-                    actualHost: this.actualHost, retired: [...this.retired], checkedAt: this.checkedAt
-                } });
+                await this.attachFrameScripts();
+                await this.save();
                 return moved;
             } catch {
                 // Nothing to act on: the next page checks again.
@@ -992,6 +1101,132 @@ const BalancerDomains = {
             }
         })();
         return this.refreshing;
+    },
+
+    async save() {
+        await globalThis.chrome?.storage?.local?.set?.({ [BALANCER_STORAGE_KEY]: {
+            actualHost: this.actualHost, retired: [...this.retired], checkedAt: this.checkedAt, scriptUrl: this.scriptUrl
+        } });
+    },
+
+    /** Remembers where a site's page loads the balancer's script from. */
+    noteScript(html) {
+        const found = BALANCER_SCRIPT_PATTERN.exec(String(html || ''))?.[0];
+        if (!found || found === this.scriptUrl) return;
+        this.scriptUrl = found;
+        void this.refresh({ force: true });
+    },
+
+    /** An address shaped like the balancer's, on a domain nobody has named yet. */
+    isUnknownEmbed(sourceUrl) {
+        try {
+            const url = new URL(sourceUrl, 'https://relative.invalid');
+            const domain = this.domainOf(url.hostname);
+            return Boolean(domain) && BALANCER_EMBED_PATH.test(url.pathname)
+                && !this.retired.has(domain) && !isVenomProviderUrl(url);
+        } catch {
+            return false;
+        }
+    },
+
+    /**
+     * Learns the new domain from a film page that already prints it. The answer must be
+     * the balancer's own player page for that very host; anything else changes nothing.
+     */
+    async adopt(sourceUrl) {
+        const url = new URL(sourceUrl, 'https://relative.invalid');
+        url.protocol = 'https:';
+        try {
+            const response = await fetch(url.href, { credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(BALANCER_SCRIPT_TIMEOUT_MS) });
+            if (!response.ok) return false;
+            const page = await response.text();
+            const host = /\bembedHost\s*=\s*["']([a-z0-9.-]+)["']/i.exec(page)?.[1]?.toLowerCase();
+            if (host !== url.hostname.toLowerCase() || !/\bVenomPlayer\b/.test(page)) return false;
+            const moved = this.apply({ actualHost: host });
+            await this.attachFrameScripts();
+            await this.save();
+            if (moved) console.info('[BalancerDomains] The balancer moved', { actualHost: this.actualHost });
+            return moved;
+        } catch {
+            return false;
+        }
+    },
+
+    accessRequest() {
+        const domain = this.domainOf(this.actualHost);
+        return domain ? { origins: [`https://*.${domain}/*`] } : null;
+    },
+
+    /** Whether the extension's scripts may run on the current domain. */
+    async hasAccess() {
+        const request = this.accessRequest();
+        const permissions = globalThis.chrome?.permissions;
+        if (!request || !permissions?.contains) return true;
+        return permissions.contains(request).catch(() => true);
+    },
+
+    /** Only from a click: Chrome shows its own question. */
+    async requestAccess() {
+        const request = this.accessRequest();
+        const granted = request ? await globalThis.chrome?.permissions?.request?.(request).catch(() => false) : false;
+        if (granted) await this.attachFrameScripts({ force: true });
+        return Boolean(granted);
+    },
+
+    /** The Referer rules for a domain outside the zone the static ones cover. */
+    async attachRefererRules(domain) {
+        const dnr = globalThis.chrome?.declarativeNetRequest;
+        if (!dnr?.updateDynamicRules || !dnr.getDynamicRules) return;
+        const old = (await dnr.getDynamicRules())
+            .filter(rule => rule.id >= BALANCER_DYNAMIC_RULE_BASE && rule.id < BALANCER_DYNAMIC_RULE_BASE + 100);
+        const outside = !domain.endsWith(`.${BALANCER_ZONE}`);
+        if (!outside && old.length === 0) return;
+        if (outside && old.length && old.every(rule => rule.condition.requestDomains?.includes(domain))) return;
+        const template = outside
+            ? await (await fetch(globalThis.chrome.runtime.getURL('src/background/provider-embed-rules.json'))).json()
+            : [];
+        const added = template
+            .filter(rule => rule.condition.requestDomains?.includes(BALANCER_ZONE))
+            .map((rule, index) => ({ ...rule, id: BALANCER_DYNAMIC_RULE_BASE + index, condition: { ...rule.condition, requestDomains: [domain] } }));
+        await dnr.updateDynamicRules({ removeRuleIds: old.map(rule => rule.id), addRules: added });
+    },
+
+    /**
+     * Gives the current domain the same frame scripts the manifest gives the known ones.
+     * Without them its frame shows the balancer's own player. Chrome drops the
+     * registration on an extension update, so every page confirms it.
+     */
+    async attachFrameScripts({ force = false } = {}) {
+        const api = globalThis.chrome;
+        const domain = this.domainOf(this.actualHost);
+        if (!domain || !api?.scripting?.registerContentScripts || !api.runtime?.getManifest) return;
+        const match = `*://*.${domain}/*`;
+        const attach = async () => {
+            await this.attachRefererRules(domain).catch(() => undefined);
+            const wanted = (api.runtime.getManifest().content_scripts || [])
+                .filter(entry => entry.matches.includes(BALANCER_FRAME_MATCH) && !entry.matches.includes(match))
+                .map((entry, index) => ({
+                    id: `${BALANCER_FRAME_SCRIPT_PREFIX}${index}`,
+                    matches: [match],
+                    js: entry.js,
+                    runAt: entry.run_at,
+                    allFrames: entry.all_frames === true,
+                    world: entry.world || 'ISOLATED',
+                    ...(entry.match_about_blank ? { matchOriginAsFallback: true } : {})
+                }));
+            const registered = (await api.scripting.getRegisteredContentScripts())
+                .filter(script => script.id.startsWith(BALANCER_FRAME_SCRIPT_PREFIX));
+            if (!force && registered.length === wanted.length && registered.every(script => script.matches.includes(match))) return;
+            if (registered.length) await api.scripting.unregisterContentScripts({ ids: registered.map(script => script.id) });
+            if (wanted.length) await api.scripting.registerContentScripts(wanted);
+        };
+        try {
+            // Two pages can learn of the move at once; the second finds it done.
+            if (globalThis.navigator?.locks) await globalThis.navigator.locks.request(BALANCER_FRAME_SCRIPT_PREFIX, attach);
+            else await attach();
+        } catch (error) {
+            console.warn('[BalancerDomains] Could not prepare the player for the new domain', error?.message || error);
+        }
     },
 
     /** The same address on the domain the balancer answers from today. */

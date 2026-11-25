@@ -19,7 +19,23 @@
  *  - ZERO fake or unmapped Kinopoisk IDs.
  */
 
+// TMDB lists a candidate's genres as numbers; the names are Kinopoisk's, like those on every card.
+const TMDB_GENRE_NAMES = Object.freeze({
+    28: 'боевик', 12: 'приключения', 16: 'мультфильм', 35: 'комедия', 80: 'криминал', 99: 'документальный',
+    18: 'драма', 10751: 'семейный', 14: 'фэнтези', 36: 'история', 27: 'ужасы', 10402: 'музыка', 9648: 'детектив',
+    10749: 'мелодрама', 878: 'фантастика', 53: 'триллер', 10752: 'военный', 37: 'вестерн', 10759: 'боевик',
+    10762: 'детский', 10763: 'новости', 10764: 'реальное ТВ', 10765: 'фантастика', 10767: 'ток-шоу', 10768: 'военный'
+});
+
 class RecommendationService {
+    /**
+     * @param {Array<number|string>} genreIds TMDB genre IDs
+     * @returns {string[]} their names, without the ones that have none
+     */
+    static genreNames(genreIds) {
+        return [...new Set((Array.isArray(genreIds) ? genreIds : []).map(id => TMDB_GENRE_NAMES[id]).filter(Boolean))];
+    }
+
     /**
      * @param {Object} [options]
      * @param {Object} [options.tmdbService]

@@ -82,13 +82,6 @@ have been measured only in the rig so far.
 
 ## Sources worth a look
 
-- **The balancer's next move.** A new domain is followed without a release, but the frame
-  scripts, the Referer rules and the host permission are lists in `manifest.json` and
-  `src/background/provider-embed-rules.json`. Until the domain is added there, films play
-  through the balancer's own player with its ads. `BalancerDomains` logs `The balancer
-  moved` when it happens. Covering every `.ws` host would avoid this, at the price of
-  running the frame scripts on sites that have nothing to do with films, so it needs a
-  decision.
 - **A series on KinoGo through the balancer's own frame.** `KinogoAdapter` counts only
   `stravers.live`, `allarknow.online` and `stloadi.live` as able to change episodes, and the
   series tried (Breaking Bad, The Simpsons) all came through `stravers.live`, where
@@ -107,9 +100,7 @@ have been measured only in the rig so far.
 - **A balancer move loses the positions kept in its frames.** They live in that site's storage,
   and the page's own position (`watching_progress_`) is never sent to a frame. Sending it at the
   start would keep a viewer's place across moves.
-- **The picture at the start** differs a lot: Rutube 1280×720, KinoGo 854×480, Seasonvar
-  722×406, HDRezka 640×360, the balancer 864×486. HDRezka starts at its 480p variant by
-  design. Whether the others could start higher has not been checked.
+- **The start picture of Seasonvar** is 722×406: the one stream it serves.
 - **`movieExtension_videoVolume` is 0 in the owner's browser**, so players on the extension's
   own pages (Rutube, Seasonvar, HDRezka, AnimeGo) start muted while provider frames, with
   their own storage, do not. Only the mute button and the volume slider write that value,

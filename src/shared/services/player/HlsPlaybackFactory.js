@@ -16,11 +16,11 @@
  * it returns true (failure handled, e.g. by a source fallback), an
  * `extension-hls-fatal` event is dispatched on the video element.
  *
- * Quality and buffering: renditions are capped to the player's on-screen size
- * (device pixel ratio included; manual quality choices are not capped), the
- * played-back buffer is bounded, and provider streams start from the last
- * measured bandwidth instead of hls.js' conservative 500 kbps guess, so the
- * first fragments are not needlessly low quality.
+ * Quality and buffering: the best rendition the connection carries plays whatever the
+ * player's size, and drops only when the computer loses frames. Provider streams start at
+ * that rendition, from the last measured bandwidth or Chrome's own estimate, without
+ * hls.js' low-quality test fragment. The buffer is bounded by seconds and by bytes, so a
+ * heavy stream stays inside Chrome's media memory.
  */
 (function(global) {
     'use strict';
@@ -36,14 +36,19 @@
     });
     const DEFAULT_HLS_CONFIG = Object.freeze({
         enableWorker: true,
-        // Skip renditions larger than the player box; hls.js re-measures every
-        // second and does not cap while the box is 0x0 (hidden preload).
-        capLevelToPlayerSize: true,
+        capLevelToPlayerSize: false,
+        capLevelOnFPSDrop: true,
         // hls.js keeps the whole played-back buffer by default (Infinity).
-        backBufferLength: 90,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 120
+        backBufferLength: 60,
+        maxBufferLength: 60,
+        maxMaxBufferLength: 240,
+        maxBufferSize: 90 * 1000 * 1000
     });
+    // Chrome never reports more than 10 Mbit/s, which is also a sane first guess.
+    const FIRST_GUESS_FACTOR = 0.8;
+    const STALL_MS = 2500;
+    const STALL_WINDOW_MS = 120_000;
+    const START_LIMIT_MS = 12_000;
     const BANDWIDTH_STORAGE_KEY = 'movieExtension.hlsBandwidthEstimate';
     const BANDWIDTH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
     const BANDWIDTH_MIN_BPS = 150_000;
@@ -72,6 +77,12 @@
         }
     }
 
+    /** Chrome's estimate of the connection, for a browser that has measured no stream yet. */
+    function guessBandwidth() {
+        const bps = Number(global.navigator?.connection?.downlink) * 1_000_000 * FIRST_GUESS_FACTOR;
+        return isPlausibleBandwidth(bps) ? Math.round(bps) : null;
+    }
+
     function writeBandwidthEstimate(bps) {
         if (!isPlausibleBandwidth(bps)) return;
         try {
@@ -98,8 +109,11 @@
         const loader = global.HlsPolicyLoader.forProfile(networkProfile, { localManifestUrl, providerManifestUrl });
         if (typeof loader !== 'function') return null;
         const config = { ...DEFAULT_HLS_CONFIG };
-        const estimate = rememberBandwidth ? readBandwidthEstimate() : null;
-        if (estimate) config.abrEwmaDefaultEstimate = estimate;
+        const estimate = rememberBandwidth ? Math.max(readBandwidthEstimate() || 0, guessBandwidth() || 0) : 0;
+        if (estimate) {
+            config.abrEwmaDefaultEstimate = estimate;
+            config.testBandwidth = false;
+        }
         return {
             ...config, ...(overrides || {}), loader,
             pLoader: undefined, fLoader: undefined,
@@ -375,7 +389,55 @@
         return active() ? hls : null;
     }
 
+    /**
+     * For qualities that are separate streams, which hls.js cannot switch between: says when
+     * the connection does not keep the one playing (two long stalls in two minutes, or a
+     * start that takes too long).
+     * @param {HTMLVideoElement} video
+     * @param {() => void} onPersistent
+     * @returns {() => void} stop watching
+     */
+    function watchStalls(video, onPersistent) {
+        const stalls = [];
+        let started = false;
+        let stallTimer = null;
+        let startTimer = null;
+        const clear = () => {
+            clearTimeout(stallTimer);
+            clearTimeout(startTimer);
+            stallTimer = startTimer = null;
+        };
+        const report = () => {
+            clear();
+            stalls.length = 0;
+            onPersistent();
+        };
+        const handlers = {
+            play: () => { if (!started && !startTimer) startTimer = setTimeout(report, START_LIMIT_MS); },
+            playing: () => { started = true; clear(); },
+            pause: clear,
+            seeking: clear,
+            waiting: () => {
+                if (!started || video.seeking || stallTimer) return;
+                stallTimer = setTimeout(() => {
+                    stallTimer = null;
+                    if (video.paused || video.seeking || video.readyState > 2) return;
+                    const now = Date.now();
+                    stalls.push(now);
+                    while (now - stalls[0] > STALL_WINDOW_MS) stalls.shift();
+                    if (stalls.length >= 2) report();
+                }, STALL_MS);
+            }
+        };
+        for (const [type, handler] of Object.entries(handlers)) video.addEventListener(type, handler);
+        return () => {
+            clear();
+            for (const [type, handler] of Object.entries(handlers)) video.removeEventListener(type, handler);
+        };
+    }
+
     global.HlsPlaybackFactory = {
+        watchStalls,
         HLS_FATAL_EVENT,
         HLS_RETRY_EVENT,
         DEFAULTS,
