@@ -283,6 +283,7 @@ class RangeControl {
                 return input;
             });
             this.element.before(this.fields);
+            if (options.stops?.length > 1) this.createStopSliders(options.stops);
         }
         [from, to].forEach(input => {
             this.listen(input, 'input', () => {
@@ -297,6 +298,44 @@ class RangeControl {
         });
         RangeControl.instances.set(from, this);
         this.syncFromNative();
+    }
+
+    /**
+     * Uneven scales (votes) drag over a list of stops. The native pair keeps the real
+     * values and stays the source of truth; it is hidden behind one slider per bound
+     * whose positions are indexes of `stops`.
+     */
+    createStopSliders(stops) {
+        this.stops = stops;
+        this.stopSliders = [this.from, this.to].map((source, index) => {
+            const slider = this.document.createElement('input');
+            slider.type = 'range';
+            slider.className = source.className;
+            slider.min = '0';
+            slider.max = String(stops.length - 1);
+            slider.step = '1';
+            const label = index === 0 ? this.options.fromLabel : this.options.toLabel;
+            if (label) slider.setAttribute('aria-label', label);
+            this.listen(slider, 'input', () => {
+                const other = Number(this.stopSliders[1 - index].value);
+                const position = index === 0 ? Math.min(Number(slider.value), other - 1) : Math.max(Number(slider.value), other + 1);
+                slider.value = String(Math.max(0, Math.min(stops.length - 1, position)));
+                source.value = String(stops[Number(slider.value)]);
+                source.dispatchEvent(new this.document.defaultView.Event('input', { bubbles: true }));
+            });
+            this.listen(slider, 'change', () => source.dispatchEvent(new this.document.defaultView.Event('change', { bubbles: true })));
+            source.hidden = true;
+            source.after(slider);
+            return slider;
+        });
+    }
+
+    /** Fractional index of a value between its neighbouring stops. */
+    stopPosition(value) {
+        const next = this.stops.findIndex(stop => stop >= value);
+        if (next <= 0) return next === 0 ? 0 : this.stops.length - 1;
+        const previous = this.stops[next - 1];
+        return next - 1 + (value - previous) / (this.stops[next] - previous);
     }
 
     listen(input, type, callback) {
@@ -314,6 +353,10 @@ class RangeControl {
                 if (original === null) input.removeAttribute('aria-label');
                 else input.setAttribute('aria-label', original);
             }
+        });
+        this.stopSliders?.forEach((slider, index) => {
+            const label = index === 0 ? this.options.fromLabel : this.options.toLabel;
+            if (label) slider.setAttribute('aria-label', label);
         });
         this.numberFields?.forEach((input, index) => {
             const caption = input.closest('.filter-range__field-label')?.querySelector(':scope > span');
@@ -382,8 +425,9 @@ class RangeControl {
         const bar = this.options.rangeBar;
         const { min, max } = this.bounds(this.from);
         if (bar && lower !== null && upper !== null && Number.isFinite(min) && Number.isFinite(max) && max > min) {
-            const left = Math.max(0, Math.min(100, ((lower - min) / (max - min)) * 100));
-            const right = Math.max(left, Math.min(100, ((upper - min) / (max - min)) * 100));
+            const percent = value => (this.stops ? this.stopPosition(value) / (this.stops.length - 1) : (value - min) / (max - min)) * 100;
+            const left = Math.max(0, Math.min(100, percent(lower)));
+            const right = Math.max(left, Math.min(100, percent(upper)));
             bar.style.left = `${left}%`;
             bar.style.width = `${right - left}%`;
             bar.style.right = 'auto';
@@ -418,6 +462,13 @@ class RangeControl {
                 }
             });
         }
+        this.stopSliders?.forEach((slider, index) => {
+            const source = index === 0 ? this.from : this.to;
+            const value = this.read(source) ?? (index === 0 ? this.stops[0] : this.stops.at(-1));
+            slider.value = String(Math.round(this.stopPosition(value)));
+            slider.disabled = source.disabled;
+            slider.setAttribute('aria-valuetext', format(value));
+        });
         const Stepper = this.document.defaultView.NumberStepper;
         [...(this.numberFields || []), this.from, this.to].filter(input => input.type === 'number').forEach(input => Stepper?.enhance(input)?.sync());
     }
@@ -443,6 +494,8 @@ class RangeControl {
         this.destroyed = true;
         this.listeners.splice(0).forEach(remove => remove());
         this.fields?.remove();
+        this.stopSliders?.forEach(slider => slider.remove());
+        if (this.stopSliders) this.from.hidden = this.to.hidden = false;
         if (!this.hadRangeClass) this.element.classList.remove('filter-range');
         this.original.forEach(({ input, className, label, min, max }) => {
             input.className = className;

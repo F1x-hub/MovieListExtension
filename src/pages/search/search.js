@@ -105,6 +105,7 @@ class SearchManager {
             
             // Re-initialize filters to update their labels
             this.initializeFilters();
+            this.updateFiltersCount();
             
             if (this.currentQuery) {
                 await this.searchMovies();
@@ -121,7 +122,9 @@ class SearchManager {
             // Search
             searchInput: document.getElementById('searchInput'),
             searchBtn: document.getElementById('searchBtn'),
+            clearSearchInputBtn: document.getElementById('clearSearchInputBtn'),
             toggleFiltersBtn: document.getElementById('toggleFiltersBtn'),
+            filtersCount: document.getElementById('filtersCount'),
             filters: document.getElementById('filters'),
             clearFiltersBtn: document.getElementById('clearFiltersBtn'),
             
@@ -166,6 +169,10 @@ class SearchManager {
             this.elements.searchInput.addEventListener('focus', () => this.showSearchHistory());
             this.elements.searchInput.addEventListener('input', (e) => this.handleSearchInput(e));
         }
+        this.elements.clearSearchInputBtn?.addEventListener('click', () => {
+            this.elements.searchInput.value = '';
+            this.elements.searchInput.focus();
+        });
         if (this.elements.searchBtn) {
             this.elements.searchBtn.addEventListener('click', () => this.performSearch());
         }
@@ -193,6 +200,8 @@ class SearchManager {
         if (this.elements.applyFiltersBtn) {
             this.elements.applyFiltersBtn.addEventListener('click', () => this.applyFilters());
         }
+        // Every choice and year commit inside the panel bubbles a change event.
+        this.elements.filters?.addEventListener('change', () => this.updateFiltersCount());
         
         // Infinite scroll observer & scroll event listener (circuit breaker reset)
         this.setupIntersectionObserver();
@@ -313,6 +322,7 @@ class SearchManager {
 
             this.initializeFilters();
             this.loadFilterState();
+            this.updateFiltersCount();
 
             if (query) {
                 routeOwnsResults = true;
@@ -426,10 +436,6 @@ class SearchManager {
         for (const container of [this.elements.genreCheckboxes, this.elements.countryCheckboxes]) {
             container.querySelectorAll('[data-filter-id]').forEach(item =>
                 previous.set(item.dataset.filterId, item.dataset.filterState));
-        }
-        if (!this._filtersInitialized) {
-            this.elements.yearToFilter.value = new Date().getFullYear();
-            this._filtersInitialized = true;
         }
         const options = DiscoveryFilters.getOptions(i18n);
         const labels = this.getFilterStateLabels();
@@ -682,6 +688,19 @@ class SearchManager {
 
             if (!this.isCurrentSearchGeneration(searchGeneration)) return;
             
+            // Catalogue stubs (cancelled projects, fan shorts) give a viewer nothing to open.
+            const foundDocs = searchResults?.docs || [];
+            const realDocs = kinopoiskService.withoutEmptyRecords?.(foundDocs, query) ?? foundDocs;
+            if (realDocs.length !== foundDocs.length) {
+                const hidden = foundDocs.length - realDocs.length;
+                searchResults = {
+                    ...searchResults,
+                    docs: realDocs,
+                    total: Math.max(realDocs.length, (searchResults.total || 0) - hidden),
+                    totalScraped: searchResults.totalScraped ? searchResults.totalScraped - hidden : searchResults.totalScraped
+                };
+            }
+
             // Apply client-side filtering (for filters not supported by API)
             let filteredDocs = searchResults?.docs || [];
             if (searchResults && searchResults.docs) {
@@ -700,13 +719,14 @@ class SearchManager {
             
             if (filteredDocs.length === 0) {
                 this.logSearchTrace(searchTraceId, searchGeneration, searchStartedAt, 'results:empty');
-                this.displayEmptyResults();
+                this.displayEmptyResults(searchResults?.docs?.length || 0);
                 return;
             }
             
             // Show results header
             this.elements.resultsHeader.style.display = 'flex';
-            this.elements.resultsInfo.textContent = i18n.get('search.found_count').replace('{count}', this.currentResults.total);
+            this.resultsFiltered = this.countActiveFilters(filters) > 0;
+            this.renderResultsCount(filteredDocs.length);
             this.elements.resultsGrid.classList.remove('single-item');
             
             // Kinopoisk-ordered candidate pools: hidden-page scrapes and the GraphQL search.
@@ -884,6 +904,7 @@ class SearchManager {
             
             let docs = fallbackResults?.docs || [];
             if (docs.length > 0) {
+                docs = kinopoiskService.withoutEmptyRecords?.(docs, query, { laterPage: true }) ?? docs;
                 docs = this.applyClientSideFilters(docs, filters);
                 // Deduplicate against already rendered movie IDs
                 const uniqueNewMovies = docs.filter(m => !this.renderedMovieIds.has(m.kinopoiskId) && !this.renderedMovieIds.has(String(m.kinopoiskId)));
@@ -891,6 +912,7 @@ class SearchManager {
                 if (uniqueNewMovies.length > 0) {
                     this.hasMore = fallbackResults.docs.length >= this.CHUNK_SIZE && (fallbackResults.pages ? this.apiFallbackPage < fallbackResults.pages : true);
                     await this.renderMovieCardsChunk(uniqueNewMovies, true, searchGeneration, searchTraceId);
+                    this.renderResultsCount(this.renderedMovieIds.size);
                 } else if (fallbackResults.docs.length >= this.CHUNK_SIZE) {
                     this.hasMore = this.apiFallbackPage < (fallbackResults.pages || 10);
                 } else {
@@ -934,16 +956,23 @@ class SearchManager {
         }
     }
 
-    displayEmptyResults() {
+    /** @param {number} hiddenCount - titles the query found but the filters left out */
+    displayEmptyResults(hiddenCount = 0) {
+        const title = hiddenCount > 0 ? 'hidden_by_filters_title' : 'no_results_title';
+        const text = hiddenCount > 0
+            ? i18n.get('search.hidden_by_filters_text').replace('{count}', hiddenCount)
+            : i18n.get('search.no_results_text');
         this.elements.resultsGrid.removeAttribute('aria-busy');
         this.elements.resultsGrid.classList.add('single-item');
         this.elements.resultsGrid.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-icon"><svg data-icon="SEARCH" aria-hidden="true" width="40" height="40" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3A6 6 0 1 0 9 15A6 6 0 1 0 9 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M9 3L9 15C12.32 15 15 12.31 15 9C15 5.69 12.32 3 9 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13.6 13.6L17.6 17.6"/></svg></div>
-                <h3 class="empty-state-title" data-i18n="search.no_results_title">${i18n.get('search.no_results_title')}</h3>
-                <p class="empty-state-text" data-i18n="search.no_results_text">${i18n.get('search.no_results_text')}</p>
+                <h3 class="empty-state-title">${i18n.get(`search.${title}`)}</h3>
+                <p class="empty-state-text">${text}</p>
+                ${hiddenCount > 0 ? `<button type="button" class="btn btn-secondary empty-state-btn">${i18n.get('search.clear_filters_action')}</button>` : ''}
             </div>
         `;
+        this.elements.resultsGrid.querySelector('.empty-state-btn')?.addEventListener('click', () => this.clearFilters());
         this.elements.resultsHeader.style.display = 'none';
         this.hideTrigger();
         this.hideEndOfResults();
@@ -1234,16 +1263,46 @@ class SearchManager {
         for (const container of [this.elements.genreCheckboxes, this.elements.countryCheckboxes]) {
             container.querySelectorAll('.checkbox-item').forEach(item => FilterChoice.setState(item, 'neutral'));
         }
-        // Persist open bounds as empty values rather than reviving the initial default.
+        // Persist open bounds as empty values.
         this.saveFilterState();
+        this.updateFiltersCount();
+        // Results on screen were cut by the filters just cleared.
+        if (this.resultsFiltered || this.elements.resultsGrid?.querySelector('.empty-state-btn')) this.searchAgain();
     }
 
     applyFilters() {
-        // Save filter state to localStorage
         this.saveFilterState();
-        
-        // Apply filters and perform search
-        this.performSearch();
+        // Without a title there is nothing to search yet: the filters wait for one.
+        if (!this.elements.searchInput.value.trim()) this.elements.searchInput.focus();
+        else this.performSearch();
+    }
+
+    /** Repeats the query on screen, unless another title is being typed. */
+    searchAgain() {
+        if (this.currentQuery && this.elements.searchInput.value.trim() === this.currentQuery) this.performSearch();
+    }
+
+    /** The year range counts once, every included or excluded choice separately. */
+    countActiveFilters(filters = this.getSelectedFilters()) {
+        return (filters.yearFrom || filters.yearTo ? 1 : 0)
+            + [filters.genresInclude, filters.genresExclude, filters.countriesInclude, filters.countriesExclude]
+                .reduce((total, values) => total + (values?.length || 0), 0);
+    }
+
+    updateFiltersCount() {
+        const badge = this.elements.filtersCount;
+        if (!badge) return;
+        const count = this.countActiveFilters();
+        badge.hidden = count === 0;
+        badge.textContent = String(count);
+        if (count) this.elements.toggleFiltersBtn.setAttribute('aria-label', i18n.get('search.filters_active').replace('{count}', count));
+        else this.elements.toggleFiltersBtn.removeAttribute('aria-label');
+    }
+
+    renderResultsCount(fitting) {
+        this.elements.resultsInfo.textContent = this.resultsFiltered
+            ? i18n.get('search.found_filtered').replace('{count}', fitting)
+            : i18n.get('search.found_count').replace('{count}', this.currentResults.total);
     }
 
     getSelectedFilters() {
@@ -1502,8 +1561,8 @@ class SearchManager {
             resultsGrid.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon"><svg data-icon="SEARCH" aria-hidden="true" width="40" height="40" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3A6 6 0 1 0 9 15A6 6 0 1 0 9 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M9 3L9 15C12.32 15 15 12.31 15 9C15 5.69 12.32 3 9 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13.6 13.6L17.6 17.6"/></svg></div>
-                    <h3 class="empty-state-title">Search for movies</h3>
-                    <p class="empty-state-text">Enter a movie title to start searching</p>
+                    <h3 class="empty-state-title" data-i18n="search.empty_title">${i18n.get('search.empty_title')}</h3>
+                    <p class="empty-state-text" data-i18n="search.empty_text">${i18n.get('search.empty_text')}</p>
                 </div>
             `;
         }
@@ -1609,10 +1668,10 @@ class SearchManager {
             historyItem.innerHTML = `
                 <div class="history-item-content">
                     <div class="history-item-query">${this.escapeHtml(item.query)}</div>
-                    <div class="history-item-time">${item.timeAgo}</div>
+                    <div class="history-item-time">${this.escapeHtml(i18n.formatRelativeTime(item.timestamp))}</div>
                 </div>
                 <div class="history-item-actions">
-                    <button class="history-item-delete" data-item-id="${item.id}" title="Remove from history">
+                    <button class="history-item-delete" data-item-id="${item.id}" title="${this.escapeHtml(i18n.get('search.remove_from_history'))}">
                         <span class="delete-icon">×</span>
                     </button>
                 </div>

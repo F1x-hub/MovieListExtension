@@ -58,12 +58,6 @@
                             <span class="icon-chevron"><svg data-icon="CHEVRON_DOWN" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 7.5L10 12.5L15 7.5"/></svg></span>
                         </span>
                     </button>
-                    <div class="config-actions-row">
-                        <button id="resetFiltersBtn" class="btn btn-text-icon" title="Reset Filters" data-i18n="[title]random.config.reset">
-                            <span class="btn-text" data-i18n="random.config.reset">Сбросить фильтры</span>
-                            <span class="icon-refresh"><svg data-icon="RESET" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.2 11.6A7 7 0 1 0 5 5.1L3 7M3 3V7H7"/></svg></span>
-                        </button>
-                    </div>
                 </div>
                 <div class="config-body collapsed" id="configBody" inert>
                     <div class="config-grid">
@@ -120,8 +114,8 @@
                                 <div class="slider-track-wrapper">
                                     <div class="slider-track"></div>
                                     <div class="slider-range" id="votesRangeBar"></div>
-                                    <input type="range" id="votesFrom" min="0" max="2000000" step="1000" value="10000" class="range-input min-range">
-                                    <input type="range" id="votesTo" min="0" max="2000000" step="1000" value="2000000" class="range-input max-range">
+                                    <input type="range" id="votesFrom" min="0" max="2000000" step="100" value="10000" class="range-input min-range">
+                                    <input type="range" id="votesTo" min="0" max="2000000" step="100" value="2000000" class="range-input max-range">
                                 </div>
                                 <div class="slider-labels">
                                     <span><span data-i18n="random.config.min">Min</span>: 0</span>
@@ -137,25 +131,49 @@
                             </div>
                         </div>
 
-                        <div class="filter-group wide-group filter-section">
-                            <label><span class="label-icon"><svg data-icon="GENRE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M4 3H16A1 1 0 0 1 17 4V10A7 7 0 0 1 3 10V4A1 1 0 0 1 4 3ZM7 6A1.5 1.5 0 1 0 7 9A1.5 1.5 0 1 0 7 6ZM13 6A1.5 1.5 0 1 0 13 9A1.5 1.5 0 1 0 13 6ZM6.4 11H13.6A3.6 3.6 0 0 1 6.4 11Z"/></svg></span> <span data-i18n="random.config.genres">Genres</span></label>
-                            <div class="tags-grid" id="genreTags">
-                                <!-- Populated by JS -->
-                            </div>
-                        </div>
+                        <div class="filter-disclosures wide-group">
+                            <details class="filter-disclosure" id="genreFilterSection">
+                                <summary class="filter-disclosure__summary disclosure-summary">
+                                    <span class="filter-disclosure__label" data-i18n="random.config.genres">Genres</span>
+                                    <span class="filter-disclosure__selection"></span>
+                                </summary>
+                                <div class="filter-disclosure__content">
+                                    <p class="filter-hint" data-i18n="random.config.genres_hint"></p>
+                                    <div class="tags-grid" id="genreTags">
+                                        <!-- Populated by JS -->
+                                    </div>
+                                </div>
+                            </details>
 
-                        <div class="filter-group wide-group filter-section">
-                            <label><span class="label-icon"><svg data-icon="GLOBE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 0 10 17A7 7 0 1 0 10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 10H17"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M10 3C7.6 5.2 7 7.4 7 10C7 12.6 7.6 14.8 10 17C12.4 14.8 13 12.6 13 10C13 7.4 12.4 5.2 10 3Z"/></svg></span> <span data-i18n="random.config.countries">Countries</span></label>
-                            <div class="tags-grid" id="countryTags">
-                                <!-- Populated by JS -->
-                            </div>
+                            <details class="filter-disclosure" id="countryFilterSection">
+                                <summary class="filter-disclosure__summary disclosure-summary">
+                                    <span class="filter-disclosure__label" data-i18n="random.config.countries">Countries</span>
+                                    <span class="filter-disclosure__selection"></span>
+                                </summary>
+                                <div class="filter-disclosure__content">
+                                    <p class="filter-hint" data-i18n="random.config.countries_hint"></p>
+                                    <div class="tags-grid" id="countryTags">
+                                        <!-- Populated by JS -->
+                                    </div>
+                                </div>
+                            </details>
                         </div>
-                        <div class="filter-group wide-group filter-section">
-                            <label class="random-skip-seen">
-                                <input type="checkbox" id="skipSeenToggle" checked>
-                                <span data-i18n="random.config.skip_seen">Не предлагать оценённые и недавно выпавшие</span>
-                            </label>
-                        </div>
+                    </div>
+                </div>
+                <div class="config-footer">
+                    <label class="random-skip-seen">
+                        <input type="checkbox" id="skipSeenToggle" checked>
+                        <span data-i18n="random.config.skip_seen">Не предлагать оценённые и недавно выпавшие</span>
+                    </label>
+                    <div class="config-footer__actions">
+                        <button type="button" id="resetFiltersBtn" class="btn btn-text-icon" data-i18n="[title]random.config.reset">
+                            <span class="icon-refresh"><svg data-icon="RESET" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.2 11.6A7 7 0 1 0 5 5.1L3 7M3 3V7H7"/></svg></span>
+                            <span class="btn-text" data-i18n="random.config.reset">Вернуть по умолчанию</span>
+                        </button>
+                        <button type="button" id="applyConfigBtn" class="btn btn-primary">
+                            <span class="btn-icon"><svg data-icon="DICE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V6A3 3 0 0 1 6 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7 5.4A1.6 1.6 0 1 0 7 8.6A1.6 1.6 0 1 0 7 5.4ZM10 8.4A1.6 1.6 0 1 0 10 11.6A1.6 1.6 0 1 0 10 8.4ZM13 11.4A1.6 1.6 0 1 0 13 14.6A1.6 1.6 0 1 0 13 11.4Z"/></svg></span>
+                            <span data-i18n="random.states.roll_btn">Найти фильм</span>
+                        </button>
                     </div>
                 </div>
             </div>

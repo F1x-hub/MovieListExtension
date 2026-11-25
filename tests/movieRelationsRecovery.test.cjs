@@ -10,6 +10,30 @@ async function main() {
         sequelsAndPrequels: [{ id: 565035, name: 'Корра', relationType: 'SEQUEL' }, { id: 7267380, name: 'Семь убежищ', relationType: 'SEQUEL' }],
         similarMovies: [{ id: 999, name: 'Похожий сериал' }] };
     const normalized = kp.normalizeMovieData(raw);
+    // Kinopoisk returns many titles without a Russian name; the original one stands in.
+    assert.equal(kp.normalizeMovieData({ id: 5453481, name: null, alternativeName: 'Spider-Man 4' }).name, 'Spider-Man 4');
+    assert.equal(kp.normalizeMovieData({ id: 1, names: [{ name: 'Listed' }] }).name, 'Listed');
+    assert.equal(kp.normalizeMovieData({ id: 2 }).name, 'Без названия');
+    // Search leaves out catalogue stubs: no poster, no description, no rating anyone noticed.
+    const nextYear = new Date().getFullYear() + 1;
+    const title = (name, fields = {}) => kp.normalizeMovieData({ id: 1, name, ...fields });
+    const cancelled = title('Spider-Man 4');
+    const fanShort = title('The Radiant Spider-Man', { year: 2016, votes: { kp: 3 } });
+    const fewVotes = title('Matrix IV', { year: 2010, rating: { imdb: 8.2 }, votes: { imdb: 42 } });
+    const kept = [
+        title('Человек-паук', { year: 2002, poster: { url: 'https://image.test/p.jpg' } }),
+        title('Аватар 4', { year: nextYear }),
+        title('Скрытые тайны', { year: 2007, rating: { kp: 7 } }),
+        title('Revisited', { year: 2004, rating: { imdb: 7.6 }, votes: { imdb: 482 } }),
+        title('Наруто', { description: 'Экранизация манги.' })
+    ];
+    const names = movies => movies.map(movie => movie.name);
+    const mixed = [cancelled, kept[0], fanShort, ...kept.slice(1), fewVotes];
+    assert.deepEqual(names(kp.withoutEmptyRecords(mixed, 'spider man')), names(kept), 'Order stays, stubs go');
+    assert.ok(names(kp.withoutEmptyRecords(mixed, 'spider-man 4')).includes('Spider-Man 4'), 'A stub asked for by its title stays');
+    assert.ok(!names(kp.withoutEmptyRecords([title('Дюна'), title('Дюна', { poster: { url: 'https://image.test/d.jpg' } })], 'дюна').slice(1)).length, 'unless a real title has that name');
+    assert.deepEqual(names(kp.withoutEmptyRecords([cancelled, fanShort], 'spider')), names([cancelled, fanShort]), 'A search never turns empty because of it');
+    assert.deepEqual(kp.withoutEmptyRecords([cancelled], 'spider', { laterPage: true }), []);
     const unified = MediaAggregatorService.aggregate(normalized, { tmdbId: 246, isSeries: true, type: 'tv-series', collection: null });
     assert.deepEqual(unified.sequelsAndPrequels, raw.sequelsAndPrequels);
     assert.deepEqual(unified.similarMovies, raw.similarMovies);

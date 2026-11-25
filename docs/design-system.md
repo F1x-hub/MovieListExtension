@@ -377,7 +377,10 @@ preserves values, expanded state and keyboard focus across updates.
 Search wraps genre/country choices in native `details` with project chevrons;
 `FilterChoice.enhanceSummary` keeps the closed header's include/exclude summary
 in sync with selection, restore, reset and localization. Groups start closed so
-opening filters does not push results below a full reference list.
+opening filters does not push results below a full reference list. Random uses the same
+groups (`.filter-disclosures`) and a sticky `.config-footer` action bar.
+For uneven scales pass `stops` to `RangeControl`: the sliders move over the stops while the
+native pair, hidden, keeps exact values.
 `common.css` removes OS numeric spin buttons and native select/details arrows.
 Numeric keyboard editing stays native; select indicators use one neutral custom
 chevron, while `disclosure-summary` provides the shared details indicator. Existing

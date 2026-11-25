@@ -68,7 +68,7 @@ function checkRandom() {
         assert.deepEqual(saved.genres, ['комедия']);
         event(h, element('ratingFrom'), 'input', 10);
         assert.equal(Number(element('ratingTo').value) - Number(element('ratingFrom').value), 0.5, 'Random rating gap remains .5');
-        assert.match(element('votesMaxDisplay').textContent, /^2\s?млн$/, 'Votes use the shared compact format');
+        assert.match(element('votesMaxDisplay').textContent, /^2\s?млн\+$/, 'Votes use the shared compact format; the last stop has no upper limit');
         const filters = manager.getFilters();
         window.i18n.currentLocale = 'en';
         window.i18n.translatePage();
@@ -83,7 +83,35 @@ function checkRandom() {
         manager.loadPreferences();
         assert.equal(element('yearFrom').value, '2001');
         assert.equal(element('typeTags').querySelector('[data-value="movie"]').dataset.state, 'exclude');
+        // Votes drag over uneven stops; the native pair keeps the real value, odd ones included.
+        const [votesFrom, votesTo] = element('votesSlider').querySelectorAll('input[type="range"]:not([hidden])');
+        assert.equal(element('votesFrom').hidden, true);
+        event(h, votesFrom, 'input', 8);
+        assert.equal(element('votesFrom').value, '50000');
+        event(h, votesFrom, 'input', votesFrom.max);
+        assert.equal(Number(votesTo.value) - Number(votesFrom.value), 1, 'Handles stay one stop apart');
+        event(h, element('votesFrom'), 'input', 8000);
+        assert.equal(element('votesFrom').value, '8000', 'A value between stops survives');
+        assert.equal(votesFrom.value, '6');
+        assert.match(votesTo.getAttribute('aria-valuetext'), /\+$/);
+        assert.equal(manager._toRequestFilters(manager.getFilters()).votesTo, '', 'The last stop sends no upper limit');
+        assert.equal(manager._toRequestFilters({ votesTo: '50000' }).votesTo, '50000');
+        // Genres the types already cover are gone; saved choices move to those types.
+        assert.equal(element('genreTags').querySelector('[data-value="мультфильм"]'), null);
+        window.localStorage.setItem('random_filter_preferences', JSON.stringify({ excludeGenres: ['мультфильм'] }));
+        manager.loadPreferences();
+        assert.equal(element('typeTags').querySelector('[data-value="cartoon"]').dataset.state, 'exclude');
+        assert.equal(element('typeTags').querySelector('[data-value="animated-series"]').dataset.state, 'exclude');
+        // The API answers 400 to any type outside this list.
+        assert.deepEqual([...element('typeTags').querySelectorAll('.filter-choice')].map(item => item.dataset.value), ['movie', 'tv-series', 'cartoon', 'animated-series', 'anime']);
+        element('skipSeenToggle').checked = false;
+        manager.elements.movieResult = element('movieResult');
+        element('movieResult').style.display = 'flex';
+        let shown = null;
+        manager.showState = state => { shown = state; };
         manager.resetFilters();
+        assert.equal(shown, null, 'Reset keeps the movie on screen');
+        assert.equal(element('skipSeenToggle').checked, true, 'Reset covers the skip-seen choice');
         assert.equal(saves, 5, 'Reset saves exactly once');
         assert.equal(element('yearFrom').value, '1990');
         assert.equal(element('ratingFrom').value, '7');
@@ -91,6 +119,8 @@ function checkRandom() {
         assert.equal(element('typeTags').querySelector('[data-value="movie"]').dataset.state, 'neutral');
         manager.rangeControls.forEach(control => control.destroy());
         assert.equal(h.document.querySelectorAll('.filter-range__fields').length, 0, 'Destroy removes range editor surfaces');
+        assert.equal(element('votesSlider').querySelectorAll('input[type="range"]').length, 2, 'Destroy removes the stop sliders');
+        assert.equal(element('votesFrom').hidden, false);
     } finally { h.dom.window.close(); }
 }
 
@@ -99,7 +129,12 @@ function checkSearch() {
     try {
         const { manager, element, window } = h;
         manager.elements = { yearFromFilter: element('yearFromFilter'), yearToFilter: element('yearToFilter'), genreCheckboxes: element('genreCheckboxes'), countryCheckboxes: element('countryCheckboxes') };
+        manager.elements.toggleFiltersBtn = element('toggleFiltersBtn');
+        manager.elements.filtersCount = element('filtersCount');
         manager.initializeFilters();
+        manager.updateFiltersCount();
+        assert.equal(element('yearToFilter').value, '', 'No hidden upper year: next-year titles stay in the results');
+        assert.equal(element('filtersCount').hidden, true);
         const comedy = element('genreCheckboxes').querySelector('[data-filter-id="genre-comedy"]');
         const drama = element('genreCheckboxes').querySelector('[data-filter-id="genre-drama"]');
         comedy.click(); drama.click(); drama.click();
@@ -115,6 +150,8 @@ function checkSearch() {
         assert.deepEqual(Array.from(filters.countriesInclude), ['США']);
         assert.equal(filters.yearFrom, 1995);
         assert.equal(filters.yearTo, null, 'Open-ended year is preserved');
+        manager.updateFiltersCount();
+        assert.equal(element('filtersCount').textContent, '4', 'Years count once, every choice separately');
         manager.saveFilterState();
         const stored = JSON.parse(window.localStorage.getItem('movieSearchFilters'));
         assert.equal(stored.yearTo, '');

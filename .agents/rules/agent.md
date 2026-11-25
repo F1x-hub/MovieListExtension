@@ -509,6 +509,10 @@ checklist; `npm run test:visual-design` enforces much of it.
   `resultsGrid.appendChild(fragment)`, and every later patch checks the search generation. The
   accessible loader holds the grid until cards, an empty state or an error take over. `traceId`
   stays separate from `requestKey`, the cache identity.
+- Kinopoisk search accepts only a title and years: genres, countries and exclusions filter the
+  titles already loaded, so the counter under filters counts those. Year bounds start empty.
+- Viewer-facing searches pass results through `KinopoiskService.withoutEmptyRecords`; ID mapping and
+  Admin use `searchMovies` as it is, because they must see every record.
 
 ### Person Details
 
@@ -550,6 +554,10 @@ checklist; `npm run test:visual-design` enforces much of it.
 - Random: the personal pool is device-local (`RandomPoolService`). The marathon round is Firestore
   `randomMarathons/current`, with admin actions in transactions; the function's `normalizePoster`
   matches the page's `PosterUrl` (`tests/randomMarathonFunction.test.cjs`).
+- Random filters: included genres and countries combine with OR. The API answers 400 to a type it
+  does not know (`tv-show` among them). `_toRequestFilters` drops the upper vote bound at the last
+  stop. The votes slider is `RangeControl` with `stops`; the hidden native pair keeps real values.
+  The panel's action bar is sticky: an ancestor with `overflow: hidden` (`body` included) unsticks it.
 - Random modes: Pick, Pool and Marathon are tab panels on one page, not dialogs; only the wheel is a
   modal (`_activeModalId` is the wheel or nothing). The hash (`#pick|#pool|#marathon`) wins over
   `localStorage['random_page_mode']`. `R` rolls only in Pick. The Marathon render mirrors the server:

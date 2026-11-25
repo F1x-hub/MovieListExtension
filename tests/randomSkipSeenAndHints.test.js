@@ -102,6 +102,9 @@ function drawsFrom(manager, movies) {
     const movie = await h.manager._getUnseenRandomMovie({}, h.manager._requestId);
     assert.equal(calls.length, 3, 'At most three API draws per roll');
     assert.equal(movie.id, 3);
+    assert.equal(h.manager._repeatedDraw, true);
+    await h.manager.displayMovie({ id: 3, name: 'Seen' }, { transition: false });
+    assert.match(h.element('movieResult').querySelector('.random-repeat-note').textContent, /За 3 попытки/, 'A repeat is not passed off as new');
     h.dispose();
 }
 
@@ -168,7 +171,7 @@ function drawsFrom(manager, movies) {
     h.manager.savePreferences();
     const summary = h.element('configSummary').textContent;
     const text = button => button.querySelector('.tag-text').textContent;
-    assert.ok(summary.startsWith('1990–2026 · ★ 7.0–10.0'), summary);
+    assert.ok(summary.startsWith(`1990–${h.element('yearTo').value} · ★ 7.0–10.0 · голосов от 10`), summary);
     assert.ok(summary.includes(text(genres[0])));
     assert.ok(summary.includes(`−${text(genres[1])}`));
     h.dispose();

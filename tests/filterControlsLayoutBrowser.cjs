@@ -40,7 +40,7 @@ async function fixture(page, baseUrl, surface, theme) {
         for (const control of controls) {
             assert.ok(control.visible, `${control.id}: native fallback stays usable before startup`);
             assert.ok(control.height >= 44, `${control.id}: initial control has full height`);
-            assert.equal(control.radius, '12px');
+            assert.equal(control.radius, '8px');
             // Resolve tokens through CSS so hex/rgb notation does not affect comparison.
             const expected = await page.evaluate(({ surface, content }) => {
                 const probe = document.createElement('span');
@@ -193,6 +193,8 @@ async function main() {
                     const number = page.locator(`${panel} input[type="number"]`).last();
                     await number.hover();
                     assert.equal(await number.evaluate(input => getComputedStyle(input).appearance), 'textfield', 'Numeric fields use project chrome without OS spinner appearance');
+                    // Search starts with open year bounds, so there is nothing to step yet.
+                    if (surface === 'search') await number.fill('2020');
                     const oldNumber = await number.inputValue();
                     await number.focus();
                     await page.keyboard.press('ArrowDown');
@@ -229,6 +231,8 @@ async function main() {
                         if (captureDir) await page.locator(panel).screenshot({ path: path.join(captureDir, `search-${theme}-${width}-expanded.png`) });
                     }
                     if (surface !== 'ratings' && width <= 600) {
+                        // Genre and country groups start closed on both pages.
+                        if (surface === 'random') await page.locator('#genreFilterSection > summary').click();
                         const group = page.locator(surface === 'random' ? '#genreTags' : '#genreCheckboxes');
                         const more = group.locator('.filter-choices__more');
                         const overflowChoice = group.locator('.filter-choice').last();

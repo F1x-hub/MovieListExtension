@@ -1066,7 +1066,7 @@ class MovieCard {
                 <div class="cmc-info">
                     <div class="cmc-header">
                         <h2 class="cmc-title">${this.escapeHtml(movieName)}</h2>
-                        ${movieAltName ? `<p class="cmc-subtitle">${this.escapeHtml(movieAltName)}</p>` : ''}
+                        ${movieAltName && movieAltName !== movieName ? `<p class="cmc-subtitle">${this.escapeHtml(movieAltName)}</p>` : ''}
                         
                         <button class="cmc-reload-btn" data-action="reload" title="Найти другой фильм">
                             <svg data-icon="REFRESH" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9A7 7 0 0 1 15.6 5.6L17 7M17 3V7H13M17 11A7 7 0 0 1 4.4 14.4L3 13M3 17V13H7"/></svg>

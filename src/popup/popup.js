@@ -1793,9 +1793,11 @@ class PopupManager {
         this.showSearchMessage('popup.content.search_loading');
         let failed = false;
         try {
-            const result = await firebaseManager.getKinopoiskService().searchMovies(query, 1, 5, { skipOffscreen: true, skipFetchScraper: true });
+            const kinopoiskService = firebaseManager.getKinopoiskService();
+            const result = await kinopoiskService.searchMovies(query, 1, 5, { skipOffscreen: true, skipFetchScraper: true });
             if (!this.isSearchContextCurrent(query, generation)) return;
-            const movies = (result?.docs || []).map(doc => ({
+            const found = kinopoiskService.withoutEmptyRecords?.(result?.docs, query) ?? (result?.docs || []);
+            const movies = found.map(doc => ({
                 kinopoiskId: doc.id || doc.kinopoiskId,
                 name: doc.name || doc.alternativeName || i18n.get('popup.rating.unknown_movie'),
                 year: doc.year || '', genres: doc.genres || [],

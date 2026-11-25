@@ -169,8 +169,7 @@
     box-shadow: var(--elevation-2);
 }
 
-.light-theme .btn-accent:focus:not(:disabled),
-.light-theme .btn-accent:active:not(:disabled) {
+.light-theme .btn-accent:focus-visible {
     outline: 2px solid var(--ui-color-interactive);
     outline-offset: 2px;
 }
@@ -187,8 +186,7 @@
     box-shadow: var(--elevation-1);
 }
 
-.light-theme .btn-secondary:focus:not(:disabled),
-.light-theme .btn-secondary:active:not(:disabled) {
+.light-theme .btn-secondary:focus-visible {
     outline: 2px solid var(--ui-color-interactive);
     outline-offset: 2px;
 }
@@ -205,8 +203,7 @@
     box-shadow: var(--elevation-2);
 }
 
-.light-theme .btn-outline:focus:not(:disabled),
-.light-theme .btn-outline:active:not(:disabled) {
+.light-theme .btn-outline:focus-visible {
     outline: 2px solid var(--ui-color-interactive);
     outline-offset: 2px;
 }

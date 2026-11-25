@@ -1099,7 +1099,8 @@ class KinopoiskService {
             });
 
             if (filters && filters.yearFrom) {
-                const yearRange = `${filters.yearFrom}-${filters.yearTo || new Date().getFullYear()}`;
+                // An open upper bound keeps announced films of the next years.
+                const yearRange = `${filters.yearFrom}-${filters.yearTo || new Date().getFullYear() + 5}`;
                 searchParams.append('year', yearRange);
             }
 
@@ -1800,6 +1801,36 @@ class KinopoiskService {
     }
 
     /**
+     * A catalogue stub: cancelled projects, untitled plans and fan shorts that have no
+     * poster, no description and no rating anyone noticed. Announced films of the next
+     * years have nothing to show yet and are kept.
+     */
+    isEmptyRecord(movie) {
+        if (!movie || movie.posterUrl || String(movie.description || '').trim()) return false;
+        if (Number(movie.year) > new Date().getFullYear()) return false;
+        if (Number(movie.kpRating) > 0) return false;
+        const imdbVotes = Number(movie.votes?.imdb) || 0;
+        return !(Number(movie.imdbRating) > 0) || (imdbVotes > 0 && imdbVotes < 100);
+    }
+
+    /**
+     * Search results without catalogue stubs. A stub stays when its title is the query
+     * itself and no real title has it, or when a first page holds nothing else.
+     * @param {Object} options - { laterPage: true } never falls back to stubs
+     */
+    withoutEmptyRecords(movies, query = '', { laterPage = false } = {}) {
+        if (!Array.isArray(movies)) return movies;
+        const useful = movies.filter(movie => !this.isEmptyRecord(movie));
+        if (laterPage || useful.length === movies.length) return useful;
+        if (useful.length === 0) return movies;
+        const key = value => String(value || '').toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+        const wanted = key(query);
+        const isWanted = movie => Boolean(wanted) && [movie.name, movie.alternativeName].some(title => key(title) === wanted);
+        if (useful.some(isWanted)) return useful;
+        return movies.filter(movie => !this.isEmptyRecord(movie) || isWanted(movie));
+    }
+
+    /**
      * Normalize movie data to consistent format
      * @param {Object} movie - Raw movie data from API
      * @returns {Object} - Normalized movie data
@@ -1813,7 +1844,9 @@ class KinopoiskService {
         
         return {
             kinopoiskId: movie.id || movie.kinopoiskId,
-            name: movie.name || movie.title || 'Unknown Title',
+            // Titles without a Russian name carry only the original one.
+            name: movie.name || movie.title || movie.alternativeName || movie.enName
+                || movie.names?.find?.(item => item?.name)?.name || 'Без названия',
             alternativeName: movie.alternativeName || movie.alternativeTitle || '',
             posterUrl: posterUrl,
             year: movie.year || 0,

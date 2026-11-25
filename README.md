@@ -461,6 +461,31 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Features
+
+- Random: the open filter panel has its own «Найти фильм» that stays in view while you scroll, so changed filters can be applied after a film is already shown. «Другой фильм» on the card is a labelled button instead of a 32px icon. Genres and countries are collapsible groups with a summary, as in Search, so the panel is 521px tall instead of 915px and says how several choices combine.
+- Random: «Мультсериалы» is a type of its own; before, they came up even with series and cartoons excluded. «Мультфильмы» and «Аниме» left the genres, since types cover them; saved choices move to the types.
+- Search: the «Фильтры» button shows that the panel is open and how many filters are on. When filters hide everything found, the page says so and offers to clear them.
+
+### Fixes
+
+- Search leaves out catalogue stubs: cancelled projects, untitled plans and fan shorts without a poster, a description or a rating from at least a hundred people. The same holds for the popup and the Pool and Marathon search. Announced films of the next years stay, and a stub still opens by its exact title.
+- Films without a Russian name show their original one instead of «Unknown Title» in search, Random and on the film page.
+- Random: the last position of the votes scale («2 млн+») really has no upper limit; films above two million votes could never come up. The scale is uneven, so 10 and 100 thousand are far apart, the upper value is no longer cut to «200000», and the collapsed panel names the votes too. Years end with the current one.
+- Random: when three draws find only rated or recent films, the card says so instead of passing a repeat off as new. «Вернуть по умолчанию» names what it does, covers the «Не предлагать оценённые» choice and keeps the film on screen; «Изменить фильтры» on an empty result opens the panel without resetting it.
+- Search: the counter under filters shows how many titles fit, not how many were found. The upper year starts empty, so next-year films are no longer hidden, including when only the lower year is set. «Применить» without a title moves to the field instead of reporting an error, clearing filters refreshes the results, and the clear button in the field works.
+- Search: the start screen, history times, the loader and the end of the list follow the interface language.
+- Buttons in the light theme keep no focus ring after a mouse click, as in the dark theme.
+
+### Refactor
+
+- Search and Random each use one width for controls, results and states, 44px controls and the design system's 8px control corners; range fields, filter groups and the Rated selects had 12px. The decorative badge, the dividing line and the grey dark-theme «Поиск» button are gone; red hovers in the search history are neutral.
+
+</details>
+
 <details>
 <summary><strong>1.5.11</strong> — a rebuilt profile, the product's own icons, the theme in one press and a secret with ears</summary>
 

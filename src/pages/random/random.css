@@ -6,6 +6,11 @@
 }
 
 /* Layout */
+/* hidden would make body a scroll container of its own and unstick the filter panel's action bar. */
+body {
+    overflow-x: clip;
+}
+
 .main-container {
     max-width: 1000px;
     margin: 80px auto 40px;
@@ -121,12 +126,6 @@
     border-top: none;
 }
 
-/* Config Actions Row */
-.config-actions-row {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 20px;
-}
 
 .btn-text-icon {
     display: flex;
@@ -170,7 +169,7 @@
     gap: 28px;
 }
 
-.filter-group.wide-group {
+.config-grid > .wide-group {
     grid-column: 1 / -1;
 }
 
@@ -598,8 +597,6 @@
 /* Movie Search Advanced Skeleton View */
 .loading-skeleton-card {
     width: 100%;
-    max-width: 780px;
-    margin: 0 auto;
     background: var(--theme-bg-card);
     border: 1px solid var(--theme-border);
     border-radius: var(--radius-xl);
@@ -612,8 +609,8 @@
 
 .skeleton-layout {
     display: grid;
-    grid-template-columns: 240px 1fr;
-    gap: 32px;
+    grid-template-columns: 200px 1fr;
+    gap: 24px;
 }
 
 @media (max-width: 640px) {
@@ -752,10 +749,38 @@
 .movie-result {
     flex: 1;
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
-    padding: 24px;
+    gap: 12px;
     animation: ui-slide-up 350ms var(--ease-out);
+}
+
+/* The result, the loader, the start screen and errors share the settings card's width. */
+.movie-result .compact-movie-card,
+.random-panel .result-container > .error-state {
+    max-width: none;
+}
+
+.random-panel .result-container > .error-state {
+    margin: 0;
+}
+
+/* The open panel has its own "find" button; the start screen would only repeat it below. */
+#randomPanelPick:has(.config-body:not(.collapsed)) #initialState {
+    display: none !important;
+}
+
+.random-repeat-note {
+    align-self: stretch;
+    margin: 0;
+    padding: 12px 16px;
+    border: 1px solid var(--ui-color-border-hover);
+    border-radius: var(--radius-md);
+    background: var(--ui-color-surface-muted);
+    color: var(--ui-color-content);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
 }
 
 .movie-result .movie-card-component {
@@ -864,7 +889,8 @@
 }
 
 .cmc-rating-value {
-    font-family: var(--font-data);
+    font-family: var(--font-family);
+    font-variant-numeric: tabular-nums;
     font-size: var(--font-size-2xl);
     font-weight: 700;
     line-height: 1;
@@ -889,7 +915,7 @@
 }
 
 .cmc-rating-votes {
-    font-family: var(--font-data);
+    font-family: var(--font-family);
     font-size: var(--font-size-2xs);
     color: var(--theme-text-muted);
     margin-top: 4px;
@@ -906,10 +932,12 @@
 }
 
 .cmc-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: start;
+    column-gap: 8px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
     padding-bottom: 14px;
-    padding-right: 86px;
-    position: relative;
 }
 
 .light-theme .cmc-header {
@@ -917,6 +945,7 @@
 }
 
 .cmc-title {
+    grid-column: 1;
     font-family: var(--font-family);
     font-size: var(--font-size-2xl);
     font-weight: 700;
@@ -926,6 +955,8 @@
 }
 
 .cmc-subtitle {
+    grid-column: 1;
+    grid-row: 2;
     font-family: var(--font-family);
     font-size: var(--font-size-md);
     color: var(--theme-text-secondary);
@@ -1016,11 +1047,15 @@
 }
 
 .cmc-reload-btn {
-    position: absolute;
-    top: 15px;
-    right: 15px;
-    width: 32px;
-    height: 32px;
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    gap: 8px;
+    min-width: 44px;
+    height: 44px;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    white-space: nowrap;
     border-radius: var(--radius-md);
     border: 1px solid var(--theme-border);
     background: rgba(255, 255, 255, 0.03);
@@ -1030,7 +1065,7 @@
     justify-content: center;
     cursor: pointer;
     transition: var(--random-transition);
-    padding: 0;
+    padding: 0 14px;
 }
 
 .cmc-reload-btn:hover {
@@ -1045,11 +1080,10 @@
 }
 
 .cmc-pool-btn {
-    position: absolute;
-    top: 15px;
-    right: 55px;
-    width: 32px;
-    height: 32px;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    width: 44px;
+    height: 44px;
     border-radius: var(--radius-md);
     border: 1px solid var(--theme-border);
     background: rgba(255, 255, 255, 0.03);
@@ -1111,6 +1145,14 @@
     
     .cmc-info {
         width: 100%;
+    }
+
+    .cmc-reload-btn {
+        padding: 0;
+    }
+
+    .cmc-reload-text {
+        display: none;
     }
     
     .cmc-meta-label {
@@ -2363,8 +2405,9 @@ img.marathon-item-poster--unavailable {
 }
 
 .random-relax-btn {
+    min-height: 44px;
+    padding: 8px 14px;
     font-size: var(--font-size-sm);
-    padding: 6px 12px;
 }
 
 /* Class display rules would otherwise override the hidden attribute. */

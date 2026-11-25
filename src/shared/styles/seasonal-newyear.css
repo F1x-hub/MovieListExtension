@@ -309,7 +309,7 @@ html.season-newyear .popup-logo-img {
 :root.season-newyear .results-info,
 :root.season-newyear .initial-loading-content,
 :root.season-newyear .infinite-scroll-trigger .app-loader--compact,
-:root.season-newyear .search-section :is(.search-hero-badge, .search-input, .filters),
+:root.season-newyear .search-section :is(.search-input, .filters),
 :root.season-newyear .bookmarks-sidebar,
 :root.season-newyear .bookmarks-content :is(.search-wrapper input, .custom-select) {
     background-color: var(--theme-bg-secondary);

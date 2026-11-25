@@ -531,7 +531,7 @@ async function main() {
             }, [target, selector]);
             await page.evaluate(id => localStorage.setItem('movieExtensionTheme', id), theme);
             for (const [target, selectors] of [
-                ['search/search.html', ['.search-input', '.search-hero-badge', '.empty-state']],
+                ['search/search.html', ['.search-input', '.empty-state']],
                 ['bookmarks/bookmarks.html', ['.bookmarks-sidebar', '.search-wrapper input']],
                 ['profile/profile.html', ['.profile-content']],
                 // In the light theme the guest card is an opaque gradient of its own.

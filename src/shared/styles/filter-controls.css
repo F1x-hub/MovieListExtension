@@ -10,26 +10,50 @@
 
 .filter-section { min-width: 0; }
 .filter-panel .filter-section { margin: 0; padding: 0; background: transparent; border: 0; box-shadow: none; }
-.config-card.filter-panel { padding: 0; overflow: hidden; }
-.config-heading { position: relative; }
+/* clip, not hidden: the action bar inside sticks to the window, not to the card. */
+.config-card.filter-panel { padding: 0; overflow: clip; }
 .config-card.filter-panel .config-header { background: transparent; border-radius: 0; }
-.config-heading .config-actions-row { position: absolute; inset-inline-end: 80px; top: 50%; transform: translateY(-50%); margin: 0; }
-.config-heading .btn-text-icon { min-height: 44px; }
-/* The disclosure chevron shares the reset button height: controls in one row line up. */
 .config-heading .btn-icon-only { width: 44px; height: 44px; }
 /* The taller chevron sits in the header row, so the header trims its padding and keeps its 68px height. */
 .config-card.filter-panel .config-header { padding-block: 12px; }
-.config-heading .config-title-wrapper { padding-inline-end: 180px; }
+.config-heading .config-title-wrapper { min-width: 0; padding-inline-end: 12px; }
+.config-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+    padding: 12px 24px;
+    border-top: 1px solid var(--ui-color-border);
+    background: var(--ui-color-surface);
+}
+.config-body.collapsed + .config-footer { display: none; }
+.config-footer__actions { display: flex; flex-wrap: wrap; gap: 12px; margin-inline-start: auto; }
+.config-footer .btn { min-height: 44px; gap: 8px; }
+.config-footer .random-skip-seen { font-size: var(--font-size-md); }
+.filter-hint { margin: 0 0 12px; color: var(--ui-color-content-muted); font-size: var(--font-size-sm); line-height: 1.5; }
+/* Closed groups share a row; opening one gives each the full width. */
+.filter-disclosures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; min-width: 0; }
+.filter-disclosures:has(> [open]) { grid-template-columns: minmax(0, 1fr); }
 .config-card.filter-panel .config-body { padding: 24px; }
 .config-card.filter-panel .config-body.collapsed { padding-block: 0; }
 .search-form .filter-panel { background: var(--ui-color-surface); }
-.search-form .filter-panel > .filter-section { gap: 14px; }
-.search-form .filter-panel .year-range-group { margin-bottom: 4px; }
-.filter-disclosure { min-width: 0; border: 1px solid var(--ui-color-border); border-radius: var(--radius-lg); background: var(--ui-color-surface); }
-.filter-disclosure__summary { min-height: 52px; padding: 12px 16px; box-sizing: border-box; color: var(--ui-color-content-muted); font-size: var(--font-size-sm); }
-.filter-disclosure__label { flex: 0 0 84px; color: var(--ui-color-content); font-size: var(--font-size-md); font-weight: 600; }
-.filter-disclosure__selection { min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
-.filter-disclosure__summary:focus-visible { outline: 2px solid var(--ui-color-interactive); outline-offset: 3px; border-radius: var(--radius-lg); }
+.search-form .filter-panel { padding: 16px; }
+/* One row while the groups are closed; an open group takes the row below. */
+.search-form .filter-panel > .filter-section { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px 24px; align-items: start; }
+.search-form .filter-panel > .filter-section:has(.filter-disclosure[open]) { grid-template-columns: minmax(0, 1fr); }
+.search-form .filter-panel .filter-actions { padding: 0; border: 0; }
+.search-form .filter-panel .year-range-group { flex-direction: row; align-items: center; gap: 12px; }
+.search-form .filter-panel .year-range-group .filter-label { flex: none; white-space: nowrap; }
+.search-form .filter-panel .year-range-inputs { width: 260px; min-width: 0; }
+.filter-disclosure { min-width: 0; border: 1px solid var(--ui-color-border); border-radius: var(--radius-md); background: var(--ui-color-surface); }
+.filter-disclosure__summary { min-height: 42px; padding: 8px 16px; box-sizing: border-box; color: var(--ui-color-content-muted); font-size: var(--font-size-sm); }
+.filter-disclosure__label { flex: 0 0 auto; color: var(--ui-color-content); font-size: var(--font-size-md); font-weight: 600; }
+.filter-disclosure__selection { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.5; }
+.filter-disclosure__summary:focus-visible { outline: 2px solid var(--ui-color-interactive); outline-offset: 3px; border-radius: var(--radius-md); }
 .filter-disclosure__summary:hover { color: var(--ui-color-content); }
 .filter-disclosure__content { padding: 4px 16px 16px; }
 .filter-disclosure[open] > .filter-disclosure__summary { border-bottom: 1px solid var(--ui-color-border); margin-bottom: 12px; }
@@ -132,7 +156,7 @@
     width: 100%;
     padding: 10px 12px;
     border: 1px solid var(--ui-color-border);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-md);
     background: var(--ui-color-surface);
     color: var(--ui-color-content);
     font: inherit;
@@ -144,7 +168,7 @@
 .filter-panel .filter-field {
     min-height: 44px;
     border-color: var(--ui-color-border);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-md);
     background: var(--ui-color-surface);
     color: var(--ui-color-content);
 }
@@ -175,7 +199,7 @@
     margin: 0;
     padding: 0 10px;
     border: 1px solid var(--ui-color-border);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-md);
     background: var(--ui-color-surface-muted);
     color: var(--ui-color-content-muted);
     font-size: var(--font-size-xs);
@@ -237,9 +261,9 @@
 .filter-range > .filter-range__slider:disabled::-webkit-slider-thumb { cursor: not-allowed; }
 .filter-range > .filter-range__slider:disabled::-moz-range-thumb { cursor: not-allowed; }
 
-.year-range-inputs.filter-range { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; width: min(100%, 340px); }
+.year-range-inputs.filter-range { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; width: min(100%, 300px); }
 .filter-actions > button { min-height: 44px; }
-.filter-panel .sort-control__trigger { border-radius: var(--radius-lg); }
+.filter-panel .sort-control__trigger { border-radius: var(--radius-md); }
 .filters-section.filter-panel .filters-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; gap: 20px 16px; }
 .filters-section.filter-panel :is(.filter-group--sort, .filter-group--range) { grid-column: span 2; }
 /* Rated adds «Моя оценка»: on wide screens five columns keep the panel at two rows
@@ -247,7 +271,11 @@
 @media (min-width: 1200px) {
     .filters-section.filter-panel .filters-grid:has(> #myRatingFilterGroup:not([hidden])) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
-.filters-section.filter-panel .search-input { box-sizing: border-box; height: 44px; min-height: 44px; padding: 10px 14px 10px 38px; border-radius: var(--radius-lg); font-size: var(--font-size-md); }
+.filters-section.filter-panel .search-input { box-sizing: border-box; height: 44px; min-height: 44px; padding: 10px 14px 10px 38px; border-radius: var(--radius-md); font-size: var(--font-size-md); }
+
+@media (max-width: 1100px) {
+    .search-form .filter-panel > .filter-section { grid-template-columns: minmax(0, 1fr); }
+}
 
 @media (max-width: 900px) {
     .filters-section.filter-panel .filters-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -285,13 +313,17 @@
     .range-slider-container.filter-range-layout-inline { grid-template-columns: minmax(0, 1fr); gap: 0; }
     .config-card.filter-panel .config-body { padding-inline: 20px; }
     .config-card.filter-panel .config-grid { gap: 20px; }
-    .config-heading .config-title-wrapper { padding-inline-end: 112px; }
-    .config-heading .btn-text-icon { width: 44px; padding: 0; justify-content: center; }
-    .config-heading .btn-text {
+    .filter-disclosures { grid-template-columns: minmax(0, 1fr); }
+    .config-footer { padding: 12px 20px; }
+    .config-footer__actions { flex: 1 1 100%; flex-wrap: nowrap; }
+    .config-footer .random-skip-seen { font-size: var(--font-size-sm); }
+    .config-footer .btn-primary { flex: 1 1 auto; }
+    /* The title attribute and the hidden text still name the reset button. */
+    .config-footer .btn-text-icon { flex: none; width: 44px; padding: 0; justify-content: center; }
+    .config-footer .btn-text {
         position: absolute;
         width: 1px;
         height: 1px;
-        margin: -1px;
         overflow: hidden;
         clip-path: inset(50%);
         white-space: nowrap;

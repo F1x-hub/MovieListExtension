@@ -3461,7 +3461,7 @@ class MovieDetailsManager {
                                 </div>
                             </div>
                         </div>
-                        ${movieAltName ? `<h2 class="movie-detail-alt-title">${this.escapeHtml(movieAltName)}</h2>` : ''}
+                        ${movieAltName && movieAltName !== movieName ? `<h2 class="movie-detail-alt-title">${this.escapeHtml(movieAltName)}</h2>` : ''}
                         ${this.renderHeroNextEpisode(movie)}
                         ${shortDescToRender ? `<p class="movie-detail-short-description">${this.escapeHtml(shortDescToRender)}</p>` : ''}
                         

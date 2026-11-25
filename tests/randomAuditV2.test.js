@@ -238,7 +238,7 @@ function harness() {
     assert.doesNotThrow(() => h.manager.loadPreferences());
     assert.equal(h.element('yearFrom').value, '1900');
     assert.equal(h.element('yearTo').value, '1905', 'A low saved pair must not be clamped against previous default min');
-    for (const [prefix, gap] of [['rating', 0.5], ['votes', 1000]]) {
+    for (const [prefix, gap] of [['rating', 0.5], ['votes', 100]]) {
         assert.ok(Number(h.element(`${prefix}To`).value) - Number(h.element(`${prefix}From`).value) >= gap);
     }
     assert.equal(h.element('typeTags').querySelector('[data-value="movie"]').dataset.state, 'include');
@@ -252,7 +252,7 @@ function harness() {
     }));
     h.manager.loadPreferences();
     assert.equal(h.element('yearFrom').value, '1900');
-    assert.equal(h.element('yearTo').value, '2030');
+    assert.equal(h.element('yearTo').value, String(new Date().getFullYear()), 'Years end with the current one');
     assert.equal(h.element('ratingFrom').value, '7');
     assert.equal(h.element('ratingTo').value, '10');
     assert.equal(h.element('votesFrom').value, '10000');

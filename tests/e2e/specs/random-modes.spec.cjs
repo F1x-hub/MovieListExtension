@@ -60,8 +60,13 @@ for (const theme of ['dark', 'light']) {
         await expect(page.locator('#randomPanelPick')).toBeVisible();
         await expect(page.locator('#poolCount')).toHaveText('5');
 
-        // Reset and the disclosure chevron sit in one row: one height.
-        expect(await heightOf(page.locator('#toggleConfigBtn'))).toBe(await heightOf(page.locator('#resetFiltersBtn')));
+        // Reset and «find» share the open panel's action bar, which stays in view over long groups.
+        await page.locator('#configHeader').click();
+        await page.locator('#genreFilterSection > summary').click();
+        expect(await heightOf(page.locator('#applyConfigBtn'))).toBe(await heightOf(page.locator('#resetFiltersBtn')));
+        await expect(page.locator('#applyConfigBtn')).toBeInViewport({ ratio: 1 });
+        await page.locator('#configHeader').click();
+        await expect(page.locator('#applyConfigBtn')).toBeHidden();
         await shoot(page, testInfo, `pick-${theme}`);
 
         await page.locator('#randomModeTabPool').click();

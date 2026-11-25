@@ -15,6 +15,10 @@ const DiscoveryFilters = {
             "value": "cartoon"
         },
         {
+            "labelKey": "random.types.animated_series",
+            "value": "animated-series"
+        },
+        {
             "labelKey": "random.types.anime",
             "value": "anime"
         }

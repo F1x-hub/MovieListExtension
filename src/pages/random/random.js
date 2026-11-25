@@ -15,6 +15,18 @@ const RECENT_RESULTS_LIMIT = 30;
 // Kinopoisk draws per roll while looking for an unseen movie; each costs API quota.
 const SKIP_SEEN_MAX_ATTEMPTS = 3;
 const DEFAULT_ROLL_VOLUME_PERCENT = 100;
+const MIN_YEAR = 1900;
+const MAX_YEAR = new Date().getFullYear();
+const MAX_VOTES = 2000000;
+// Votes are spread over orders of magnitude: an even scale would squeeze most films into its first pixels.
+const VOTE_STOPS = [0, 100, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, MAX_VOTES];
+const DEFAULT_RANGES = {
+    year: { min: MIN_YEAR, max: MAX_YEAR, gap: 0, from: 1990, to: MAX_YEAR },
+    rating: { min: 1, max: 10, gap: 0.5, from: 7, to: 10 },
+    votes: { min: 0, max: MAX_VOTES, gap: 100, from: 10000, to: MAX_VOTES }
+};
+// Genres the Type group already covers; saved choices move to these types.
+const GENRES_COVERED_BY_TYPE = { мультфильм: ['cartoon', 'animated-series'], аниме: ['anime'] };
 // Page modes: the URL hash (#pick, #pool, #marathon) wins over the mode remembered on this device.
 const RANDOM_MODES = ['pick', 'pool', 'marathon'];
 const RANDOM_MODE_STORAGE_KEY = 'random_page_mode';
@@ -171,32 +183,36 @@ class RandomManager {
 
     populateFilterData() {
         Object.assign(this, DiscoveryFilters.getOptions(i18n));
+        this.genres = this.genres.filter(genre => !Object.hasOwn(GENRES_COVERED_BY_TYPE, genre.value));
     }
 
     setupSliders() {
         this.rangeControls?.forEach(control => control.destroy());
         this.rangeControls = [];
-        this.initDoubleSlider('year', 1900, 2030, 0); // min gap 0
-        this.initDoubleSlider('rating', 1, 10, 0.5); // min gap 0.5
-        this.initDoubleSlider('votes', 0, 2000000, 1000); // Votes
+        for (const [prefix, range] of Object.entries(DEFAULT_RANGES)) {
+            this.initDoubleSlider(prefix, range.min, range.max, range.gap, prefix === 'votes' ? VOTE_STOPS : null);
+        }
     }
 
-    initDoubleSlider(idPrefix, minLimit, maxLimit, minGap) {
-        const formatValue = val => {
-            if (idPrefix === 'votes' && val >= 1000) return Utils.formatCompactNumber(val, i18n.currentLocale);
-            return val;
-        };
+    _formatVotes(value) {
+        const count = Number(value);
+        const text = count >= 1000 ? Utils.formatCompactNumber(count, i18n.currentLocale) : String(count);
+        return count >= MAX_VOTES ? `${text}+` : text;
+    }
+
+    initDoubleSlider(idPrefix, minLimit, maxLimit, minGap, stops = null) {
+        const formatValue = val => idPrefix === 'votes' ? this._formatVotes(val) : val;
         const fieldLabel = document.getElementById(`${idPrefix}Slider`).parentElement.querySelector('label').textContent.trim();
         const control = RangeControl.enhance(document.getElementById(`${idPrefix}From`), document.getElementById(`${idPrefix}To`), {
             min: minLimit, max: maxLimit, minGap,
             fromDisplay: document.getElementById(`${idPrefix}MinDisplay`),
             toDisplay: document.getElementById(`${idPrefix}MaxDisplay`),
             rangeBar: document.getElementById(`${idPrefix}RangeBar`),
-            formatValue,
+            formatValue, stops,
             fromLabel: `${fieldLabel}: ${i18n.get('random.config.min')}`,
             toLabel: `${fieldLabel}: ${i18n.get('random.config.max')}`,
-            fromFieldLabel: i18n.get('random.config.min'),
-            toFieldLabel: i18n.get('random.config.max'),
+            fromFieldLabel: i18n.get('search.from'),
+            toFieldLabel: i18n.get('search.to'),
             onCommit: () => this.savePreferences()
         });
         this.rangeControls.push(control);
@@ -211,7 +227,8 @@ class RandomManager {
             ['country', this.countries, this.elements.countryTags]
         ]) {
             container.replaceChildren(...values.map(value => this.createTag(value, type)));
-            const label = container.parentElement.querySelector('label')?.textContent.trim() || '';
+            const label = container.closest('.filter-disclosure, .filter-section')
+                ?.querySelector('.filter-disclosure__label, label')?.textContent.trim() || '';
             FilterChoice.enhanceGroup(container, {
                 label, labels: this.getChoiceStateLabels(),
                 legendLabels: this.getChoiceStateLegendLabels(),
@@ -219,6 +236,11 @@ class RandomManager {
                 moreLabel: i18n.get('filter_controls.more'), lessLabel: i18n.get('filter_controls.less')
             });
             legendId ||= container.querySelector('.filter-choices__legend')?.id || null;
+            FilterChoice.enhanceSummary(container, {
+                empty: i18n.get('filter_controls.any'),
+                include: i18n.get('filter_controls.included_count'),
+                exclude: i18n.get('filter_controls.excluded_count')
+            });
         }
     }
 
@@ -255,14 +277,8 @@ class RandomManager {
 
     setDefaultFilters() {
         // Set default values for sliders
-        const filterIds = {
-            'yearFrom': 1990,
-            'yearTo': 2026,
-            'ratingFrom': 7,
-            'ratingTo': 10,
-            'votesFrom': 10000,
-            'votesTo': 2000000
-        };
+        const filterIds = Object.fromEntries(Object.entries(DEFAULT_RANGES).flatMap(([prefix, range]) =>
+            [[`${prefix}From`, range.from], [`${prefix}To`, range.to]]));
 
         Object.keys(filterIds).forEach(id => {
             const el = document.getElementById(id);
@@ -295,8 +311,10 @@ class RandomManager {
             this.elements.configHeader.addEventListener('click', () => this.toggleConfig());
         }
 
-        // Roll Dice
-        this.elements.rollDiceBtn.addEventListener('click', () => this.findRandomMovie());
+        // Roll Dice: the placeholder's button, and the one in the open filter panel
+        for (const button of [this.elements.rollDiceBtn, document.getElementById('applyConfigBtn')]) {
+            button?.addEventListener('click', () => this.findRandomMovie());
+        }
 
         const skipSeenToggle = document.getElementById('skipSeenToggle');
         if (skipSeenToggle) {
@@ -318,10 +336,7 @@ class RandomManager {
         if (this.elements.tryAgainBtn) {
             this.elements.tryAgainBtn.addEventListener('click', () => {
                 if (this._failureKind === 'network') this.findRandomMovie(this._lastRandomFilters);
-                else {
-                    this.resetFilters();
-                    this.toggleConfig(true);
-                }
+                else this.toggleConfig(true);
             });
         }
 
@@ -362,8 +377,14 @@ class RandomManager {
         });
         
         this.setDefaultFilters();
+        const skipSeenToggle = document.getElementById('skipSeenToggle');
+        if (skipSeenToggle && !skipSeenToggle.checked) {
+            skipSeenToggle.checked = true;
+            skipSeenToggle.dispatchEvent(new Event('change'));
+        }
         this.savePreferences();
-        this.showState('initial');
+        // A shown movie stays: only a cancelled search or a failure gives way to the start screen.
+        if (this.elements.movieResult?.style.display !== 'flex') this.showState('initial');
     }
 
     getFilters() {
@@ -401,6 +422,11 @@ class RandomManager {
         return filters;
     }
 
+    /** The last stop of the votes scale means "no upper limit", as its "2M+" label says. */
+    _toRequestFilters(filters) {
+        return Number(filters.votesTo) >= MAX_VOTES ? { ...filters, votesTo: '' } : filters;
+    }
+
     savePreferences() {
         const filters = this.getFilters();
         const prefs = {
@@ -427,6 +453,10 @@ class RandomManager {
             `${filters.yearFrom}–${filters.yearTo}`,
             `★ ${Number(filters.ratingFrom).toFixed(1)}–${Number(filters.ratingTo).toFixed(1)}`
         ];
+        const votesFrom = Number(filters.votesFrom);
+        const votesTo = Number(filters.votesTo);
+        if (votesTo < MAX_VOTES) parts.push(this._configText('summary_votes_range', { from: this._formatVotes(votesFrom), to: this._formatVotes(votesTo) }));
+        else if (votesFrom > 0) parts.push(this._configText('summary_votes_from', { from: this._formatVotes(votesFrom) }));
         const tags = [...document.querySelectorAll('.tag-btn')]
             .filter(button => button.dataset.state === 'include' || button.dataset.state === 'exclude')
             .map(button => {
@@ -439,6 +469,12 @@ class RandomManager {
         summary.textContent = parts.join(' · ');
     }
 
+    _configText(key, params = {}) {
+        let text = i18n.get(`random.config.${key}`);
+        Object.entries(params).forEach(([name, value]) => { text = text.replaceAll(`{${name}}`, String(value)); });
+        return text;
+    }
+
     loadPreferences() {
         const saved = localStorage.getItem('random_filter_preferences');
         if (!saved) return;
@@ -448,10 +484,7 @@ class RandomManager {
             if (!prefs || typeof prefs !== 'object' || Array.isArray(prefs)) return;
 
             // Restore sliders
-            for (const [prefix, low, high, gap, defaultFrom, defaultTo] of [
-                ['year', 1900, 2030, 0, 1990, 2026], ['rating', 1, 10, 0.5, 7, 10],
-                ['votes', 0, 2000000, 1000, 10000, 2000000]
-            ]) {
+            for (const [prefix, { min: low, max: high, gap, from: defaultFrom, to: defaultTo }] of Object.entries(DEFAULT_RANGES)) {
                 const range = prefs[prefix] || {};
                 const normalize = (value, fallback) => value !== null && value !== '' && value !== undefined && Number.isFinite(Number(value))
                     ? Math.max(low, Math.min(high, Number(value))) : fallback;
@@ -484,6 +517,10 @@ class RandomManager {
             restoreTags(prefs.excludeGenres, 'genre', 'exclude');
             restoreTags(prefs.countries, 'country', 'include');
             restoreTags(prefs.excludeCountries, 'country', 'exclude');
+            for (const [genre, types] of Object.entries(GENRES_COVERED_BY_TYPE)) {
+                if (Array.isArray(prefs.genres) && prefs.genres.includes(genre)) restoreTags(types, 'type', 'include');
+                if (Array.isArray(prefs.excludeGenres) && prefs.excludeGenres.includes(genre)) restoreTags(types, 'type', 'exclude');
+            }
             this.rangeControls?.forEach(control => control.syncFromNative());
 
         } catch {
@@ -497,6 +534,7 @@ class RandomManager {
         this._cancelResultTransition();
         const requestId = ++this._requestId;
         this._findBusy = true;
+        this._repeatedDraw = false;
         this.showState('loading');
         this.toggleConfig(false); // Collapse config to show result
         
@@ -582,20 +620,26 @@ class RandomManager {
 
     /** Draw until an unrated, not recently shown movie appears; fall back to the last draw. */
     async _getUnseenRandomMovie(filters, requestId) {
-        if (!this._isSkipSeenEnabled()) return this.kinopoiskService.getRandomMovie(filters);
+        const requestFilters = this._toRequestFilters(filters);
+        if (!this._isSkipSeenEnabled()) return this.kinopoiskService.getRandomMovie(requestFilters);
         const recent = new Set(this._readRecentResults());
         const user = typeof firebaseManager !== 'undefined' ? firebaseManager.getCurrentUser?.() : null;
         let movie = null;
         for (let attempt = 0; attempt < SKIP_SEEN_MAX_ATTEMPTS; attempt++) {
             let candidate;
             try {
-                candidate = await this.kinopoiskService.getRandomMovie(filters);
+                candidate = await this.kinopoiskService.getRandomMovie(requestFilters);
             } catch (error) {
                 // A later draw failing must not discard a movie already in hand.
-                if (movie) return movie;
-                throw error;
+                if (!movie) throw error;
+                this._repeatedDraw = true;
+                return movie;
             }
-            if (requestId !== this._requestId || this._disposed || !candidate) return candidate || movie;
+            if (requestId !== this._requestId || this._disposed) return candidate || movie;
+            if (!candidate) {
+                this._repeatedDraw = Boolean(movie);
+                return movie;
+            }
             movie = candidate;
             let seen = false;
             try {
@@ -605,6 +649,8 @@ class RandomManager {
             }
             if (!seen) return candidate;
         }
+        // Every draw was rated or shown recently: the card says so instead of passing it off as new.
+        this._repeatedDraw = true;
         return movie;
     }
 
@@ -640,8 +686,8 @@ class RandomManager {
         if (Number(filters.ratingFrom) > 6) {
             suggestions.push({ label: this._stateText('relax_rating', { value: '6.0' }), apply: () => setRange('rating', 6, null) });
         }
-        if (Number(filters.yearFrom) > 1900 || Number(filters.yearTo) < 2030) {
-            suggestions.push({ label: this._stateText('relax_years'), apply: () => setRange('year', 1900, 2030) });
+        if (Number(filters.yearFrom) > MIN_YEAR || Number(filters.yearTo) < MAX_YEAR) {
+            suggestions.push({ label: this._stateText('relax_years'), apply: () => setRange('year', MIN_YEAR, MAX_YEAR) });
         }
         const tagCount = ['genres', 'excludeGenres', 'countries', 'excludeCountries']
             .reduce((count, key) => count + (filters[key]?.length || 0), 0);
@@ -674,7 +720,7 @@ class RandomManager {
         for (const suggestion of suggestions) {
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'btn random-relax-btn';
+            button.className = 'btn btn-secondary random-relax-btn';
             button.textContent = suggestion.label;
             button.addEventListener('click', () => {
                 suggestion.apply();
@@ -737,8 +783,15 @@ class RandomManager {
             }
             
             this.elements.movieResult.innerHTML = '';
+            if (this._repeatedDraw) {
+                const note = document.createElement('p');
+                note.className = 'random-repeat-note';
+                note.setAttribute('role', 'status');
+                note.textContent = this._stateText('repeat_note', { count: SKIP_SEEN_MAX_ATTEMPTS });
+                this.elements.movieResult.append(note);
+            }
             this.elements.movieResult.appendChild(card);
-            
+
             // Inject Add-to-Pool FAB over poster
             this._injectPoolFab(card, movie);
             this._applyResultPoster(card, movie);
@@ -849,6 +902,10 @@ class RandomManager {
         reload.title = label;
         reload.setAttribute('aria-label', label);
         reload.setAttribute('aria-keyshortcuts', 'R');
+        const text = document.createElement('span');
+        text.className = 'cmc-reload-text';
+        text.textContent = this._stateText('roll_again');
+        reload.append(text);
     }
 
     /** "R" rolls again in the Pick mode (any layout: matched by physical key) unless typing or a dialog is open. */
@@ -2035,7 +2092,7 @@ class RandomManager {
         try {
             const data = await this.kinopoiskService.searchMovies(query, 1, 20);
             if (this._disposed || searchId !== this._marathonSearchId || document.getElementById('marathonSearchInput').value.trim() !== query) return;
-            const movies = data.docs || [];
+            const movies = this.kinopoiskService.withoutEmptyRecords?.(data.docs, query) ?? (data.docs || []);
             results.innerHTML = '';
             if (!movies.length) {
                 results.innerHTML = `<div style="padding:12px;color:#999;font-size:13px">${this._escapeHtml(this._t('nothing_found'))}</div>`;
@@ -2094,7 +2151,7 @@ class RandomManager {
         try {
             const data = await this.kinopoiskService.searchMovies(query, 1, 20);
             if (this._disposed || searchId !== this._poolSearchId || document.getElementById('poolSearchInput').value.trim() !== query) return;
-            const movies = data.docs || [];
+            const movies = this.kinopoiskService.withoutEmptyRecords?.(data.docs, query) ?? (data.docs || []);
             const sortedMovies = (data.searchSource === 'kinopoisk-graphql' || data.searchSource === 'kinopoisk-offscreen-scrape' || data.searchSource === 'kinopoisk-scrape')
                 ? movies.slice(0, 8)
                 : this.kinopoiskService.sortMoviesByRelevance(movies, query).slice(0, 8);
