@@ -2412,6 +2412,8 @@ a.continue-watching-item:hover {
 
 .insight-person:focus-visible,
 .insight-poster:focus-visible,
+.insight-more:focus-visible,
+.insight-verdict a:focus-visible,
 .insight-film:focus-visible,
 .insight-films__link:focus-visible,
 .insight-list__link:focus-visible {
@@ -2596,6 +2598,40 @@ a.continue-watching-item:hover {
     gap: 12px;
 }
 
+.insight-verdict {
+    margin: 0 0 16px;
+    color: var(--theme-text-secondary);
+    line-height: 1.5;
+}
+
+.insight-verdict b {
+    color: var(--theme-text-primary);
+    font-weight: 600;
+}
+
+.insight-verdict a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.insight-verdict a:hover {
+    color: var(--theme-text-primary);
+}
+
+.insight-more {
+    display: inline-block;
+    margin-top: 14px;
+    color: var(--theme-text-secondary);
+    font-size: var(--font-size-sm);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.insight-more:hover {
+    color: var(--theme-text-primary);
+}
+
 .insight-poster {
     display: block;
     min-width: 0;
@@ -2639,6 +2675,11 @@ a.continue-watching-item:hover {
     display: block;
     margin-top: 6px;
     font-size: var(--font-size-sm);
+}
+
+.insight-poster__caption small {
+    display: block;
+    font-size: var(--font-size-xs);
 }
 
 .insight-list__link {

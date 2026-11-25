@@ -1,8 +1,8 @@
 /**
  * Profile insights: pure calculations behind the profile statistics, taste
- * match, received reactions, marathon history and pinned favorites. Inputs are
- * plain objects (rating documents, shared movie documents, reaction summaries,
- * marathon items) so every function can be tested without Firestore.
+ * match, received reactions and pinned favorites. Inputs are plain objects (rating
+ * documents, shared movie documents, reaction summaries) so every function can be
+ * tested without Firestore. Marathons are counted in shared/utils/marathonHistory.js.
  */
 
 export const PINNED_LIMIT = 5;
@@ -282,30 +282,6 @@ export function summarizeReactions(summaries = []) {
         reviews: withTotals.length,
         byType: [...byType.entries()].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count),
         top: withTotals.sort((a, b) => b.total - a.total).slice(0, 3)
-    };
-}
-
-/**
- * A user's random-marathon participation from the items they added.
- * @returns {{added: number, rounds: number, selected: number, watched: Array}}
- */
-export function summarizeMarathon(items = []) {
-    const active = items.filter(item => item && item.state !== 'removed');
-    const rounds = new Set(active.map(item => Number(item.roundId)).filter(Number.isInteger));
-    const watched = active
-        .filter(item => item.state === 'watched')
-        .sort((a, b) => toMillis(b.resolvedAt || b.selectedAt || b.addedAt) - toMillis(a.resolvedAt || a.selectedAt || a.addedAt));
-    return {
-        added: active.length,
-        rounds: rounds.size,
-        selected: active.filter(item => ['selected', 'watched'].includes(item.state)).length,
-        watched: watched.slice(0, 6).map(item => ({
-            movieId: item.kpId != null ? String(item.kpId) : null,
-            title: String(item.title || ''),
-            posterUrl: String(item.poster || ''),
-            year: item.year || null,
-            roundId: Number(item.roundId) || null
-        }))
     };
 }
 

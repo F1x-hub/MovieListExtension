@@ -6,6 +6,7 @@
  */
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID, RANK_SHARES, pointsFor } from './AchievementCatalog.js';
 import { CAT_FRAME, advanceTrail, trailSteps } from './catTrail.js';
+import { participation } from '../utils/marathonHistory.js';
 
 const SERIES_TYPES = new Set(['tv-series', 'mini-series', 'animated-series', 'tv']);
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -72,7 +73,7 @@ const NEW_YEAR = ACHIEVEMENTS_BY_ID.new_year.season;
 
 /**
  * Every metric the catalog counts.
- * @param {Object} data - { ratings, movies, reactionSummaries, reactionsGiven, marathonItems,
+ * @param {Object} data - { uid, ratings, movies, reactionSummaries, reactionsGiven, marathonItems (of every round),
  *   watchlistCount, watchingCount, collections, catTrail (steps already passed), pinned, createdAt, now }
  */
 export function computeMetrics(data = {}) {
@@ -140,7 +141,7 @@ export function computeMetrics(data = {}) {
     }
 
     const summaries = Array.isArray(data.reactionSummaries) ? data.reactionSummaries : [];
-    const marathonItems = (Array.isArray(data.marathonItems) ? data.marathonItems : []).filter(item => item && item.state !== 'removed');
+    const marathon = participation(data.marathonItems, data.uid, ratings);
     const collections = Array.isArray(data.collections) ? data.collections : [];
     const createdAt = toMillis(data.createdAt);
 
@@ -156,8 +157,8 @@ export function computeMetrics(data = {}) {
         distinctScores: scores.size,
         reactionsReceived: summaries.reduce((sum, summary) => sum + (Number(summary?.total) || 0), 0),
         reactionsGiven: Number(data.reactionsGiven) || 0,
-        marathonRounds: new Set(marathonItems.map(item => Number(item.roundId)).filter(Number.isInteger)).size,
-        marathonWatched: marathonItems.filter(item => item.state === 'watched').length,
+        marathonRounds: marathon.rounds,
+        marathonWatched: marathon.broughtWatched,
         watchlist: Number(data.watchlistCount) || 0,
         watching: Number(data.watchingCount) || 0,
         collections: collections.length,

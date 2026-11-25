@@ -10,7 +10,6 @@ import {
     computeWatchTime,
     normalizePinned,
     reactableRatingIds,
-    summarizeMarathon,
     summarizeReactions,
     swapPinned,
     togglePinned
@@ -141,19 +140,6 @@ assert.equal(reactions.total, 8);
 assert.equal(reactions.reviews, 2);
 assert.deepEqual(reactions.byType[0], { type: 'like', count: 6 });
 assert.deepEqual(reactions.top.map(item => item.ratingId), ['c', 'a']);
-
-// Marathon: removed items are ignored; watched ones listed newest first.
-const marathon = summarizeMarathon([
-    { roundId: 1, kpId: 1, title: 'A', state: 'watched', resolvedAt: { seconds: 100 } },
-    { roundId: 2, kpId: 2, title: 'B', state: 'watched', resolvedAt: { seconds: 200 } },
-    { roundId: 2, kpId: 3, title: 'C', state: 'queued' },
-    { roundId: 3, kpId: 4, title: 'D', state: 'removed' },
-    { roundId: 3, kpId: 5, title: 'E', state: 'selected' }
-]);
-assert.equal(marathon.added, 4);
-assert.equal(marathon.rounds, 3);
-assert.equal(marathon.selected, 3);
-assert.deepEqual(marathon.watched.map(item => item.title), ['B', 'A']);
 
 // Pinned favorites: unique numeric ids, at most five, toggling and a full list.
 assert.deepEqual(normalizePinned([{ movieId: 1, title: 'A' }, { movieId: '1' }, { movieId: 'x' }, null]).map(item => item.movieId), ['1']);

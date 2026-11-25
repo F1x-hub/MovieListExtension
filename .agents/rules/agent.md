@@ -572,6 +572,11 @@ checklist; `npm run test:visual-design` enforces much of it.
   toolbar icon follows the browser's mode (`toolbarScheme`), because the worker has no media queries. `SeasonalThemeService` owns the holiday windows, the opt-out, the `season-*`
   class and `#seasonalDecor`, loads `src/shared/seasonal/<id>/` only in season and never changes
   the theme. Seasonal achievements count only ratings inside their window and stay out of
+- Marathon history (`shared/utils/marathonHistory.js`) is counted on the client: items of every round
+  stay in `randomMarathons/current/items`, while the round document is overwritten. «watched» on an
+  item is the admin's mark for the company; that a person watched a film is their own rating from
+  `selectedAt` to a week after `resolvedAt`. A film's score averages that round's bringers and those
+  raters; one rated only by its own bringer says nothing about the company (`ratedByOthers`). Never show `userName` stored with a rating there: it can be the account's real name.
   `maxPoints()`; `tests/seasonalTheme.test.cjs` keeps their dates in step.
 - Avatar frames: `rankFrameLevel` is 1-7 for a reached rank, `CAT_FRAME` (-1) for the cat's frame,
   absent to follow the rank; 0 means no frame and is never stored. `rules/firestore.rules` lists the

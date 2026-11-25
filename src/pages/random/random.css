@@ -1553,6 +1553,110 @@ body {
     gap: 8px;
 }
 
+.marathon-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 22px 20px;
+}
+
+.marathon-history-round {
+    scroll-margin-top: 72px;
+}
+
+.marathon-history-round .filter-disclosure__selection {
+    white-space: normal;
+}
+
+.marathon-history-more {
+    min-height: 44px;
+    margin: 0 22px 20px;
+}
+
+.marathon-history-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.marathon-history-best {
+    margin: 0;
+    color: var(--ui-color-content-muted);
+    font-size: var(--font-size-md);
+    line-height: 1.5;
+}
+
+.marathon-history-best b {
+    color: var(--ui-color-content);
+    font-weight: 600;
+}
+
+.marathon-history-people {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--ui-color-content-muted);
+    font-size: var(--font-size-sm);
+}
+
+.marathon-history-people li {
+    display: inline-flex;
+    gap: 8px;
+}
+
+.marathon-history-people b,
+.marathon-history-score {
+    color: var(--ui-color-content);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+.marathon-history-films {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+    gap: 8px;
+}
+
+.marathon-history-film {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-md);
+}
+
+.marathon-history-film.is-best {
+    border-color: var(--ui-color-content-muted);
+}
+
+.marathon-history-film .marathon-item-poster {
+    width: 44px;
+    height: 64px;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+}
+
+.marathon-history-meta {
+    min-width: 0;
+}
+
+.marathon-history-note {
+    margin: 2px 0 0;
+    color: var(--ui-color-content-muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.marathon-history-score {
+    font-size: var(--font-size-lg);
+}
+
 .marathon-list-item.is-resolved {
     opacity: .6;
 }

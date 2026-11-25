@@ -171,6 +171,16 @@ function checkSearch() {
         assert.equal(element('yearFromFilter').value, '1995');
         assert.equal(element('yearToFilter').value, '');
         assert.deepEqual(Array.from(manager.getSelectedFilters().genresExclude), ['драма']);
+        // A year the old default saved by itself is not a choice; one saved since is.
+        const thisYear = String(new Date().getFullYear());
+        window.localStorage.setItem('movieSearchFilters', JSON.stringify({ yearFrom: '', yearTo: thisYear }));
+        manager.loadFilterState();
+        assert.equal(element('yearToFilter').value, '');
+        window.localStorage.setItem('movieSearchFilters', JSON.stringify({ openYears: true, yearFrom: '', yearTo: thisYear }));
+        manager.loadFilterState();
+        assert.equal(element('yearToFilter').value, thisYear);
+        window.localStorage.setItem('movieSearchFilters', JSON.stringify(stored));
+        manager.loadFilterState();
         const candidates = [{ year: 2000, genres: ['комедия'], countries: ['США'] }, { year: 2000, genres: ['комедия', 'драма'], countries: ['США'] }, { year: 1990, genres: ['комедия'], countries: ['США'] }];
         assert.equal(manager.applyClientSideFilters(candidates, manager.getSelectedFilters()).length, 1, 'Include OR and exclusion/year constraints remain intact');
     } finally { h.dom.window.close(); }

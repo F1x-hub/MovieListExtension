@@ -468,6 +468,8 @@ keeps npm-compatible three-component semver metadata.
 
 - Random: the open filter panel has its own «Найти фильм» that stays in view while you scroll, so changed filters can be applied after a film is already shown. «Другой фильм» on the card is a labelled button instead of a 32px icon. Genres and countries are collapsible groups with a summary, as in Search, so the panel is 521px tall instead of 915px and says how several choices combine.
 - Random: «Мультсериалы» is a type of its own; before, they came up even with series and cartoons excluded. «Мультфильмы» and «Аниме» left the genres, since types cover them; saved choices move to the types.
+- Marathon: «Прошлые раунды» under the current one lists every finished round with its dates, films and people; an opened round names the winner, the average of everyone's picks, and each film with its score, who picked it and who rated it how. The history of earlier rounds is complete: it is counted from the films and ratings already stored. Watched films of the running round show their score too, and a finished round is told once, by its opened history entry.
+- Profile: «Киномарафоны» says how the company rates the films a person brought and which one it liked most, with a link to its round; posters carry the score and the date instead of a round number. Rating a film while it was on now counts as taking part, here and for the «Марафонец» achievement; bringing a film is no longer required.
 - Search: the «Фильтры» button shows that the panel is open and how many filters are on. When filters hide everything found, the page says so and offers to clear them.
 
 ### Fixes
@@ -476,7 +478,7 @@ keeps npm-compatible three-component semver metadata.
 - Films without a Russian name show their original one instead of «Unknown Title» in search, Random and on the film page.
 - Random: the last position of the votes scale («2 млн+») really has no upper limit; films above two million votes could never come up. The scale is uneven, so 10 and 100 thousand are far apart, the upper value is no longer cut to «200000», and the collapsed panel names the votes too. Years end with the current one.
 - Random: when three draws find only rated or recent films, the card says so instead of passing a repeat off as new. «Вернуть по умолчанию» names what it does, covers the «Не предлагать оценённые» choice and keeps the film on screen; «Изменить фильтры» on an empty result opens the panel without resetting it.
-- Search: the counter under filters shows how many titles fit, not how many were found. The upper year starts empty, so next-year films are no longer hidden, including when only the lower year is set. «Применить» without a title moves to the field instead of reporting an error, clearing filters refreshes the results, and the clear button in the field works.
+- Search: the counter under filters shows how many titles fit, not how many were found. The upper year starts empty, so next-year films are no longer hidden, including when only the lower year is set; a year the old default had saved by itself is dropped. «Применить» without a title moves to the field instead of reporting an error, clearing filters refreshes the results, and the clear button in the field works.
 - Search: the start screen, history times, the loader and the end of the list follow the interface language.
 - Buttons in the light theme keep no focus ring after a mouse click, as in the dark theme.
 

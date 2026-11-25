@@ -1408,6 +1408,7 @@ class SearchManager {
      */
     saveFilterState() {
         const filterState = {
+            openYears: true,
             yearFrom: this.elements.yearFromFilter.value,
             yearTo: this.elements.yearToFilter.value,
             genres: [],
@@ -1450,6 +1451,8 @@ class SearchManager {
             if (!savedState) return;
             const filterState = JSON.parse(savedState);
             if (!filterState || typeof filterState !== 'object' || Array.isArray(filterState)) return;
+            // The upper year used to fill itself in with the current one and was saved as a choice.
+            if (!filterState.openYears && !filterState.yearFrom && Number(filterState.yearTo) === new Date().getFullYear()) filterState.yearTo = '';
             for (const [key, input] of [['yearFrom', this.elements.yearFromFilter], ['yearTo', this.elements.yearToFilter]]) {
                 if (Object.hasOwn(filterState, key)) input.value = filterState[key] ?? '';
             }

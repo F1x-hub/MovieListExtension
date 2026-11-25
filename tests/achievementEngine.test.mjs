@@ -53,7 +53,13 @@ const metrics = computeMetrics({
     movies,
     reactionSummaries: [{ total: 4 }, { total: 3 }],
     reactionsGiven: 6,
-    marathonItems: [{ roundId: 1, state: 'watched' }, { roundId: 2, state: 'queued' }, { roundId: 3, state: 'removed' }],
+    uid: 'me',
+    marathonItems: [
+        { roundId: 1, state: 'watched', addedBy: 'me', kpId: 90 }, { roundId: 2, state: 'queued', addedBy: 'me', kpId: 91 }, { roundId: 3, state: 'removed', addedBy: 'me', kpId: 92 },
+        // Someone else's film, rated (c, 20 October) while it was on, and one rated long before.
+        { roundId: 4, state: 'watched', addedBy: 'friend', kpId: 3, selectedAt: day(2026, 9, 19), resolvedAt: day(2026, 9, 20) },
+        { roundId: 5, state: 'watched', addedBy: 'friend', kpId: 1, selectedAt: day(2026, 5, 1), resolvedAt: day(2026, 5, 2) }
+    ],
     watchlistCount: 12,
     watchingCount: 2,
     collections: [{ movieIds: [1, 2] }, { movieIds: [3] }],
@@ -81,8 +87,8 @@ assert.equal(metrics.newYearRatings, 0, 'early January 2026 belongs to the 2025 
 assert.equal(metrics.streak, 2);
 assert.equal(metrics.reactionsReceived, 7);
 assert.equal(metrics.reactionsGiven, 6);
-assert.equal(metrics.marathonRounds, 2, 'removed items do not count');
-assert.equal(metrics.marathonWatched, 1);
+assert.equal(metrics.marathonRounds, 3, 'bringing or rating a film on time counts; removed items and old ratings do not');
+assert.equal(metrics.marathonWatched, 1, 'only the films one brought');
 assert.equal(metrics.collections, 2);
 assert.equal(metrics.collectionItems, 3);
 assert.equal(metrics.pinned, 2);

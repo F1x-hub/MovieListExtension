@@ -7,10 +7,12 @@
  * `achievementPoints`, and other users see that stored snapshot.
  *
  * Reads: the ratings snapshot ProfileService already shares, one batched
- * movie-metadata read, and `in`/equality queries that bill only for matches.
+ * movie-metadata read, `in`/equality queries that bill only for matches, and the items
+ * of every marathon round, which the profile's statistics share for a minute.
  */
 import { evaluateAll, computeMetrics, mergeUnlocks, totalPoints } from './AchievementEngine.js';
 import { TRAIL_ID, TRAIL_STEPS, trailSteps } from './catTrail.js';
+import { loadMarathonItems } from '../utils/marathonHistory.js';
 
 const IN_QUERY_CHUNK = 30;
 const chunk = (values, size) => {
@@ -55,8 +57,7 @@ export class AchievementService {
                 return snapshots.flatMap(snapshot => snapshot.docs.map(doc => doc.data()));
             }, []),
             countWhere('commentReactions', 'userId', uid),
-            this.safe('marathon', async () => (await this.db.collection('randomMarathons').doc('current')
-                .collection('items').where('addedBy', '==', uid).get()).docs.map(doc => doc.data()), []),
+            this.safe('marathon', () => loadMarathonItems(this.db), []),
             countWhere('favorites', 'userId', uid, ['status', 'plan_to_watch']),
             countWhere('favorites', 'userId', uid, ['status', 'watching']),
             this.safe('collections', async () => (await this.db.collection('users').doc(uid)
@@ -64,6 +65,7 @@ export class AchievementService {
         ]);
 
         return {
+            uid,
             ratings,
             movies,
             reactionSummaries,

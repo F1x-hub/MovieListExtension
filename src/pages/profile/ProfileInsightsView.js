@@ -8,12 +8,12 @@ import {
     fillDecades,
     normalizePinned,
     reactableRatingIds,
-    summarizeMarathon,
     summarizeReactions,
     swapPinned,
     togglePinned
 } from './ProfileInsights.js';
 import { ProfileActivityCalendar } from './ProfileActivityCalendar.js';
+import { loadMarathonItems, summarizePerson } from '../../shared/utils/marathonHistory.js';
 
 // Firestore `in` queries accept at most 30 values; only existing documents are billed.
 const IN_QUERY_CHUNK = 30;
@@ -21,6 +21,7 @@ const IN_QUERY_CHUNK = 30;
 // Two full rows on a wide page; the rest of a person's films wait behind a button.
 const LIKED_FILMS_SHOWN = 14;
 const OTHER_FILMS_SHOWN = 8;
+const MARATHON_FILMS_SHOWN = 6;
 
 function chunk(values, size) {
     const chunks = [];
@@ -242,7 +243,7 @@ export class ProfileInsightsView {
         insights.replaceChildren(this.renderTaste(data), this.renderPeople(data), pair);
         const stale = () => data !== this.data;
         return Promise.allSettled([
-            this.loadMarathon(data.targetUid, data.isOther, marathon, stale),
+            this.loadMarathon(data, marathon, stale),
             this.loadReactions(data.ratings, data.titles, reactions, stale)
         ]);
     }
@@ -423,11 +424,11 @@ export class ProfileInsightsView {
         window.scrollBy({ top: distance, behavior: calm ? 'auto' : 'smooth' });
     }
 
-    poster({ movieId, title, posterUrl, caption }) {
+    poster({ movieId, title, posterUrl, caption, detail = '' }) {
         return `
             <a class="insight-poster" href="${this.escape(this.movieUrl(movieId))}" title="${this.escape(title)}">
                 <span class="insight-poster__image">${posterUrl ? `<img src="${this.escape(posterUrl)}" alt="${this.escape(title)}" loading="lazy" decoding="async">` : `<span class="insight-poster__fallback">${this.escape(title)}</span>`}</span>
-                ${caption ? `<span class="insight-poster__caption">${this.escape(caption)}</span>` : ''}
+                ${caption ? `<span class="insight-poster__caption">${this.escape(caption)}${detail ? `<small>${this.escape(detail)}</small>` : ''}</span>` : ''}
             </a>`;
     }
 
@@ -548,12 +549,10 @@ export class ProfileInsightsView {
 
     // ---- Marathon history ------------------------------------------------------------
 
-    async loadMarathon(targetUid, isOther, { section, subtitle, body }, stale) {
-        let items = [];
+    async loadMarathon({ targetUid, isOther, ratings: ownRatings }, { section, subtitle, body }, stale) {
+        let items;
         try {
-            const snapshot = await this.db.collection('randomMarathons').doc('current')
-                .collection('items').where('addedBy', '==', targetUid).get();
-            snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+            items = await loadMarathonItems(this.db);
         } catch (error) {
             // Unapproved accounts cannot read the marathon; the section is simply absent.
             console.warn('ProfileInsights: marathon history unavailable', error?.code || error);
@@ -561,24 +560,62 @@ export class ProfileInsightsView {
             return;
         }
         if (stale()) return;
-        const summary = summarizeMarathon(items);
-        if (!summary.added) {
+        const brought = items.filter(item => item.addedBy === targetUid && item.state === 'watched').map(item => item.kpId);
+        let ratings = [];
+        try {
+            if (brought.length) ({ currentRatings: ratings } = await this.profileService.ratingService.fetchCurrentRatingsForMovies(brought));
+        } catch (error) {
+            // Films and dates are still worth showing without the scores.
+            console.warn('ProfileInsights: marathon scores unavailable', error?.code || error);
+        }
+        if (stale()) return;
+        const summary = summarizePerson(items, targetUid, ownRatings, ratings);
+        if (!summary.rounds) {
             body.innerHTML = `<p class="taste-empty">${this.escape(this.t(isOther ? 'marathon_empty_other' : 'marathon_empty'))}</p>`;
             return;
         }
         subtitle.textContent = [
             this.tn('marathon_rounds', summary.rounds),
-            this.tn('marathon_added', summary.added),
-            this.t('marathon_selected', { n: summary.selected })
+            this.tn('marathon_brought', summary.brought),
+            this.tn('marathon_seen', summary.watched)
         ].join(', ');
-        body.innerHTML = summary.watched.length
-            ? `<div class="insight-posters">${summary.watched.map(item => this.poster({
-                movieId: item.movieId,
-                title: item.title,
-                posterUrl: this.safeImageUrl(item.posterUrl),
-                caption: item.roundId ? this.t('marathon_round', { n: item.roundId }) : ''
-            })).join('')}</div>`
-            : `<p class="taste-empty">${this.escape(this.t('marathon_watched_empty'))}</p>`;
+        body.innerHTML = `
+            ${this.renderMarathonVerdict(summary, isOther)}
+            ${summary.films.length
+                ? `<div class="insight-posters">${summary.films.slice(0, MARATHON_FILMS_SHOWN).map(film => this.marathonPoster(film)).join('')}</div>`
+                : `<p class="taste-empty">${this.escape(this.t('marathon_watched_empty'))}</p>`}
+            <a class="insight-more" href="${this.escape(this.marathonUrl())}">${this.escape(this.t('marathon_all'))}</a>`;
+    }
+
+    /** How the company liked this person's films, and the one it liked most, which leads to its round. */
+    renderMarathonVerdict({ average, best }, isOther) {
+        if (average === null) return '';
+        const verdict = this.t(isOther ? 'marathon_verdict_other' : 'marathon_verdict', { score: this.formatScore(average) });
+        const praised = best ? ` <a href="${this.escape(this.marathonUrl(best.roundId))}">${this.escape(this.t('marathon_best', { title: best.title, score: this.formatScore(best.average) }))}</a>` : '';
+        return `<p class="insight-verdict"><b>${this.escape(verdict)}</b>${praised}</p>`;
+    }
+
+    marathonPoster(film) {
+        const date = film.watchedAt
+            ? new Intl.DateTimeFormat(this.locale, new Date(film.watchedAt).getFullYear() === new Date().getFullYear()
+                ? { day: 'numeric', month: 'short' } : { month: 'short', year: 'numeric' }).format(film.watchedAt) : '';
+        const score = film.average === null ? this.t('marathon_unscored') : `★ ${this.formatScore(film.average)}`;
+        return this.poster({
+            movieId: film.kpId,
+            title: film.title,
+            posterUrl: this.safeImageUrl(film.poster),
+            caption: score,
+            detail: date
+        });
+    }
+
+    formatScore(value) {
+        return value.toLocaleString(this.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+
+    marathonUrl(roundId = null) {
+        const path = `src/pages/random/random.html${roundId ? `?round=${roundId}` : ''}#marathon`;
+        return typeof chrome !== 'undefined' && chrome.runtime?.getURL ? chrome.runtime.getURL(path) : `/${path}`;
     }
 
     // ---- Favorite picker ------------------------------------------------------------

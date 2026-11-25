@@ -1,6 +1,7 @@
 
 import { i18n } from '../../shared/i18n/I18n.js';
 import { RandomWheelAudio } from './RandomWheelAudio.js';
+import { describeRound, listRounds, loadMarathonItems, raterIds, scoreWatched } from '../../shared/utils/marathonHistory.js';
 
 const DEFAULT_SPINNER_POSTER = '/src/shared/assets/icons/app/icon128-white.png';
 const PREVIEW_POSTERS = [];
@@ -30,6 +31,8 @@ const GENRES_COVERED_BY_TYPE = { мультфильм: ['cartoon', 'animated-ser
 // Page modes: the URL hash (#pick, #pool, #marathon) wins over the mode remembered on this device.
 const RANDOM_MODES = ['pick', 'pool', 'marathon'];
 const RANDOM_MODE_STORAGE_KEY = 'random_page_mode';
+// Newer rounds of the marathon history; the rest wait behind a button.
+const HISTORY_ROUNDS_SHOWN = 6;
 function getSafePosterUrl(value) {
     return typeof PosterUrl !== 'undefined' ? PosterUrl.safe(value) : '';
 }
@@ -168,6 +171,7 @@ class RandomManager {
                 // Marathon and pool text is rendered from the locale, not data-i18n.
                 this._syncSearchLabels();
                 this._renderMarathon();
+                this._renderMarathonHistory();
                 this._refreshPoolList();
                 this.setupSliders();
                 if (this.currentMovie && !this._findBusy && this.elements.movieResult.style.display !== 'none') {
@@ -1328,7 +1332,11 @@ class RandomManager {
         }
         if (previous === 'pool' && mode !== 'pool') document.getElementById('poolSearchResults')?.classList.add('hidden');
         if (mode === 'pool') this._renderPoolList();
-        if (mode === 'marathon') this._renderMarathon();
+        if (mode === 'marathon') {
+            this._renderMarathon();
+            this._loadMarathonHistory();
+            this._loadMarathonScores();
+        }
         try {
             const url = new URL(window.location.href);
             if (url.hash !== `#${mode}`) {
@@ -1467,6 +1475,11 @@ class RandomManager {
         this.marathonIsAdmin = false;
         this.marathonState = { round: null, items: [] };
         this._marathonLoading = Boolean(user);
+        this._marathonHistoryKey = null;
+        this._marathonHistory = [];
+        this._marathonScoresKey = null;
+        this._marathonScores = null;
+        this._renderMarathonHistory();
         this._renderMarathon();
         if (!user) {
             return;
@@ -1480,6 +1493,8 @@ class RandomManager {
                 this._marathonLoading = false;
                 this.marathonState = state;
                 this._renderMarathon();
+                this._loadMarathonHistory();
+                this._loadMarathonScores();
             },
             (error) => {
                 if (refreshId !== this._marathonAuthRefreshId) return;
@@ -1740,7 +1755,10 @@ class RandomManager {
 
         // List: one flat list while collecting, groups once the marathon runs.
         list.innerHTML = '';
-        if (!displayItems.length) list.innerHTML = `<div class="pool-list-empty">${this._escapeHtml(this._t('round_empty'))}</div>`;
+        // A completed round is told by its history entry, opened; this card keeps only the actions.
+        const told = round.status === 'completed' && (this._marathonHistory || []).some(past => past.roundId === Number(round.roundId));
+        if (told) list.replaceChildren();
+        else if (!displayItems.length) list.innerHTML = `<div class="pool-list-empty">${this._escapeHtml(this._t('round_empty'))}</div>`;
         else if (collecting) {
             displayItems.forEach((item) => list.appendChild(this._createMarathonRow(item, round, user)));
         } else {
@@ -1766,9 +1784,230 @@ class RandomManager {
         if (this.marathonIsAdmin && ['completed', 'cancelled'].includes(round.status)) {
             actions.innerHTML += `<button class="btn-roll-from-pool" data-marathon-action="create">${this._escapeHtml(this._t('open_new_round'))}</button>`;
         }
+        if (listCard) listCard.hidden = told && !actions.innerHTML;
         this._bindMarathonActions();
         this._syncMarathonActionState();
         this._refreshPoolList();
+    }
+
+    /**
+     * Finished rounds under the current one. Items are read when the mode first opens,
+     * the ratings of a round when it is expanded.
+     */
+    async _loadMarathonHistory() {
+        const round = this.marathonState?.round;
+        if (this.activeMode !== 'marathon' || !round || !this.marathonService?.decorateItems) return;
+        const key = `${round.roundId}:${round.status === 'completed'}`;
+        if (this._marathonHistoryKey === key) return;
+        this._marathonHistoryKey = key;
+        try {
+            const past = (await loadMarathonItems(this.marathonService.db)).filter(item => Number(item.roundId) !== Number(round.roundId));
+            const items = await this.marathonService.decorateItems(past);
+            if (this._disposed || this._marathonHistoryKey !== key) return;
+            // The live subscription is newer than the shared read about the current round.
+            this._marathonHistory = listRounds([...items, ...(this.marathonState.items || [])], round);
+            this._renderMarathonHistory();
+            if (round.status === 'completed') this._renderMarathon();
+        } catch (error) {
+            console.warn('RandomManager: marathon history unavailable', error?.code || error);
+            // The next opening of the mode tries again.
+            if (this._marathonHistoryKey === key) this._marathonHistoryKey = null;
+        }
+    }
+
+    _renderMarathonHistory() {
+        const section = document.getElementById('marathonHistory');
+        if (!section) return;
+        const rounds = this._marathonHistory || [];
+        const open = new Set([...section.querySelectorAll('details[open]')].map(item => Number(item.dataset.round)));
+        section.hidden = rounds.length === 0;
+        section.replaceChildren();
+        if (!rounds.length) return;
+        const asked = Number(new URL(window.location.href).searchParams.get('round'));
+        const head = document.createElement('div');
+        head.className = 'random-card-head';
+        const title = document.createElement('h2');
+        title.className = 'random-card-title';
+        title.textContent = this._t('history_title');
+        head.append(title);
+        const list = document.createElement('div');
+        list.className = 'marathon-history-list';
+        section.append(head, list);
+        const current = this.marathonState?.round;
+        const finished = current?.status === 'completed' ? Number(current.roundId) : null;
+        const entries = rounds.map(round => this._createHistoryRound(round));
+        entries.forEach((details, index) => {
+            const id = Number(details.dataset.round);
+            details.open = open.has(id) || (!this._marathonHistoryAsked && id === asked) || (!open.size && id === finished);
+            details.hidden = !this._marathonHistoryFull && index >= HISTORY_ROUNDS_SHOWN && !details.open;
+        });
+        list.append(...entries);
+        const hidden = entries.filter(details => details.hidden);
+        if (hidden.length) {
+            const more = document.createElement('button');
+            more.type = 'button';
+            more.className = 'btn btn-secondary marathon-history-more';
+            more.textContent = this._t('history_more', { n: hidden.length });
+            more.addEventListener('click', () => {
+                this._marathonHistoryFull = true;
+                hidden.forEach(details => { details.hidden = false; });
+                more.remove();
+                hidden[0].querySelector('summary').focus();
+            });
+            section.append(more);
+        }
+        if (!this._marathonHistoryAsked && rounds.some(round => round.roundId === asked)) {
+            this._marathonHistoryAsked = true;
+            list.querySelector(`[data-round="${asked}"]`)?.scrollIntoView({ block: 'start' });
+        }
+    }
+
+    _createHistoryRound(round) {
+        const details = document.createElement('details');
+        details.className = 'filter-disclosure marathon-history-round';
+        details.dataset.round = String(round.roundId);
+        const summary = document.createElement('summary');
+        summary.className = 'filter-disclosure__summary disclosure-summary';
+        const label = document.createElement('span');
+        label.className = 'filter-disclosure__label';
+        label.textContent = this._t('round_title', { n: round.roundId });
+        const note = document.createElement('span');
+        note.className = 'filter-disclosure__selection';
+        note.textContent = [
+            this._formatRoundDates(round),
+            this._t('history_films', { n: round.films }),
+            this._t('history_bringers', { n: round.bringers })
+        ].filter(Boolean).join(' · ');
+        summary.append(label, note);
+        const body = document.createElement('div');
+        body.className = 'filter-disclosure__content marathon-history-body';
+        details.append(summary, body);
+        details.addEventListener('toggle', () => {
+            if (details.open) this._fillHistoryRound(round, body);
+        });
+        return details;
+    }
+
+    async _fillHistoryRound(round, body) {
+        if (body.dataset.state === 'ready' || body.dataset.state === 'loading') return;
+        body.dataset.state = 'loading';
+        const notice = document.createElement('p');
+        notice.className = 'random-card-note';
+        notice.textContent = this._t('history_loading');
+        body.replaceChildren(notice);
+        try {
+            const ratingService = firebaseManager.getRatingService();
+            const { currentRatings } = await ratingService.fetchCurrentRatingsForMovies(round.items.map(item => item.kpId));
+            if (this._disposed) return;
+            const names = await this.marathonService.getDisplayNames(raterIds(currentRatings));
+            if (this._disposed) return;
+            const result = describeRound(round, currentRatings, names);
+            const standings = this._createHistoryStandings(result);
+            const films = document.createElement('div');
+            films.className = 'marathon-history-films';
+            films.append(...result.films.map(film => this._createHistoryFilm(film, film === result.best)));
+            body.replaceChildren(...standings, films);
+            body.dataset.state = 'ready';
+        } catch (error) {
+            console.warn('RandomManager: marathon round unavailable', error?.code || error);
+            body.dataset.state = '';
+            notice.textContent = this._t('history_failed');
+        }
+    }
+
+    /** The winner in one line, then everyone's films by their average. */
+    _createHistoryStandings({ best, people }) {
+        const parts = [];
+        if (best) {
+            const line = document.createElement('p');
+            line.className = 'marathon-history-best';
+            const name = document.createElement('b');
+            name.textContent = this._t('history_best', { title: best.title, score: this._formatMarathonScore(best.average) });
+            line.append(name, ` ${this._t('history_brought_by', { name: best.addedByName || this._t('participant') })}`);
+            parts.push(line);
+        }
+        if (people.length > 1) {
+            const label = document.createElement('p');
+            label.className = 'marathon-history-note';
+            label.textContent = this._t('history_people_label');
+            const list = document.createElement('ul');
+            list.className = 'marathon-history-people';
+            list.setAttribute('aria-label', label.textContent);
+            for (const person of people) {
+                const item = document.createElement('li');
+                const name = document.createElement('span');
+                name.textContent = person.name || this._t('participant');
+                const score = document.createElement('b');
+                score.textContent = person.average === null ? '—' : this._formatMarathonScore(person.average);
+                item.append(name, score);
+                list.append(item);
+            }
+            const standings = document.createElement('div');
+            standings.append(label, list);
+            parts.push(standings);
+        }
+        return parts;
+    }
+
+    _createHistoryFilm(film, isBest) {
+        const row = document.createElement('article');
+        row.className = 'marathon-history-film';
+        row.classList.toggle('is-best', isBest);
+        const poster = this._createMarathonPoster(film);
+        const meta = document.createElement('div');
+        meta.className = 'marathon-history-meta';
+        const title = document.createElement('a');
+        title.className = 'marathon-current-movie-link';
+        title.href = chrome.runtime.getURL(`src/pages/movie-details/movie-details.html?movieId=${film.kpId}`);
+        title.textContent = film.title || this._t('untitled');
+        const by = document.createElement('p');
+        by.className = 'marathon-history-note';
+        by.textContent = [
+            this._t('history_brought_by', { name: film.addedByName || this._t('participant') }),
+            film.watchedAt ? new Intl.DateTimeFormat(i18n.currentLocale, { day: 'numeric', month: 'short' }).format(film.watchedAt) : ''
+        ].filter(Boolean).join(' · ');
+        meta.append(title, by);
+        if (film.scores.length) {
+            const scores = document.createElement('p');
+            scores.className = 'marathon-history-note';
+            scores.textContent = film.scores.map(entry => `${entry.name || this._t('participant')} ${entry.score}`).join(' · ');
+            meta.append(scores);
+        }
+        const score = document.createElement('span');
+        score.className = 'marathon-history-score';
+        score.textContent = film.average === null ? '—' : this._formatMarathonScore(film.average);
+        score.title = film.average === null ? this._t('history_unscored') : this._t('history_score_hint');
+        row.append(poster, meta, score);
+        return row;
+    }
+
+    _formatMarathonScore(value) {
+        return value.toLocaleString(i18n.currentLocale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+
+    _formatRoundDates({ from, to }) {
+        if (!from || !to) return '';
+        const thisYear = [from, to].every(value => new Date(value).getFullYear() === new Date().getFullYear());
+        return new Intl.DateTimeFormat(i18n.currentLocale, { day: 'numeric', month: 'short', ...(thisYear ? {} : { year: 'numeric' }) }).formatRange(from, to);
+    }
+
+    /** Scores of the running round's watched films; read again when another film is watched. */
+    async _loadMarathonScores() {
+        const { round, items } = this.marathonState || {};
+        if (this.activeMode !== 'marathon' || round?.status !== 'active' || !this.marathonService?.decorateItems) return;
+        const watched = (items || []).filter(item => item.state === 'watched');
+        const key = `${round.roundId}:${watched.map(item => item.kpId).sort().join(',')}`;
+        if (!watched.length || this._marathonScoresKey === key) return;
+        this._marathonScoresKey = key;
+        try {
+            const { currentRatings } = await firebaseManager.getRatingService().fetchCurrentRatingsForMovies(watched.map(item => item.kpId));
+            if (this._disposed || this._marathonScoresKey !== key) return;
+            this._marathonScores = scoreWatched(items, currentRatings);
+            this._renderMarathon();
+        } catch (error) {
+            // Rows without scores are still complete.
+            console.warn('RandomManager: marathon scores unavailable', error?.code || error);
+        }
     }
 
     /** Marathon poster with the saved URL, then the Kinopoisk one; it opens in the lightbox. */
@@ -1849,6 +2088,14 @@ class RandomManager {
             state.className = 'marathon-item-state';
             state.textContent = this._t('state_adding');
             rowActions.appendChild(state);
+        }
+        const film = item.state === 'watched' ? this._marathonScores?.get(Number(item.kpId)) : null;
+        if (film && Number(film.roundId) === Number(round.roundId) && film.average !== null) {
+            const score = document.createElement('span');
+            score.className = 'marathon-history-score';
+            score.title = this._t('history_score_hint');
+            score.textContent = this._formatMarathonScore(film.average);
+            rowActions.appendChild(score);
         }
         row.append(poster, meta, rowActions);
         row.addEventListener('click', () => {

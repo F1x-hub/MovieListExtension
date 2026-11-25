@@ -112,6 +112,20 @@ class RandomMarathonService {
         });
     }
 
+    /** Current display names; a person without a readable profile has none. */
+    async getDisplayNames(userIds) {
+        const entries = await Promise.all([...new Set(userIds)].map(async (userId) => {
+            const profile = await this._getUserProfile(userId);
+            return [userId, profile ? this._getDisplayName(profile) : ''];
+        }));
+        return new Map(entries.filter(([, name]) => name));
+    }
+
+    /** Items with the current display names of the people who brought them. */
+    decorateItems(items) {
+        return this._decorateItems(items);
+    }
+
     async isAdmin() {
         const user = this._getCurrentUser();
         const profile = await this._getUserProfile(user.uid);
