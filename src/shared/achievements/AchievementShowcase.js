@@ -6,6 +6,7 @@
  */
 import { ACHIEVEMENTS_BY_ID, pointsFor } from './AchievementCatalog.js';
 import { renderBadge } from './AchievementBadge.js';
+import { setMarkup } from '../utils/setMarkup.js';
 
 const SHOWCASE_SIZE = 6;
 export const SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -16,7 +17,9 @@ export function topAchievements(stored = {}, limit = SHOWCASE_SIZE) {
     return Object.entries(stored)
         .map(([id, entry]) => ({ def: ACHIEVEMENTS_BY_ID[id], tier: Number(entry?.tier) || 0 }))
         .filter(item => item.def && item.tier > 0)
-        .sort((a, b) => b.tier - a.tier || pointsFor(b.def, b.tier) - pointsFor(a.def, a.tier))
+        .sort((a, b) => b.tier - a.tier || pointsFor(b.def, b.tier) - pointsFor(a.def, a.tier)
+            // Ties keep one order however the stored map is ordered.
+            || (a.def.id < b.def.id ? -1 : 1))
         .slice(0, limit);
 }
 
@@ -30,7 +33,7 @@ export function renderShowcase(container, stored, { isOwn, uid, i18n }) {
     const items = topAchievements(stored);
     const href = `../profile/profile.html?${isOwn ? '' : `userId=${encodeURIComponent(uid)}&`}tab=achievements`;
     container.hidden = false;
-    container.innerHTML = `
+    const html = `
         <div class="profile-achievements__header">
             <h2 class="section-title">${escape(t('showcase_title'))}</h2>
             <a class="dashboard-section-link profile-achievements__link" href="${href}">${escape(t('view_all'))}</a>
@@ -40,4 +43,6 @@ export function renderShowcase(container, stored, { isOwn, uid, i18n }) {
             const label = def.oneOff ? name : `${name} · ${ROMAN[tier - 1]}`;
             return `<a class="profile-achievements__item" href="${href}" title="${escape(label)}">${renderBadge(def, tier, { title: label })}<span>${escape(label)}</span></a>`;
         }).join('')}</div>` : `<p class="taste-empty">${escape(t(isOwn ? 'showcase_empty_own' : 'showcase_empty_other'))}</p>`}`;
+    // Every badge drawing numbers its clip paths anew.
+    setMarkup(container, html, html.replace(/\bach\d+/g, 'ach'));
 }

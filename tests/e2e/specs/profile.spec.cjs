@@ -178,6 +178,36 @@ for (const theme of ['dark', 'light']) {
             for (const [count, width] of widths) expect(width).toBeCloseTo((count / 9) * 100, 3);
         });
 
+        await test.step('the search reaches every rating and works together with the score', async () => {
+            const input = page.locator('#ratingSearch');
+            const query = (FILMS[20].title || FILMS[20].name).slice(0, 8);
+            const expected = FILMS.slice(0, 24).filter(film => (film.title || film.name).toLowerCase().includes(query.toLowerCase())).length;
+            await input.fill(query.toUpperCase());
+            await expect(page.locator('#ratingFilterStatus')).toHaveText(`Найдено: ${expected}`);
+            await expect(page.locator('.recent-rating-card')).toHaveCount(expected);
+            await expect(page.locator('.recent-rating-card mark').first()).toBeVisible();
+            expect(await page.locator('.rating-distribution__count').evaluateAll(items => items.reduce((sum, item) => sum + Number(item.textContent), 0))).toBe(expected);
+            const row = page.locator(`.rating-distribution__row[data-rating="${scoreOf(20)}"]`);
+            await row.click();
+            await expect(row).toBeFocused();
+            await expect(page.locator('#ratingFilterStatus')).toContainText(`Оценка ${scoreOf(20)}, найдено: `);
+            await page.screenshot({ path: testInfo.outputPath(`search-${theme}.png`), fullPage: true });
+            await row.click();
+            await input.fill('нет такого фильма');
+            await expect(page.locator('.recent-ratings-empty')).toHaveText('По запросу «нет такого фильма» ничего не найдено.');
+            await expect(page.locator('.rating-distribution__row:disabled')).toHaveCount(10);
+            await page.locator('#ratingSearchClear').click();
+            await expect(input).toBeFocused();
+            await expect(page.locator('#ratingSearchClear')).toBeHidden();
+            await expect(page.locator('.recent-rating-card')).toHaveCount(10);
+            // The field starts where the list does, beside the score filter.
+            const field = await input.boundingBox();
+            const list = await page.locator('#recentRatingsList').boundingBox();
+            const bars = await page.locator('#ratingDistribution').boundingBox();
+            expect(field.x).toBeCloseTo(list.x, 0);
+            expect(Math.abs(field.y - bars.y)).toBeLessThan(2);
+        });
+
         await test.step('statistics read reactions and marathons only when opened', async () => {
             expect(reads).toHaveLength(0);
             await page.locator('#profileTabStatisticsBtn').click();
@@ -194,9 +224,74 @@ for (const theme of ['dark', 'light']) {
             }
             await page.screenshot({ path: testInfo.outputPath(`statistics-${theme}.png`), fullPage: true });
 
+            // A genre and a decade show their films in one panel under both charts.
+            const taste = page.locator('#insightTasteFilms');
+            const genre = page.locator('.insight-genres__row').first();
+            await expect(taste).toBeHidden();
+            await genre.click();
+            await waitForStillness(page);
+            await expect(genre).toHaveAttribute('aria-expanded', 'true');
+            await expect(taste.locator('.insight-films__name')).toHaveText(await genre.locator('.insight-genres__name').textContent());
+            await expect(taste.locator('.insight-films__note')).toHaveText(/^16 фильмов, в среднем \d,\d$/);
+            await expect(taste.locator('.insight-films__grid > li:visible')).toHaveCount(14);
+            await expect(taste.locator('[data-only]')).toHaveCount(10);
+            await expect(taste.locator('.insight-films__link')).toHaveAttribute('href', /catalog\.html\?category=films&genre=\d+$/);
+            await page.screenshot({ path: testInfo.outputPath(`statistics-genre-${theme}.png`), fullPage: true });
+            await taste.locator('[data-films-more]').click();
+            await expect(taste.locator('.insight-films__grid > li:visible')).toHaveCount(16);
+            await expect(taste.locator('.insight-films__grid > li').nth(14).locator('a')).toBeFocused();
+            await taste.locator('[data-films-less]').click();
+            await expect(taste.locator('.insight-films__grid > li:visible')).toHaveCount(14);
+            // One score, then all of them again.
+            const eights = taste.locator('[data-only="8"]');
+            const count = Number(await eights.locator('span').first().innerText());
+            await eights.click();
+            await expect(taste.locator('.insight-films__grid > li:visible')).toHaveCount(count);
+            expect(new Set(await taste.locator('.insight-films__score b').allInnerTexts())).toEqual(new Set(['8']));
+            await taste.locator('.insight-strip__reset').click();
+            await expect(eights).toBeFocused();
+            await expect(taste.locator('.insight-strip__reset')).toBeHidden();
+            // The order is the shared list control; its Escape closes the list, not the panel.
+            const order = taste.locator('.sort-control__trigger');
+            await order.click();
+            await page.keyboard.press('Escape');
+            await expect(taste).toBeVisible();
+            await order.click();
+            await page.getByRole('option', { name: 'Сначала худшие' }).click();
+            const worst = (await taste.locator('.insight-films__score b').allInnerTexts()).map(Number);
+            expect(worst).toEqual([...worst].sort((a, b) => a - b));
+            // A decade takes the panel over; a year narrows the whole story.
+            const decade = page.locator('.insight-decades__button[data-value="1980"]');
+            await decade.click();
+            await waitForStillness(page);
+            await expect(page.locator('.insight-taste__groups [data-taste][aria-expanded="true"]')).toHaveCount(1);
+            await expect(page.locator('.sort-control__list')).toHaveCount(1);
+            await expect(taste.locator('.insight-films__name')).toHaveText('1980-е');
+            await expect(taste.locator('.insight-films__grid > li:visible')).toHaveCount(10);
+            const offset = await decade.evaluate(button => {
+                const box = button.getBoundingClientRect();
+                const films = document.querySelector('#insightTasteFilms');
+                const left = parseFloat(getComputedStyle(films, '::before').left) + films.parentElement.getBoundingClientRect().left + 6;
+                return Math.abs(left - (box.left + box.width / 2));
+            });
+            expect(offset).toBeLessThan(2);
+            await taste.locator('[data-only="1983"]').click();
+            await expect(taste.locator('.insight-films__name')).toHaveText('1983 год');
+            await expect(taste.locator('.insight-films__note')).toHaveText('1 фильм');
+            await expect(taste.locator('.insight-films__link')).toHaveAttribute('href', /yearFrom=1983&yearTo=1983$/);
+            await page.screenshot({ path: testInfo.outputPath(`statistics-year-${theme}.png`), fullPage: true });
+            await page.keyboard.press('Escape');
+            await expect(taste).toBeHidden();
+            await expect(decade).toBeFocused();
+            await decade.click();
+            await decade.click();
+            await expect(taste).toBeHidden();
+            // Left open, so the narrow windows below are checked with it.
+            await genre.click();
+
             // A person shows the films behind their number; one panel serves everyone.
             const people = page.locator('.insight-person');
-            const panel = page.locator('.insight-films');
+            const panel = page.locator('#insightFilms');
             await expect(panel).toBeHidden();
             for (const index of [0, 1]) {
                 const person = people.nth(index);
@@ -214,7 +309,7 @@ for (const theme of ['dark', 'light']) {
                 // The pointer stands under the chosen photo.
                 const offset = await person.locator('.insight-person__photo').evaluate(photo => {
                     const box = photo.getBoundingClientRect();
-                    const films = document.querySelector('.insight-films');
+                    const films = document.querySelector('#insightFilms');
                     const left = parseFloat(getComputedStyle(films, '::before').left) + films.parentElement.getBoundingClientRect().left + 6;
                     return Math.abs(left - (box.left + box.width / 2));
                 });
@@ -244,6 +339,7 @@ for (const theme of ['dark', 'light']) {
                 for (const tab of ['statistics', 'overview']) {
                     await page.locator(`[data-profile-tab="${tab}"]`).click();
                     expect(await overflow(page), `${tab} at ${width}px`).toBeLessThanOrEqual(0);
+                    if (tab === 'statistics') await page.screenshot({ path: testInfo.outputPath(`statistics-${theme}-${width}.png`), fullPage: true });
                 }
                 const size = await grid.locator('[data-day]:visible').first().evaluate(element => element.getBoundingClientRect().width);
                 expect(size, `cell at ${width}px`).toBeGreaterThan(10);
@@ -263,6 +359,13 @@ test('another profile starts with the taste match and has no links to the viewer
     await expect(page.locator('#continueWatchingSection')).toBeHidden();
     await expect(page.locator('#profileMenu')).toBeHidden();
     await expect(page.locator('#profileStats [href]')).toHaveCount(0);
+    // Another person's ratings are searched as well, with words that are theirs.
+    await expect(page.locator('#ratingSearch')).toHaveAttribute('placeholder', 'Найти фильм в оценках этого пользователя');
+    const title = FILMS[12].title || FILMS[12].name;
+    await page.locator('#ratingSearch').fill(title);
+    await expect(page.locator(`.recent-rating-card[data-movie-id="${FILMS[12].id}"]`)).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.recent-rating-card')).toHaveCount(10);
     await expect(page.locator('#joinDateText')).toHaveText('Участник с октября 2025');
     await waitForStillness(page);
     await page.screenshot({ path: testInfo.outputPath('other.png'), fullPage: true });

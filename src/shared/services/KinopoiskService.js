@@ -2368,6 +2368,51 @@ class KinopoiskService {
     }
 
     /**
+     * The card fields of up to 250 films in one request: a person's filmography comes
+     * from the API without posters, years, types and votes. Failures throw, so the
+     * caller can tell them from films without a poster.
+     * @param {Array<number|string>} kinopoiskIds
+     * @param {Object} [options={}] - Options { signal, timeoutMs }
+     * @returns {Promise<Array<{kinopoiskId: number, posterUrl: string|null, year: number|null, mediaType: 'movie'|'tv'|null, ratingKp: number|null, votesKp: number|null}>>}
+     */
+    async getFilmCardsByIds(kinopoiskIds, options = {}) {
+        const ids = [...new Set((kinopoiskIds || []).map(Number).filter(id => Number.isSafeInteger(id) && id > 0))].slice(0, 250);
+        if (ids.length === 0) return [];
+
+        const params = new URLSearchParams({ limit: String(ids.length), page: '1' });
+        ['id', 'poster', 'year', 'type', 'isSeries', 'rating', 'votes'].forEach(field => params.append('selectFields', field));
+        ids.forEach(id => params.append('id', String(id)));
+        const deadline = AbortSignal.timeout(options.timeoutMs ?? 9000);
+        const response = await this._fetchWithRotation(`${this.baseUrl}${KINOPOISK_CONFIG.ENDPOINTS.MOVIE}?${params}`, {
+            method: 'GET',
+            signal: options.signal ? AbortSignal.any([options.signal, deadline]) : deadline
+        });
+        if (!response.ok) {
+            const error = new Error(`Kinopoisk film cards request failed: HTTP ${response.status}`);
+            error.status = response.status;
+            throw error;
+        }
+        const data = await response.json();
+        return (Array.isArray(data?.docs) ? data.docs : []).map(doc => {
+            const posterUrl = String(doc?.poster?.previewUrl || doc?.poster?.url || '').trim();
+            const year = Number(doc?.year);
+            const rating = Number(doc?.rating?.kp);
+            const votes = Number(doc?.votes?.kp);
+            const isSeries = typeof doc?.isSeries === 'boolean' ? doc.isSeries : null;
+            const typed = doc?.type ? /series|anime|tv-show/i.test(doc.type) : null;
+            const series = isSeries ?? typed;
+            return {
+                kinopoiskId: Number(doc?.id),
+                posterUrl: /^https?:\/\/\S+$/.test(posterUrl) && !posterUrl.endsWith('null') ? posterUrl : null,
+                year: Number.isInteger(year) && year > 1850 && year < 2200 ? year : null,
+                mediaType: series === null ? null : (series ? 'tv' : 'movie'),
+                ratingKp: rating > 0 ? rating : null,
+                votesKp: votes > 0 ? votes : null
+            };
+        }).filter(film => film.kinopoiskId > 0);
+    }
+
+    /**
      * Get person details from Kinopoisk API (/v1.4/person/{id}).
      * @param {number|string} personId - Kinopoisk person ID
      * @param {Object} [options={}] - Options { signal }

@@ -173,8 +173,8 @@ const ssrSearchHtml = `<script>window.Ya.__ssr_initial_data = ${JSON.stringify({
         return { ok: true, text: async () => `<img class="film-poster" src="https://avatars.example/${id}.jpg"><title>Фильм (${2000 + id}) — Кинопоиск</title>` };
     } });
     // An entry kept before details existed, and one that has them.
-    store[withDetails.MOVIE_POSTER_CACHE_PREFIX + 5] = { posterUrl: 'https://avatars.example/old-5.jpg', timestamp: Date.now() };
-    store[withDetails.MOVIE_POSTER_CACHE_PREFIX + 6] = { posterUrl: 'https://avatars.example/6.jpg', year: 2006, mediaType: 'tv', detailsVersion: 1, timestamp: Date.now() };
+    store[withDetails.MOVIE_POSTER_CACHE_PREFIX + 5] = { posterUrl: 'https://avatars.example/old-5.jpg', posterVersion: 1, timestamp: Date.now() };
+    store[withDetails.MOVIE_POSTER_CACHE_PREFIX + 6] = { posterVersion: 1, posterUrl: 'https://avatars.example/6.jpg', year: 2006, mediaType: 'tv', detailsVersion: 1, timestamp: Date.now() };
     const seen = new Map();
     const calls = [];
     await withDetails.getMoviePostersByIds([5, 6, 7], { withDetails: true, onPoster: (id, poster, details) => {
@@ -199,8 +199,20 @@ const ssrSearchHtml = `<script>window.Ya.__ssr_initial_data = ${JSON.stringify({
     assert.strictEqual(store[noPoster.MOVIE_POSTER_CACHE_PREFIX + 10], undefined);
 
     const plain = new KinopoiskPersonHtmlService({ fetchImpl: async () => { throw new Error('No network expected'); } });
-    store[plain.MOVIE_POSTER_CACHE_PREFIX + 8] = { posterUrl: 'https://avatars.example/8.jpg', timestamp: Date.now() };
+    store[plain.MOVIE_POSTER_CACHE_PREFIX + 8] = { posterUrl: 'https://avatars.example/8.jpg', posterVersion: 1, timestamp: Date.now() };
     assert.strictEqual((await plain.getMoviePostersByIds([8])).get(8), 'https://avatars.example/8.jpg', 'Without withDetails an old entry is still a hit');
+
+    // Kinopoisk shows one shared picture for films without a poster: the film's own state
+    // says it has none, and an entry kept before that was checked is read again.
+    const placeholder = '<img class="film-poster" src="https://clstorage.example/no-poster.png">';
+    const posters = vertical => ssr({ 'Film:11': { __typename: 'Film', productionYear: 2006, gallery: { posters: { vertical } } } });
+    assert.strictEqual(service.parseMoviePosterHtml(placeholder + posters(null), 11), null, 'The «no poster» picture is not a poster');
+    assert.strictEqual(service.parseMoviePosterHtml(placeholder + posters({ avatarsUrl: '//cdn.example/get-kinopoisk-image/1/ab-12' }), 11),
+        'https://cdn.example/get-kinopoisk-image/1/ab-12/300x450', 'A poster of the film state gets the size its CDN requires');
+    const reread = new KinopoiskPersonHtmlService({ fetchImpl: async () => ({ ok: true, text: async () => placeholder + posters(null) }) });
+    store[reread.MOVIE_POSTER_CACHE_PREFIX + 11] = { posterUrl: 'https://clstorage.example/no-poster.png', detailsVersion: 1, year: 2006, timestamp: Date.now() };
+    assert.strictEqual((await reread.getMoviePostersByIds([11], { withDetails: true })).get(11), null, 'An unchecked entry is read again');
+    assert.deepStrictEqual([store[reread.MOVIE_POSTER_CACHE_PREFIX + 11].posterUrl, store[reread.MOVIE_POSTER_CACHE_PREFIX + 11].posterVersion], [null, 1]);
     delete globalThis.chrome;
 
     console.log('  ✅ Film pages give year and type (SSR or title); old poster entries are read again only when details are wanted');

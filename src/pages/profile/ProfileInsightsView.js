@@ -1,18 +1,19 @@
 import {
     PINNED_LIMIT,
-    computeDecades,
     computeFavoritePeople,
-    computeGenres,
     computeTasteMatch,
     computeWatchTime,
-    fillDecades,
     normalizePinned,
     reactableRatingIds,
+    scoreOf,
+    searchRatings,
     summarizeReactions,
     swapPinned,
     togglePinned
 } from './ProfileInsights.js';
 import { ProfileActivityCalendar } from './ProfileActivityCalendar.js';
+import { ProfileTastePanel } from './ProfileTastePanel.js';
+import { setMarkup } from '../../shared/utils/setMarkup.js';
 import { loadMarathonItems, summarizePerson } from '../../shared/utils/marathonHistory.js';
 
 // Firestore `in` queries accept at most 30 values; only existing documents are billed.
@@ -50,6 +51,8 @@ export class ProfileInsightsView {
         this.onWatchTime = onWatchTime;
         this.loadId = 0;
         this.data = null;
+        // The loaded data, or null once it is known to be unavailable.
+        this.ready = Promise.withResolvers();
         this.statisticsRequested = false;
         this.reactionMeta = null;
         this.pinned = [];
@@ -85,6 +88,12 @@ export class ProfileInsightsView {
     reset() {
         this.loadId++;
         this.data = null;
+        const earlier = this.ready;
+        this.ready = Promise.withResolvers();
+        // Whoever waits for the replaced load gets this one's answer.
+        this.ready.promise.then(earlier.resolve);
+        this.taste?.destroy();
+        this.taste = null;
         const { activity, match, insights } = this.elements;
         if (activity) {
             activity.replaceChildren();
@@ -143,6 +152,7 @@ export class ProfileInsightsView {
             .sort((a, b) => b.score - a.score);
         this.data = { targetUid, isOther, ratings, movies, titles, watch: computeWatchTime(ratings, movies) };
 
+        this.ready.resolve(this.data);
         this.onWatchTime?.(this.data.watch);
         this.renderActivity();
         if (this.statisticsRequested) this.renderStatistics();
@@ -161,10 +171,31 @@ export class ProfileInsightsView {
     }
 
     showUnavailable() {
+        this.ready.resolve(null);
         const { activity, insights } = this.elements;
         this.finishActivity(true);
         if (insights) insights.innerHTML = `<p class="taste-empty">${this.escape(this.i18n.get('profile.recent_ratings_failed'))}</p>`;
         activity?.replaceChildren();
+    }
+
+    /**
+     * Every rating whose title answers a search, with the number of each score among them.
+     * Waits for the titles; rejects when they could not be loaded.
+     * @returns {Promise<{movieIds: Set<string>, counts: Map<number, number>}>}
+     */
+    async findRatings(query) {
+        const data = await this.ready.promise;
+        if (!data) throw new Error('Profile ratings are unavailable');
+        // The same answer for the same query, so a filter pressed during a search repaints nothing.
+        if (data.search?.query === query) return data.search.result;
+        const found = searchRatings(data.ratings, data.movies, query);
+        const counts = new Map();
+        found.forEach(rating => {
+            const score = scoreOf(rating);
+            if (score) counts.set(score, (counts.get(score) || 0) + 1);
+        });
+        data.search = { query, result: { movieIds: new Set(found.map(rating => String(rating.movieId))), counts } };
+        return data.search.result;
     }
 
     buildTitleIndex(ratings, movies) {
@@ -264,44 +295,12 @@ export class ProfileInsightsView {
         ].filter(Boolean).join(', ') + (watch.series ? `. ${this.t('watch_series_note')}` : '');
     }
 
-    renderTaste({ ratings, movies, isOther, watch }) {
+    renderTaste({ isOther, watch }) {
         const { section, body } = this.section('insight-taste', this.t(isOther ? 'taste_title_other' : 'taste_title'), this.watchNote(watch));
-        body.innerHTML = `
-            <div class="insight-columns">
-                <div>
-                    <h3 class="insight-subtitle">${this.escape(this.t('genres_title'))}</h3>
-                    ${this.renderGenres(computeGenres(ratings, movies))}
-                </div>
-                <div>
-                    <h3 class="insight-subtitle">${this.escape(this.t('decades_title'))}</h3>
-                    ${this.renderDecades(fillDecades(computeDecades(ratings, movies)))}
-                </div>
-            </div>`;
+        this.taste?.destroy();
+        this.taste = new ProfileTastePanel(this);
+        this.taste.render(body);
         return section;
-    }
-
-    renderGenres(genres) {
-        if (!genres.length) return `<p class="taste-empty">${this.escape(this.t('genres_empty'))}</p>`;
-        const max = genres[0].count;
-        const score = new Intl.NumberFormat(this.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-        return `<ul class="insight-genres">${genres.map((genre, index) => `
-            <li class="insight-genres__row${index ? '' : ' is-top'}">
-                <span class="insight-genres__name">${this.escape(genre.name)}</span>
-                <span class="insight-genres__bar" aria-hidden="true"><i style="width: ${(genre.count / max) * 100}%"></i></span>
-                <span class="insight-genres__count">${this.escape(genre.count)}</span>
-                <span class="insight-genres__average">${this.escape(this.t('genre_average', { n: score.format(genre.average) }))}</span>
-            </li>`).join('')}</ul>`;
-    }
-
-    renderDecades(decades) {
-        if (!decades.length) return `<p class="taste-empty">${this.escape(this.t('decades_empty'))}</p>`;
-        const max = Math.max(...decades.map(item => item.count));
-        return `<ul class="insight-decades">${decades.map(({ decade, count }) => `
-            <li class="insight-decades__item${count === max ? ' is-top' : ''}">
-                <span class="insight-decades__count">${count || ''}</span>
-                <span class="insight-decades__bar" aria-hidden="true"><i style="height: ${(count / max) * 100}%"></i></span>
-                <span class="insight-decades__label">${this.escape(decade)}<span>${this.escape(this.t('decade_suffix'))}</span></span>
-            </li>`).join('')}</ul>`;
     }
 
     renderPeople({ ratings, movies }) {
@@ -370,27 +369,18 @@ export class ProfileInsightsView {
         const note = this.tn('people_liked', entry.count, {
             average: new Intl.NumberFormat(this.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(average)
         });
-        const info = film => this.data.titles.get(film.movieId) || { title: this.i18n.get('profile.unknown_title'), posterUrl: '' };
-        const image = url => url ? `<img src="${this.escape(url)}" alt="" loading="lazy" decoding="async">` : '';
-        const score = film => this.escape(this.t('people_score')).replace('{n}', `<b>${this.escape(film.score)}</b>`);
+        const info = film => this.titleOf(film);
         const list = (className, films, shown, item) => `
             <ul class="${className}">${films.map((film, index) => item(film, index < shown ? '' : ' hidden')).join('')}</ul>
             ${films.length > shown ? `<button type="button" class="btn btn-sm btn-outline insight-films__more">${this.escape(this.t('people_more', { n: films.length - shown }))}</button>` : ''}`;
-        const liked = (film, hidden) => `
-            <li${hidden}>
-                <a class="insight-poster" href="${this.escape(this.movieUrl(film.movieId))}" title="${this.escape(info(film).title)}">
-                    <span class="insight-poster__image">${image(info(film).posterUrl)}</span>
-                    <span class="insight-films__title">${this.escape(info(film).title)}</span>
-                    <span class="insight-films__score">${score(film)}</span>
-                </a>
-            </li>`;
+        const liked = (film, hidden) => this.filmPoster(film, { hidden: Boolean(hidden) });
         const other = (film, hidden) => `
             <li${hidden}>
                 <a class="insight-film" href="${this.escape(this.movieUrl(film.movieId))}" title="${this.escape(info(film).title)}">
-                    <span class="insight-film__poster">${image(info(film).posterUrl)}</span>
+                    <span class="insight-film__poster">${this.filmImage(info(film).posterUrl)}</span>
                     <span class="insight-film__text">
                         <span class="insight-films__title">${this.escape(info(film).title)}</span>
-                        <span class="insight-films__score">${score(film)}</span>
+                        <span class="insight-films__score">${this.boldNumber('people_score', film.score)}</span>
                     </span>
                 </a>
             </li>`;
@@ -412,7 +402,34 @@ export class ProfileInsightsView {
             </div>`;
     }
 
-    /** Scrolls a panel that opened below the fold into view, never past the pressed person. */
+    titleOf(film) {
+        return this.data.titles.get(film.movieId) || { title: this.i18n.get('profile.unknown_title'), posterUrl: '' };
+    }
+
+    filmImage(url) {
+        return url ? `<img src="${this.escape(url)}" alt="" loading="lazy" decoding="async">` : '';
+    }
+
+    /** A text with its {n} in bold. */
+    boldNumber(key, n) {
+        return this.escape(this.t(key)).replace('{n}', `<b>${this.escape(n)}</b>`);
+    }
+
+    /** A film of a panel: poster, title and the score given. */
+    filmPoster(film, { hidden = false, extra = '' } = {}) {
+        const { title, posterUrl } = this.titleOf(film);
+        return `
+            <li${hidden ? ' hidden' : ''}>
+                <a class="insight-poster" href="${this.escape(this.movieUrl(film.movieId))}" title="${this.escape(title)}">
+                    <span class="insight-poster__image">${this.filmImage(posterUrl)}</span>
+                    <span class="insight-films__title">${this.escape(title)}</span>
+                    ${film.score ? `<span class="insight-films__score">${this.boldNumber('people_score', film.score)}</span>` : ''}
+                    ${extra}
+                </a>
+            </li>`;
+    }
+
+    /** Scrolls a panel that opened below the fold into view, never past the button that opened it. */
     async revealFilms(panel, button) {
         await Promise.allSettled(panel.getAnimations().map(animation => animation.finished));
         if (!button.isConnected || button.getAttribute('aria-expanded') !== 'true') return;
@@ -740,7 +757,7 @@ export class ProfileInsightsView {
                     </div>`);
             }
         }
-        favoritesList.innerHTML = cards.join('');
+        setMarkup(favoritesList, cards.join(''));
         if (favoritesHint) {
             favoritesHint.hidden = !isOwn || !this.pinned.length;
             favoritesHint.textContent = this.t(this.pinned.length >= PINNED_LIMIT ? 'pinned_full' : 'pinned_hint');

@@ -8,6 +8,7 @@
  * - Provider requests (TMDB /person/{id} single roundtrip, KP /v1.4/person/{id})
  * - Canonical PersonDetailsDTO normalization
  * - Filmography normalization, category mapping, and deduplication
+ * - Kinopoisk films' posters, years, types and votes in one batch request (250 films)
  * - Bounded (max 40) TMDB filmography -> Kinopoisk media ID batch mapping with strict queue isolation (skipQueue: true)
  * - Deterministic Known-For ranking (max 10, any valid provider identity)
  * - Adult and explicit content filtering
@@ -23,6 +24,21 @@ class PersonDetailsService {
     // TMDB genres of documentaries, news, reality and talk shows: a credit there
     // without a character is the person appearing as themselves.
     static SELF_GENRE_IDS = new Set([99, 10763, 10764, 10767]);
+
+    // Kinopoisk's person API lists films without poster, year, type and votes; one batch
+    // request gives them for 250. A cached Kinopoisk DTO without this marker
+    // (`_meta.filmDetailsVersion`) gets them once when it is next read.
+    static FILM_DETAILS_VERSION = 1;
+    static FILM_BATCH_SIZE = 250;
+
+    // Facts whose HTML entities are decoded (`_meta.factsVersion`); a cached person
+    // without the marker has them decoded once when it is next read.
+    static FACTS_VERSION = 1;
+    static HTML_ENTITIES = {
+        amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0', laquo: '«', raquo: '»',
+        ldquo: '“', rdquo: '”', bdquo: '„', lsquo: '‘', rsquo: '’', ndash: '–', mdash: '—', hellip: '…',
+        middot: '·', bull: '•', deg: '°', copy: '©', reg: '®', trade: '™', shy: ''
+    };
 
     /**
      * @param {Object} [dependencies={}]
@@ -48,6 +64,14 @@ class PersonDetailsService {
         this.MAX_KNOWN_FOR = 10;
         this.MAX_ALIASES = 8;
         this.MAX_FACTS = 20;
+        // The batch arrives in about a second, so the page waits for it and renders once;
+        // a slower answer goes into the rendered page.
+        this.FILM_BATCH_WAIT_MS = 2500;
+        // Batches still running after the wait: DTO -> { ids, promise }.
+        this.pendingFilmBatches = new WeakMap();
+        // The copy an enrichment works on: DTO -> copy.
+        this.enrichmentCopies = new WeakMap();
+        this.roleBatches = new Map();
 
         // In-flight Promise deduplication: Map<personKey, Promise<PersonDetailsDTO>>
         this.inFlightRequests = new Map();
@@ -187,6 +211,10 @@ class PersonDetailsService {
                     if (cached) {
                         cached.identity.personKey = normalizedKey;
                         cached._meta ||= {};
+                        const factsDecoded = this._decodeCachedFacts(cached);
+                        if ((await this._ensureFilmDetails(cached, options) || factsDecoded) && !options.signal?.aborted) {
+                            await this._writeCache(normalizedKey, cached);
+                        }
                         return cached;
                     }
                 }
@@ -195,6 +223,7 @@ class PersonDetailsService {
                 const dto = await this._fetchAndNormalize(parsed, options);
 
                 dto._meta.enrichment = { version: 1, status: 'pending' };
+                await this._ensureFilmDetails(dto, options);
 
                 // Write to cache (only if not aborted)
                 if (!options.signal?.aborted) {
@@ -220,7 +249,8 @@ class PersonDetailsService {
      * Only a completed current-version enrichment can suppress later network work.
      */
     async enrichPersonDetails(dto, options = {}) {
-        if (dto._meta?.enrichment?.version === 1 && dto._meta.enrichment.status === 'complete') return dto;
+        const pendingFilms = this.pendingFilmBatches.get(dto) || null;
+        if (!pendingFilms && dto._meta?.enrichment?.version === 1 && dto._meta.enrichment.status === 'complete') return dto;
         const controller = new AbortController();
         const abort = () => controller.abort(options.signal?.reason);
         if (options.signal?.aborted) abort();
@@ -230,6 +260,7 @@ class PersonDetailsService {
         // Mutate a working copy so late provider completion cannot touch the visible DTO.
         const work = JSON.parse(JSON.stringify(dto));
         work._meta ||= {};
+        this.enrichmentCopies.set(dto, work);
         const publish = () => {
             if (signal.aborted) return;
             dto.filmography = work.filmography;
@@ -245,7 +276,7 @@ class PersonDetailsService {
         });
         try {
             await Promise.race([
-                this._enrichPerson(work, { signal, onUpdate: publish }),
+                this._enrichPerson(work, { signal, onUpdate: publish, pendingFilms }),
                 cancelled
             ]);
             if (signal.aborted) throw signal.reason;
@@ -259,6 +290,8 @@ class PersonDetailsService {
             clearTimeout(timer);
             options.signal?.removeEventListener('abort', abort);
             signal.removeEventListener('abort', rejectAbort);
+            this.enrichmentCopies.delete(dto);
+            this.pendingFilmBatches.delete(dto);
         }
         if (!options.signal?.aborted) await this._writeCache(dto.identity.personKey, dto);
         return dto;
@@ -268,25 +301,35 @@ class PersonDetailsService {
         if (options.signal.aborted) throw options.signal.reason;
         const filmography = dto.filmography || {};
         if (dto.identity.provider === 'KP') {
+            if (options.pendingFilms) {
+                try {
+                    this._applyFilmDetails(dto, options.pendingFilms.ids, await options.pendingFilms.promise);
+                    options.onUpdate?.();
+                } catch (error) {
+                    console.warn('[PersonDetails] Kinopoisk film batch failed:', error?.message || error);
+                }
+            }
+            const batched = this._hasFilmDetails(dto);
             const htmlService = this._ensureKinopoiskPersonHtmlService();
-            if (!htmlService?.getMoviePostersByIds) throw new Error('Kinopoisk HTML poster service unavailable');
-            // The API lists a person's films without their year or type. The person's
-            // own Kinopoisk page has both for its first 50 films (one request); film
-            // pages read for posters fill in the rest.
-            if (typeof htmlService.getPersonFilmographyById === 'function') {
+            if (!batched && !htmlService?.getMoviePostersByIds) throw new Error('Kinopoisk HTML poster service unavailable');
+            // The person's own Kinopoisk page has the characters of its first 50 films
+            // (one request), and their posters, years and types when the batch failed.
+            if (typeof htmlService?.getPersonFilmographyById === 'function') {
                 const page = await htmlService.getPersonFilmographyById(dto.identity.kpPersonId || dto.identity.providerId, { signal: options.signal });
                 if (options.signal.aborted) throw options.signal.reason;
                 const details = new Map((page?.items || [])
                     .map(item => [Number(item.kinopoiskId), {
                         year: item.year,
                         mediaType: item.providerMediaType,
+                        posterUrl: item.posterUrl,
                         character: PersonDetailsService.kinopoiskCharacters(item)
                     }]));
                 if (this._applyKinopoiskFilmDetails([...Object.values(filmography).flat(), ...(dto.knownFor || [])], details)) {
                     options.onUpdate?.();
                 }
             }
-            await this._applyKinopoiskHtmlPosters(filmography, options, htmlService, dto.knownFor);
+            // Without the batch (quota, network), film pages give posters one by one.
+            if (!batched) await this._applyKinopoiskHtmlPosters(filmography, options, htmlService, dto.knownFor);
             return;
         }
 
@@ -362,6 +405,186 @@ class PersonDetailsService {
         publish();
         if ([...mappingMap.values()].some(item => item?.status === 'unresolved')) {
             throw new Error('Person filmography mapping temporarily unavailable');
+        }
+    }
+
+    _hasFilmDetails(dto) {
+        return Number(dto?._meta?.filmDetailsVersion || 0) >= PersonDetailsService.FILM_DETAILS_VERSION;
+    }
+
+    /**
+     * Kinopoisk films of a person whose details were not read yet, the most significant
+     * first: roles and film work before appearances as themselves, then by rating.
+     * @param {Object} dto
+     * @param {string[]} [categories]
+     * @returns {number[]}
+     * @private
+     */
+    _filmIdsWithoutDetails(dto, categories = ['acting', 'directing', 'writing', 'production', 'music', 'other', 'self']) {
+        const items = categories.flatMap(category => (dto?.filmography?.[category] || [])
+            .map(item => ({ item, late: category === 'self' })));
+        items.sort((a, b) => a.late - b.late || (Number(b.item.rating) || 0) - (Number(a.item.rating) || 0));
+        return [...new Set(items.filter(({ item }) => !item.detailsChecked)
+            .map(({ item }) => Number(item.kinopoiskId))
+            .filter(id => Number.isSafeInteger(id) && id > 0))];
+    }
+
+    /**
+     * Gives a Kinopoisk person's films their posters, years, types and votes with one
+     * API request. An answer later than the wait is left to the enrichment.
+     * @param {Object} dto
+     * @param {Object} options - { signal }
+     * @returns {Promise<boolean>} Whether the DTO changed
+     * @private
+     */
+    async _ensureFilmDetails(dto, options = {}) {
+        if (dto?.identity?.provider !== 'KP' || this._hasFilmDetails(dto)) return false;
+        this._dropSharedPlaceholders(dto);
+        if (typeof this.kinopoiskService?.getFilmCardsByIds !== 'function' || options.signal?.aborted) return false;
+        const ids = this._filmIdsWithoutDetails(dto).slice(0, PersonDetailsService.FILM_BATCH_SIZE);
+        if (ids.length === 0) return false;
+
+        const promise = this._requestFilmCards(ids, options.signal);
+        let timer;
+        const wait = new Promise(resolve => { timer = setTimeout(() => resolve(null), this.FILM_BATCH_WAIT_MS); });
+        try {
+            const films = await Promise.race([promise, wait]);
+            if (!films) {
+                promise.catch(() => {});
+                this.pendingFilmBatches.set(dto, { ids, promise });
+                return false;
+            }
+            this._applyFilmDetails(dto, ids, films);
+            return true;
+        } catch (error) {
+            console.warn('[PersonDetails] Kinopoisk film batch failed:', error?.message || error);
+            return false;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    async _requestFilmCards(ids, signal) {
+        const films = await this.kinopoiskService.getFilmCardsByIds(ids, { signal });
+        if (!Array.isArray(films) || films.length === 0) throw new Error('Kinopoisk returned no film cards');
+        return films;
+    }
+
+    /**
+     * Reads the films of a role that the first batch left out (a person with more than
+     * 250 titles); asked for when the user opens that role.
+     * @param {Object} dto
+     * @param {string} category
+     * @param {Object} [options] - { signal }
+     * @returns {Promise<boolean>} Whether the DTO changed
+     */
+    async loadRoleFilmDetails(dto, category, options = {}) {
+        if (dto?.identity?.provider !== 'KP' || !this._hasFilmDetails(dto)) return false;
+        if (typeof this.kinopoiskService?.getFilmCardsByIds !== 'function') return false;
+        const ids = this._filmIdsWithoutDetails(dto, [category]).slice(0, PersonDetailsService.FILM_BATCH_SIZE);
+        if (ids.length === 0) return false;
+        const key = `${dto.identity.personKey}|${category}`;
+        if (this.roleBatches.has(key)) return this.roleBatches.get(key);
+
+        const request = (async () => {
+            try {
+                const films = await this._requestFilmCards(ids, options.signal);
+                if (options.signal?.aborted) return false;
+                this._applyFilmDetails(dto, ids, films);
+                // A running enrichment replaces the DTO's films with its own copy.
+                const copy = this.enrichmentCopies.get(dto);
+                if (copy) this._applyFilmDetails(copy, ids, films);
+                await this._writeCache(dto.identity.personKey, dto);
+                return true;
+            } catch (error) {
+                console.warn('[PersonDetails] Kinopoisk film batch failed:', error?.message || error);
+                return false;
+            } finally {
+                this.roleBatches.delete(key);
+            }
+        })();
+        this.roleBatches.set(key, request);
+        return request;
+    }
+
+    /**
+     * @param {Object} dto
+     * @param {number[]} ids - The films asked for
+     * @param {Array<Object>} films - KinopoiskService.getFilmCardsByIds result
+     * @private
+     */
+    _applyFilmDetails(dto, ids, films) {
+        const byId = new Map(films.map(film => [Number(film.kinopoiskId), film]));
+        const asked = new Set(ids);
+        for (const item of [...Object.values(dto.filmography || {}).flat(), ...(dto.knownFor || [])]) {
+            const id = Number(item?.kinopoiskId);
+            if (!asked.has(id)) continue;
+            item.detailsChecked = true;
+            const film = byId.get(id);
+            if (!film) continue;
+            // The API has the poster of every film that has one: a picture read from the
+            // film page before is the site's «no poster» one when the API has none.
+            if (film.posterUrl || item.posterSource === 'kp-html') {
+                item.posterUrl = film.posterUrl || null;
+                item.posterSource = film.posterUrl ? 'kp' : null;
+                item.hasArtwork = Boolean(film.posterUrl);
+            }
+            if (film.year) {
+                item.year = film.year;
+                item.releaseDate = `${film.year}-01-01`;
+            }
+            if (film.mediaType) item.providerMediaType = film.mediaType;
+            if (film.ratingKp) item.rating = Number(film.ratingKp.toFixed(1));
+            if (film.votesKp) item.voteCount = film.votesKp;
+        }
+        dto.knownFor = this._selectKpKnownFor(dto.filmography || {});
+        dto._meta ||= {};
+        dto._meta.filmDetailsVersion = PersonDetailsService.FILM_DETAILS_VERSION;
+    }
+
+    /**
+     * The titles a Kinopoisk person is known for: by votes, rating and role like TMDB's,
+     * or by rating alone while the votes are unknown.
+     * @private
+     */
+    _selectKpKnownFor(filmography) {
+        const films = new Map();
+        for (const category of PersonDetailsService.CATEGORIES) {
+            for (const item of filmography[category] || []) {
+                const film = films.get(item.kinopoiskId) || { item, categories: new Set() };
+                film.categories.add(category);
+                films.set(item.kinopoiskId, film);
+            }
+        }
+        const list = [...films.values()];
+        const hasVotes = list.some(({ item }) => Number(item.voteCount) > 0);
+        const score = film => (hasVotes ? this._calculateKnownForScore({ ...film.item, allCategories: film.categories }) : 0);
+        return list
+            .map(film => ({ item: film.item, score: score(film) }))
+            .sort((a, b) => b.score - a.score || (Number(b.item.rating) || 0) - (Number(a.item.rating) || 0))
+            .slice(0, this.MAX_KNOWN_FOR)
+            .map(film => film.item);
+    }
+
+    /**
+     * Kinopoisk's film pages show one shared «no poster» picture; an older DTO kept it
+     * as a poster. A page picture of three or more films is that placeholder.
+     * @private
+     */
+    _dropSharedPlaceholders(dto) {
+        const items = [...Object.values(dto.filmography || {}).flat(), ...(dto.knownFor || [])]
+            .filter(item => item?.posterSource === 'kp-html' && item.posterUrl);
+        const films = new Map();
+        for (const item of items) {
+            const ids = films.get(item.posterUrl) || new Set();
+            ids.add(Number(item.kinopoiskId));
+            films.set(item.posterUrl, ids);
+        }
+        for (const item of items) {
+            if (films.get(item.posterUrl).size < 3) continue;
+            item.posterUrl = null;
+            item.posterSource = null;
+            item.hasArtwork = false;
         }
     }
 
@@ -737,20 +960,8 @@ class PersonDetailsService {
             filmography[category].push(entry);
         }
 
-        // Collect all unique KP items for Known For
-        const allKpItemsMap = new Map();
-        for (const cat of Object.keys(filmography)) {
-            for (const item of filmography[cat]) {
-                if (!allKpItemsMap.has(item.kinopoiskId)) {
-                    allKpItemsMap.set(item.kinopoiskId, item);
-                }
-            }
-        }
-        const uniqueKpItems = Array.from(allKpItemsMap.values());
-
-        // Sort for Known For
-        uniqueKpItems.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-        const knownFor = uniqueKpItems.slice(0, this.MAX_KNOWN_FOR);
+        const knownFor = this._selectKpKnownFor(filmography);
+        const filmCount = new Set(Object.values(filmography).flat().map(item => item.kinopoiskId)).size;
 
         // Identity verification status
         const isContextVerified = Boolean(
@@ -785,7 +996,8 @@ class PersonDetailsService {
             _meta: {
                 source: 'KP',
                 fetchedAt: Date.now(),
-                mappedCount: uniqueKpItems.length,
+                factsVersion: PersonDetailsService.FACTS_VERSION,
+                mappedCount: filmCount,
                 unmappedCount: 0
             }
         };
@@ -802,15 +1014,16 @@ class PersonDetailsService {
         if (!filmography || typeof filmography !== 'object') return 0;
         const posterService = htmlService || this._ensureKinopoiskPersonHtmlService();
         if (!posterService || typeof posterService.getMoviePostersByIds !== 'function') return 0;
-        // The page opens on each role's newest titles (four rows of up to seven), so
-        // their posters are read first.
-        const newestFirst = list => [...list].sort((a, b) => (Number(b?.year) || 0) - (Number(a?.year) || 0));
+        // Without votes the page opens on each role's best rated titles (four rows of up
+        // to seven), so their posters are read first.
+        const bestFirst = list => [...list].sort((a, b) => (Number(b?.rating) || 0) - (Number(a?.rating) || 0)
+            || (Number(b?.year) || 0) - (Number(a?.year) || 0));
         const items = [
             ...(Array.isArray(additionalItems) ? additionalItems : []),
-            ...Object.values(filmography).flatMap(list => newestFirst(list).slice(0, 28)),
+            ...Object.values(filmography).flatMap(list => bestFirst(list).slice(0, 28)),
             ...Object.values(filmography).flat()
         ];
-        const ids = [...new Set(items.filter(item => item.posterSource !== 'kp-html')
+        const ids = [...new Set(items.filter(item => !['kp-html', 'kp-page'].includes(item.posterSource))
             .map(item => Number(item.kinopoiskId))
             .filter(id => Number.isSafeInteger(id) && id > 0))];
         if (ids.length === 0) return 0;
@@ -956,7 +1169,7 @@ class PersonDetailsService {
     }
 
     /**
-     * Year and type of Kinopoisk films that the API leaves out, from the person's
+     * Year, type and poster of Kinopoisk films that the API leaves out, from the person's
      * Kinopoisk page or a film page. Values already known are kept.
      * @param {Array<Object>} items
      * @param {Map<number, {year: number|null, mediaType: string|null}>} details
@@ -970,6 +1183,12 @@ class PersonDetailsService {
             const detail = details.get(Number(item?.kinopoiskId));
             if (!detail) continue;
             if (detail.character && this._applyLocalCharacter(item, detail.character)) changed = true;
+            if (!item.posterUrl && this._isValidArtworkUrl(detail.posterUrl)) {
+                item.posterUrl = detail.posterUrl;
+                item.posterSource = 'kp-page';
+                item.hasArtwork = true;
+                changed = true;
+            }
             const year = Number(detail.year);
             if (!item.year && Number.isInteger(year) && year > 1850 && year < 2200) {
                 item.year = year;
@@ -1297,20 +1516,37 @@ class PersonDetailsService {
     }
 
     /**
-     * Pure HTML tag stripper without DOM dependencies.
+     * Plain text of an HTML fragment, without DOM dependencies: tags first, then each
+     * entity once, so an escaped tag stays text. The page escapes it when it shows it.
      * @private
      */
     _stripHtml(text) {
         if (!text || typeof text !== 'string') return '';
-        return text
-            .replace(/<[^>]*>/g, '')
-            .replace(/&quot;/g, '"')
-            .replace(/&amp;/g, '&')
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&laquo;/g, '«')
-            .replace(/&raquo;/g, '»')
-            .replace(/&#039;/g, "'");
+        return this._decodeHtmlEntities(text.replace(/<[^>]*>/g, ''));
+    }
+
+    _decodeHtmlEntities(text) {
+        return String(text || '').replace(/&(?:#(\d{1,7})|#x([\da-f]{1,6})|([a-z]+));/gi, (match, decimal, hex, name) => {
+            if (name) return PersonDetailsService.HTML_ENTITIES[name.toLowerCase()] ?? match;
+            const code = decimal ? Number(decimal) : parseInt(hex, 16);
+            if (code < 32) return ' ';
+            // Browsers read 128–159 as windows-1252 («&#151;» is a dash), and so does Kinopoisk.
+            if (code >= 128 && code <= 159) return new TextDecoder('windows-1252').decode(new Uint8Array([code]));
+            return code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff) ? match : String.fromCodePoint(code);
+        });
+    }
+
+    /**
+     * @param {Object} dto - A cached person
+     * @returns {boolean} Whether it has to be written again
+     * @private
+     */
+    _decodeCachedFacts(dto) {
+        if (Number(dto._meta.factsVersion || 0) >= PersonDetailsService.FACTS_VERSION || !Array.isArray(dto.facts)) return false;
+        dto._meta.factsVersion = PersonDetailsService.FACTS_VERSION;
+        if (!dto.facts.some(fact => String(fact).includes('&'))) return false;
+        dto.facts = dto.facts.map(fact => this._decodeHtmlEntities(fact));
+        return true;
     }
 
     // ==========================================

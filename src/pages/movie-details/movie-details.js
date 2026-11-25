@@ -2618,6 +2618,7 @@ class MovieDetailsManager {
         // deterministic and are patched by loadPersonalState() when reads settle.
         const movieHTML = this.createDetailedMovieCard(movie, null, null);
         this.disconnectActorsGridObserver();
+        const previousView = previousMovieKey === nextMovieKey ? this.captureRenderedView() : null;
         this.elements.movieDetailsContainer.innerHTML = movieHTML;
         this.bindMovieFrameInteractions();
         this.setupActorsGridVisibility();
@@ -2645,6 +2646,43 @@ class MovieDetailsManager {
         }
 
         if (this.authVerified) this.startPostRenderEnrichment(movie, this.capturePageContext(movie));
+        if (previousView) this.restoreRenderedView(previousView);
+    }
+
+    /**
+     * What the viewer has on screen of this film, or null when nothing is painted yet.
+     * Richer metadata of the same film replaces the markup, and the page must not look
+     * as if it was opened again.
+     */
+    captureRenderedView() {
+        const container = this.elements.movieDetailsContainer;
+        if (!container?.querySelector?.('.movie-detail-page')) return null;
+        return {
+            tab: container.querySelector('.tab-btn.active[data-tab]')?.dataset?.tab || null,
+            scrollY: window.scrollY
+        };
+    }
+
+    /** Puts the open tab and the scroll position back, and skips the entry animations. */
+    restoreRenderedView({ tab, scrollY }) {
+        const container = this.elements.movieDetailsContainer;
+        const button = tab && tab !== 'about'
+            ? container.querySelector(`.tab-btn[data-tab="${tab}"]:not(.disabled)`) : null;
+        const pane = button && container.querySelector(`#tab-${tab}`);
+        if (pane) {
+            container.querySelectorAll('.tab-btn[data-tab]').forEach(node => {
+                const active = node === button;
+                node.classList.toggle('active', active);
+                node.setAttribute('aria-selected', String(active));
+                node.tabIndex = active ? 0 : -1;
+            });
+            container.querySelectorAll('.tab-pane').forEach(node => node.classList.toggle('active', node === pane));
+        }
+        const entries = ['ui-fade-in', 'tabFadeIn'];
+        container.getAnimations?.({ subtree: true })
+            .filter(animation => entries.includes(animation.animationName))
+            .forEach(animation => animation.finish());
+        if (Number.isFinite(scrollY) && window.scrollY !== scrollY) window.scrollTo?.({ top: scrollY, behavior: 'instant' });
     }
 
     updateDocumentMetadata(movie) {
@@ -11235,6 +11273,8 @@ class MovieDetailsManager {
                 const newEl = temp.firstElementChild || temp;
                 if (typeof currentHeroEl.replaceWith === 'function') {
                     currentHeroEl.replaceWith(newEl);
+                    // The card was on screen already; only its text changed.
+                    newEl.getAnimations?.().forEach(animation => animation.finish());
                 } else if (typeof currentHeroEl.outerHTML !== 'undefined') {
                     currentHeroEl.outerHTML = newHeroHTML;
                 }

@@ -195,7 +195,7 @@ globalThis.chrome = { storage: { local: {
 // Poster batch cache read is one operation; known-for priority and max two fetches; warm kp-html entries skip lookup.
 {
     const html = new KinopoiskPersonHtmlService({ fetchImpl: async () => { throw new Error('No network expected'); } });
-    for (const id of [500, 501]) store[html.MOVIE_POSTER_CACHE_PREFIX + id] = { timestamp: Date.now(), posterUrl: `https://example.com/${id}.jpg` };
+    for (const id of [500, 501]) store[html.MOVIE_POSTER_CACHE_PREFIX + id] = { timestamp: Date.now(), posterVersion: 1, posterUrl: `https://example.com/${id}.jpg` };
     storageReads = [];
     await html.getMoviePostersByIds([500, 501, 500], { reportFailure: true });
     assert.deepEqual(storageReads, [[html.MOVIE_POSTER_CACHE_PREFIX + 500, html.MOVIE_POSTER_CACHE_PREFIX + 501]]);
@@ -326,6 +326,8 @@ globalThis.chrome = { storage: { local: {
         }
     };
     const controller = new PersonDetailsPageController();
+    assert.equal(controller.activeSort, 'popular', 'Popularity is the order until the user chooses one');
+    controller.activeSort = 'newest';
     controller.bindGlobalEvents();
     controller.currentPerson = person;
     controller.renderPerson(person);
@@ -385,14 +387,23 @@ globalThis.chrome = { storage: { local: {
     const kept = Array.from(grid('acting').children);
     const updated = JSON.parse(JSON.stringify(person));
     updated.filmography.acting[13].posterUrl = 'https://example.test/13.jpg';
+    updated.filmography.acting[12].voteCount = 5;
+    const moved = [];
+    const observer = new window.MutationObserver(records => moved.push(...records.flatMap(record => [...record.removedNodes, ...record.addedNodes])));
+    observer.observe(grid('acting'), { childList: true });
     updated.filmography.acting[1].releaseDate = '2030-01-01';
     updated.filmography.acting[1].year = 2030;
     controller.updateEnrichedCards(updated);
     assert.deepStrictEqual(titles('acting').slice(0, 2), ['Роль 1', 'Роль 13'], 'A late date moves its title to the top');
     const after = Array.from(grid('acting').children);
     assert.equal(after.length, 12, 'Still four rows');
-    assert.ok(!kept.includes(after[0]) && !kept.includes(after[1]), 'The moved title and the new poster get new cards');
-    assert.equal(after.filter(card => kept.includes(card)).length, 10, 'Every other card is kept');
+    moved.push(...observer.takeRecords().flatMap(record => [...record.removedNodes, ...record.addedNodes]));
+    observer.disconnect();
+    assert.ok(!kept.includes(after[0]), 'The title with a new date gets a new card');
+    assert.equal(after[1], kept[0], 'A late poster goes into the card already shown');
+    assert.ok(after[1].querySelector('.mc-poster') && !after[1].querySelector('.person-details-poster-placeholder'), 'in place of its placeholder');
+    assert.equal(after.filter(card => kept.includes(card)).length, 11, 'Every other card is kept');
+    assert.ok(after.slice(1).every(card => !moved.includes(card)), 'and none of them leaves the page, so nothing appears twice');
 
     window.getComputedStyle = computed;
     if (previousLocalStorage === undefined) delete globalThis.localStorage;
@@ -617,6 +628,7 @@ globalThis.chrome = { storage: { local: {
         }
     };
     const controller = new PersonDetailsPageController();
+    controller.activeSort = 'newest';
     controller.bindGlobalEvents();
     controller.currentPerson = person;
     controller.renderPerson(person);

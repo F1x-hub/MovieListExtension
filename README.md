@@ -470,6 +470,9 @@ keeps npm-compatible three-component semver metadata.
 - Random: «Мультсериалы» is a type of its own; before, they came up even with series and cartoons excluded. «Мультфильмы» and «Аниме» left the genres, since types cover them; saved choices move to the types.
 - Marathon: «Прошлые раунды» under the current one lists every finished round with its dates, films and people; an opened round names the winner, the average of everyone's picks, and each film with its score, who picked it and who rated it how. The history of earlier rounds is complete: it is counted from the films and ratings already stored. Watched films of the running round show their score too, and a finished round is told once, by its opened history entry.
 - Profile: «Киномарафоны» says how the company rates the films a person brought and which one it liked most, with a link to its round; posters carry the score and the date instead of a round number. Rating a film while it was on now counts as taking part, here and for the «Марафонец» achievement; bringing a film is no longer required.
+- Profile: in «Статистика» a genre and a release decade open their films in a panel under the charts, like an actor does: how many, the average, how the other users of the extension rate the same titles, a link to the Catalogue, and posters in four orders (best, worst, recently rated, furthest from the others). Kinopoisk is not compared with: the extension is for a circle of friends. Bars inside narrow a genre to one score and a decade to one year. Nothing extra is read.
+- Profile: «Недавние оценки» has a search by title over all ratings, on your own profile and on another user's; it works together with the score filter, whose bars count what was found.
+- The filmography of every actor and director sorts by popularity (the default), newest, oldest, rating and title; announced and undated titles close the list (announced dates lead «newest»), ratings count their votes, and ties keep one order.
 - Search: the «Фильтры» button shows that the panel is open and how many filters are on. When filters hide everything found, the page says so and offers to clear them.
 
 ### Fixes
@@ -486,6 +489,11 @@ keeps npm-compatible three-component semver metadata.
 - AnimeGo plays again: Kodik's CDN began to send pieces of video on to another of its own servers, which the stream policy refused. Pieces may now be redirected inside `solodcdn.com` only.
 - HDRezka no longer keeps 360p for a film: the quality the site suggested was saved as if it had been chosen. A film starts at its best quality, and only a choice made in the menu is remembered.
 - «Похожие фильмы» name the genres of films that come from TMDB instead of showing numbers.
+- Pages no longer look as if they loaded several times. Rated and Profile faded out and in again when the server's answer followed the cached one; the entry now plays only when content replaces a loader or an error. Movie Details replaces the first, partial data of a film without fading, and keeps the open tab and the scroll position. Profile is painted once in the right language, and its unchanged blocks, like the Calendar's months, the Home dashboard placeholder and the Bookmarks collections, are not rebuilt. The six badges on the Profile overview no longer swap places while it loads.
+- Bookmarks keep the loader until the cards are drawn; a list opened by a link said it was empty first. Ratings that the cards lack load there again.
+- A search opened by a link starts with its loader instead of flashing «Enter a movie title».
+- People opened by a Kinopoisk link (directors, writers, award nominees) show the posters, years and types of their whole filmography at once: one request for up to 250 titles replaces film pages read one by one until a ten-second limit. Saved people heal on the next opening, «Known for» follows votes, and Kinopoisk's «no poster» picture is no longer kept as a poster. Late posters go into the cards already shown.
+- A person's page opens on the role they are known for (Nolan and Cameron on directing, DiCaprio on acting) instead of the profession Kinopoisk lists first, and facts no longer show entity codes such as `&#171;`.
 
 ### Refactor
 

@@ -20,10 +20,12 @@ class KinopoiskPersonHtmlService {
         this.movieDetailsCache = new Map();
         // v3 invalidates previous promo/og:image results after switching to
         // exact `img.film-poster` extraction for every native movie ID. An entry
-        // with `detailsVersion` also keeps the film's year and type.
+        // with `detailsVersion` also keeps the film's year and type. An entry without
+        // `posterVersion` may hold the site's «no poster» picture and is read again.
         this.MOVIE_POSTER_CACHE_PREFIX = 'kp_movie_poster_html_v3_';
         this.MOVIE_POSTER_CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
         this.MOVIE_DETAILS_VERSION = 1;
+        this.MOVIE_POSTER_VERSION = 1;
     }
 
     static SERIES_TYPENAMES = new Set(['TvSeries', 'MiniSeries', 'TvShow']);
@@ -157,7 +159,8 @@ class KinopoiskPersonHtmlService {
                 const entries = await chrome.storage.local.get(keys);
                 for (const id of ids) {
                     const entry = entries[this.MOVIE_POSTER_CACHE_PREFIX + id];
-                    posterCache.set(id, entry && Date.now() - entry.timestamp < this.MOVIE_POSTER_CACHE_TTL
+                    posterCache.set(id, entry && entry.posterVersion === this.MOVIE_POSTER_VERSION
+                        && Date.now() - entry.timestamp < this.MOVIE_POSTER_CACHE_TTL
                         ? { hit: true, posterUrl: this._normalizeArtworkUrl(entry.posterUrl), details: this._readCachedMovieDetails(entry) }
                         : { hit: false });
                 }
@@ -493,15 +496,24 @@ class KinopoiskPersonHtmlService {
     }
 
     /**
-     * Parse a public Kinopoisk movie page for its poster URL.
-     * The dedicated `img.film-poster` is authoritative; Apollo state is only
-     * a fallback when the image tag is absent.
+     * Parse a public Kinopoisk movie page for its poster URL. The film's own posters in
+     * the Apollo state decide: a film without one has `vertical: null` there, while
+     * `img.film-poster` then shows the site's shared «no poster» picture. The image tag
+     * is read when the state does not name the film's posters.
      * @param {string} html
      * @param {number|string|null} kinopoiskId
      * @returns {string|null}
      */
     parseMoviePosterHtml(html, kinopoiskId = null) {
         if (typeof html !== 'string' || html.length === 0) return null;
+
+        const apolloState = this._extractSsrState(html)?.apolloState || {};
+        const stateKeys = this._movieStateKeys(apolloState, kinopoiskId);
+        for (const key of stateKeys) {
+            const posters = apolloState[key]?.gallery?.posters;
+            if (!posters || !('vertical' in posters)) continue;
+            return this._readPosterUrl(posters.vertical);
+        }
 
         // The movie page exposes the actual vertical poster as a dedicated
         // `img.film-poster`. It must win over social metadata: `og:image` can
@@ -519,13 +531,9 @@ class KinopoiskPersonHtmlService {
             if (posterUrl) return posterUrl;
         }
 
-        const state = this._extractSsrState(html);
-        const apolloState = state?.apolloState || {};
-
-        for (const key of this._movieStateKeys(apolloState, kinopoiskId)) {
+        for (const key of stateKeys) {
             const movie = apolloState[key];
-            const posterUrl = this._readPosterUrl(movie?.gallery?.posters?.vertical)
-                || this._readPosterUrl(movie?.poster)
+            const posterUrl = this._readPosterUrl(movie?.poster)
                 || this._readPosterUrl(movie?.cover);
             if (posterUrl) return posterUrl;
         }
@@ -621,7 +629,8 @@ class KinopoiskPersonHtmlService {
         try {
             const result = await chrome.storage.local.get(storageKey);
             const entry = result[storageKey];
-            if (!entry || typeof entry !== 'object' || typeof entry.timestamp !== 'number') {
+            if (!entry || typeof entry !== 'object' || typeof entry.timestamp !== 'number'
+                || entry.posterVersion !== this.MOVIE_POSTER_VERSION) {
                 return { hit: false, posterUrl: null };
             }
             if (Date.now() - entry.timestamp > this.MOVIE_POSTER_CACHE_TTL) {
@@ -646,6 +655,7 @@ class KinopoiskPersonHtmlService {
             await chrome.storage.local.set({
                 [storageKey]: {
                     posterUrl: posterUrl || null,
+                    posterVersion: this.MOVIE_POSTER_VERSION,
                     ...(details ? {
                         year: details.year || null,
                         mediaType: details.mediaType || null,
@@ -970,7 +980,9 @@ class KinopoiskPersonHtmlService {
         const url = typeof poster === 'string'
             ? poster
             : poster?.avatarsUrl || poster?.fallbackUrl || poster?.url || poster?.previewUrl || null;
-        return this._normalizeArtworkUrl(url);
+        const normalized = this._normalizeArtworkUrl(url);
+        // Kinopoisk keeps the image path without a size, which its CDN answers with 400.
+        return normalized && /\/get-(?:kinopoisk-image|ott)\/\d+\/[\w-]+$/.test(normalized) ? `${normalized}/300x450` : normalized;
     }
 
     _mapRoleToCategory(slug, title) {

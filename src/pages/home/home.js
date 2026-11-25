@@ -227,7 +227,10 @@ class HomePage {
      */
     reservePersonalLayout() {
         this.renderer.renderPersonalSkeleton(this.personalTierSection);
-        this.renderer.renderDashboardSkeleton(this.dashboardSection);
+        // A placeholder already on screen stays: drawing it again restarts its pulse.
+        if (!this.dashboardSection?.hasAttribute?.('aria-busy')) {
+            this.renderer.renderDashboardSkeleton(this.dashboardSection);
+        }
     }
 
     selectPersonalUid(uid) {

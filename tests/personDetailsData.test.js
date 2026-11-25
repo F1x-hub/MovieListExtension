@@ -296,6 +296,18 @@ console.log('\n--- 4. Testing KP Normalization & Native Filmography ---');
     assert.strictEqual(dto.filmography.writing.length, 1);
     assert.strictEqual(dto.knownFor.length, 2);
 
+    // Entities are decoded once, after the tags are gone: an escaped tag stays text.
+    assert.strictEqual(service._stripHtml('<b>&#171;Звездные войны&#187;</b> &#x2014; &#151; &ndash; &#60;script&#62;alert(1)&#60;/script&#62;'),
+        '«Звездные войны» — — – <script>alert(1)</script>');
+    assert.strictEqual(service._stripHtml('&amp;#60;b&amp;#62; &amp;amp; &unknown; &#99999999; &#1114112;'), '&#60;b&#62; &amp; &unknown; &#99999999; &#1114112;', 'One pass; what is not an entity stays');
+    assert.strictEqual(dto._meta.factsVersion, 1);
+    const cachedFacts = { _meta: {}, facts: ['&#171;A&#187; &#60;script&#62;', 'B'] };
+    assert.strictEqual(service._decodeCachedFacts(cachedFacts), true, 'A cached person heals');
+    assert.deepStrictEqual(cachedFacts.facts, ['«A» <script>', 'B']);
+    cachedFacts.facts = ['&#171;'];
+    assert.strictEqual(service._decodeCachedFacts(cachedFacts), false, 'once');
+    assert.deepStrictEqual(cachedFacts.facts, ['&#171;']);
+
     console.log('  ✅ 4.1 KP normalization, facts HTML stripping, and 0 mapping requests confirmed');
 }
 

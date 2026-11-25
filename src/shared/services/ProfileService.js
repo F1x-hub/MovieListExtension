@@ -115,16 +115,16 @@ class ProfileService {
      *   that (rounded) score, matching the profile rating distribution
      * @returns {Promise<Array>} - Array of rating objects with movie data
      */
-    async getRecentRatings(userId, limit = 10, offset = 0, { throwOnError = false, rating = null } = {}) {
+    async getRecentRatings(userId, limit = 10, offset = 0, { throwOnError = false, rating = null, onlyMovieIds = null, knownMovies = null } = {}) {
         try {
             if (!userId) {
                 throw new Error('User ID is required');
             }
 
             const sortedRatings = await this.getSortedUniqueRatings(userId);
-            const uniqueRatings = rating == null
-                ? sortedRatings
-                : sortedRatings.filter(item => ProfileService.normalizeRatingValue(item.rating) === Number(rating));
+            const uniqueRatings = sortedRatings.filter(item =>
+                (rating == null || ProfileService.normalizeRatingValue(item.rating) === Number(rating))
+                && (!onlyMovieIds || onlyMovieIds.has(String(item.movieId))));
             // Copies: the shared snapshot must not collect `movie` fields.
             const pagedRatings = uniqueRatings.slice(offset, offset + limit).map(rating => ({ ...rating }));
             if (pagedRatings.length === 0) {
@@ -132,9 +132,12 @@ class ProfileService {
             }
 
             const movieIds = [...new Set(pagedRatings.map(r => r.movieId).filter(Boolean))];
-            const cachedMovies = movieIds.length > 0
-                ? await this.movieCacheService.getBatchCachedMovies(movieIds)
+            // Films the page has already read cost no second read.
+            const unknownIds = movieIds.filter(movieId => !knownMovies?.[movieId]);
+            const cachedMovies = unknownIds.length > 0
+                ? await this.movieCacheService.getBatchCachedMovies(unknownIds)
                 : {};
+            movieIds.forEach(movieId => { if (knownMovies?.[movieId]) cachedMovies[movieId] = knownMovies[movieId]; });
 
             // Movies missing from the shared and local caches: a rating document may
             // carry its own title/poster; only the rest go to the Kinopoisk API, a few

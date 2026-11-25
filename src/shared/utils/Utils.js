@@ -901,8 +901,12 @@ class Utils {
      * @param {Object} els - { loader, errorScreen, errorMessage, contentContainer }
      */
     static createPageStateManager(els) {
+        // The entry plays when content replaces a loader, an error or nothing. Fresh data
+        // for content already on screen must not fade the page out and in again.
+        let contentShown = false;
         return {
             showLoader() {
+                contentShown = false;
                 if (window.errorDialog) window.errorDialog.hide();
                 if (els.loader)           els.loader.style.display = 'flex';
                 if (els.errorScreen)      els.errorScreen.style.display = 'none';
@@ -916,9 +920,11 @@ class Utils {
                 if (els.loader)           els.loader.style.display = 'none';
                 if (els.errorScreen)      els.errorScreen.style.display = 'none';
                 if (els.contentContainer) els.contentContainer.style.display = '';
-                Utils.revealContent(els.contentContainer);
+                if (!contentShown) Utils.revealContent(els.contentContainer);
+                contentShown = true;
             },
             showError(error, options = {}) {
+                contentShown = false;
                 if (els.loader)           els.loader.style.display = 'none';
                 if (els.contentContainer) els.contentContainer.style.display = 'none';
                 if (window.errorDialog?.show) {

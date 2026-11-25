@@ -113,6 +113,7 @@ const scriptSource = pageSource
     .replace(/^import \{ frameLevel, rankFor, totalPoints \} from .*$/m, 'const frameLevel = () => 0; const rankFor = () => ({ level: 0 }); const totalPoints = () => 0;')
     .replace(/^import \{ catFrameUnlocked \} from .*$/m, 'const catFrameUnlocked = () => false;')
     .replace(/^import \{ renderAvatarFrame \} from .*$/m, 'const renderAvatarFrame = () => "";')
+    .replace(/^import \{ setMarkup \} from .*$/m, 'const setMarkup = (node, html) => { node.innerHTML = html; };')
     .replace(/^import \{ compressAnimatedImage \} from .*$/m, 'const compressAnimatedImage = (...args) => globalThis.compressAnimatedImageStub(...args);')
     + '\nglobalThis.ProfilePageManager = ProfilePageManager; globalThis.safeImageUrl = safeImageUrl;';
 assert.doesNotMatch(scriptSource, /^import /m, 'every import of profile.js has a stand-in');
@@ -303,19 +304,20 @@ function createManager() {
         for (const key of ['page_title', 'page_title_other', 'sign_in_required']) {
             assert.ok(profile[key], `${lang}.profile.${key}`);
         }
-        for (const key of ['filter_label', 'filter_hint', 'filter_active', 'filter_reset']) {
+        for (const key of ['filter_label', 'filter_hint', 'filter_active', 'filter_reset', 'search_label', 'search_label_other', 'search_clear', 'search_found', 'search_found_score', 'search_empty', 'search_empty_score']) {
             assert.ok(profile.taste[key], `${lang}.profile.taste.${key}`);
         }
         // Every counted text has the noun forms its language needs.
         const forms = lang === 'ru' ? ['one', 'few', 'many', 'other'] : ['one', 'other'];
-        for (const key of ['watch_note', 'watch_days', 'activity_year', 'activity_days', 'activity_streak', 'ratings_count', 'films_count', 'people_liked', 'match_common', 'match_few', 'reactions_count', 'reactions_reviews', 'marathon_rounds', 'marathon_brought', 'marathon_seen']) {
+        for (const key of ['watch_note', 'watch_days', 'activity_year', 'activity_days', 'activity_streak', 'ratings_count', 'films_count', 'taste_average', 'taste_scored', 'taste_by_films', 'people_liked', 'match_common', 'match_few', 'reactions_count', 'reactions_reviews', 'marathon_rounds', 'marathon_brought', 'marathon_seen']) {
             for (const form of forms) assert.match(profile.insights[`${key}_${form}`] || '', /\{n\}/, `${lang}.profile.insights.${key}_${form}`);
         }
         for (const form of forms) assert.ok(profile.stats[`rated_${form}`], `${lang}.profile.stats.rated_${form}`);
     }
 
     // Profile texts used by the page exist in both languages, so no raw key reaches the screen.
-    const viewSources = read('src/pages/profile/ProfileInsightsView.js') + read('src/pages/profile/ProfileActivityCalendar.js');
+    const viewSources = read('src/pages/profile/ProfileInsightsView.js') + read('src/pages/profile/ProfileActivityCalendar.js')
+        + read('src/pages/profile/ProfileTastePanel.js');
     const insightKeys = new Set([...viewSources.matchAll(/this\.t\('([a-z_]+)'/g)].map(match => match[1]));
     assert.ok(insightKeys.size > 20);
     for (const lang of ['en', 'ru']) {
@@ -354,6 +356,56 @@ function createManager() {
         assert.equal(filtered.elements.ratingFilterStatus.textContent, 'Нажмите на оценку');
         assert.equal(filtered.elements.ratingFilterReset.hidden, true);
         assert.deepEqual(reloads, [['me', 9], ['me', null]]);
+    }
+
+    // A search narrows the list and the bars together; the page never holds an older answer.
+    {
+        const searched = createManager();
+        const bars = new FakeElement();
+        bars.addEventListener = () => {};
+        bars.replaceChildren = () => {};
+        searched.elements = {
+            ratingDistribution: bars,
+            ratingFilterStatus: new FakeElement(),
+            ratingFilterReset: Object.assign(new FakeElement(), { addEventListener() {}, hidden: true }),
+            ratingFilterResetLabel: new FakeElement(),
+            ratingSearch: Object.assign(new FakeElement(), { parentElement: new FakeElement() })
+        };
+        const shown = [];
+        const requests = [];
+        searched.displayRecentRatings = ratings => shown.push(ratings.map(rating => rating.movieId));
+        searched.setupRatingsInfiniteScroll = () => {};
+        searched.profileService = { getRecentRatings: async (uid, limit, offset, options) => { requests.push(options); return [...(options.onlyMovieIds || ['1', '2', '3'])].map(movieId => ({ movieId })); } };
+        const answers = { slow: Promise.withResolvers(), fast: Promise.withResolvers() };
+        searched.insightsView = { findRatings: query => answers[query].promise };
+        searched.renderRatingDistribution([{ rating: 8, count: 2 }, { rating: 9, count: 1 }]);
+        searched.ratingQuery = 'slow';
+        const slow = searched.loadRecentRatings('me');
+        searched.ratingQuery = 'fast';
+        const fast = searched.loadRecentRatings('me');
+        answers.fast.resolve({ movieIds: new Set(['2']), counts: new Map([[9, 1]]) });
+        await fast;
+        answers.slow.resolve({ movieIds: new Set(['1', '3']), counts: new Map([[8, 2]]) });
+        await slow;
+        assert.deepEqual(shown, [['2']], 'a slower earlier search does not replace a later one');
+        assert.deepEqual([...requests[0].onlyMovieIds], ['2']);
+        assert.deepEqual([...searched.ratingCounts], [[8, 0], [9, 1]]);
+        assert.equal(bars.hidden, false);
+        searched.ratingQuery = '';
+        await searched.loadRecentRatings('me');
+        assert.equal(requests.at(-1).onlyMovieIds, null);
+        assert.deepEqual([...searched.ratingCounts], [[8, 2], [9, 1]], 'an empty field brings every count back');
+        // Nothing found: the bars stay, all at zero.
+        answers.none = Promise.withResolvers();
+        answers.none.resolve({ movieIds: new Set(), counts: new Map() });
+        searched.ratingQuery = 'none';
+        await searched.loadRecentRatings('me');
+        assert.equal(bars.hidden, false);
+        assert.match(bars.innerHTML, /width: 0%/);
+
+        assert.equal(ProfilePageManager.highlightTitle('<b>Чёрный</b> рыцарь', 'черный'), `${Utils.escapeHtml('<b>')}<mark>Чёрный</mark>${Utils.escapeHtml('</b>')} рыцарь`);
+        assert.equal(ProfilePageManager.highlightTitle('1+1 (2011)', '1+1 ('), '<mark>1+1</mark> <mark>(</mark>2011)');
+        assert.equal(ProfilePageManager.highlightTitle('Лука', ''), 'Лука');
     }
 
     // --- 5. Read failures are reported, not shown as empty data -------------
@@ -686,6 +738,17 @@ function createManager() {
         const fives = await sharedService.getRecentRatings('u1', 10, 0, { throwOnError: true, rating: 5 });
         assert.deepEqual(fives.map(r => r.movieId), [25, 15, 5], 'the rating filter keeps newest-first order');
         assert.equal(sharedStats.ratingDistribution[4].count, fives.length, 'a distribution count equals its filtered cards');
+        const chosen = await sharedService.getRecentRatings('u1', 10, 0, { throwOnError: true, onlyMovieIds: new Set(['25', '24', '5']) });
+        assert.deepEqual(chosen.map(r => r.movieId), [25, 24, 5], 'a search reaches ratings beyond the first page');
+        const both = await sharedService.getRecentRatings('u1', 10, 0, { throwOnError: true, rating: 5, onlyMovieIds: new Set(['25', '24']) });
+        assert.deepEqual(both.map(r => r.movieId), [25], 'a search and a score narrow the list together');
+        const batch = sharedService.movieCacheService.getBatchCachedMovies;
+        const batchReads = [];
+        sharedService.movieCacheService.getBatchCachedMovies = ids => { batchReads.push(...ids); return batch(ids); };
+        const known = await sharedService.getRecentRatings('u1', 2, 0, { throwOnError: true, knownMovies: { 25: { name: 'On the page' } } });
+        assert.equal(known[0].movie.name, 'On the page');
+        assert.deepEqual(batchReads, [24], 'films the page has already read are not read again');
+        sharedService.movieCacheService.getBatchCachedMovies = batch;
         const threes = await sharedService.getRecentRatings('u1', 10, 0, { throwOnError: true, rating: 3 });
         assert.equal(sharedStats.ratingDistribution[2].count, threes.length, 'an older duplicate score is not counted');
         assert.equal(firstPage[0].movie.name, 'Cached 25');

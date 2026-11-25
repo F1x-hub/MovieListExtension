@@ -63,6 +63,11 @@ MediaPlayer service.
   merged.
 - **Auth**: wait for `FirebaseManager.waitForAuthReady(timeout)` before rendering personal or guest
   states; an unresolved auth state is not a guest session.
+- **One entry per page**: a page painted from a cache is filled from the server a moment later, and
+  that must not look like a second load. `createPageStateManager().showContent()` animates only after
+  a loader or an error; blocks that usually come back equal go through `setMarkup()`
+  (`shared/utils/setMarkup.js`); Movie Details restores the tab and scroll and ends entry animations
+  on a same-film render. Test: `tests/pageEntryOnce.test.cjs`.
 - **Errors**: pages pass structured errors to `errorDialog` through
   `Utils.createPageStateManager`; codes and localized presentation live in `src/shared/errors/`,
   with technical causes behind an explicit details disclosure.
@@ -541,6 +546,18 @@ checklist; `npm run test:visual-design` enforces much of it.
 - Without that match, TMDB→KP title mapping needs title and year (±1); a title alone decides only
   when one side has no year, and a film never matches a series. Filmography mapping never enters
   the unmapped queue.
+- Kinopoisk's person API lists films without poster, year, type and votes. `PersonDetailsService`
+  reads them with `KinopoiskService.getFilmCardsByIds` (one request per 250) before the first
+  render, waiting 2.5 s at most; `_meta.filmDetailsVersion` marks a healed DTO. Titles past 250 are
+  read only when the user opens their role. Film pages are the fallback when the batch fails.
+- A film without a poster has `gallery.posters.vertical: null` in its page state while
+  `img.film-poster` shows a shared picture: the state decides.
+- Sort key `personFilmographySortV1`; every person has the same five orders. `syncCards` updates
+  cards in place: `replaceChildren` would insert every card again.
+- The first role tab: TMDB's department, else the role with the votes of the Known For titles
+  (`getRoleByKnownForVotes`: 70 % counts as equal, uncredited parts are excluded), else profession.
+- Facts are decoded once in the data (`_meta.factsVersion`) and escaped on output; the page never
+  decodes them again.
 - `CharacterNameTranslator` uses Chrome's Translator API in the Russian interface only. A
   `downloadable` model starts on a later `click` or `keyup`, because starting the download needs
   and consumes user activation.
@@ -559,7 +576,10 @@ checklist; `npm run test:visual-design` enforces much of it.
   «Статистика» first opens. Hours watched are kept in the cached statistics. Counted texts use
   `tn()` with `_one/_few/_many/_other` keys. A favourite person's number is the titles rated 8+
   with them (`liked`); lower ones (`other`) show in the panel but never count. Genres are counted on the page; `users.topGenres`
-  is a legacy field that nothing reads.
+  is a legacy field that nothing reads. `ProfileTastePanel` owns the genre and decade charts and their
+  panel: `selectFilms` must select exactly what `computeGenres`/`computeDecades` count, and averages
+  are compared only over titles that have both scores. The title search filters `getRecentRatings` by
+  `onlyMovieIds` from `findRatings`; the page passes `knownMovies`, so searching reads nothing.
   Local profile caches hold rendered fields only (no e-mail or admin flags), are bounded and are
   cleared on sign-out. Uploads use versioned names, and the old object is deleted only after the
   document points to the new one. A GIF becomes an animated WebP in the browser

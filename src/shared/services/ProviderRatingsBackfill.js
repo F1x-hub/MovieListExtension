@@ -72,7 +72,11 @@ class ProviderRatingsBackfill {
     }
 
     static async defaultGetRatings(kinopoiskId) {
-        const service = globalThis.firebaseManager?.getKinopoiskService?.();
+        // Bookmarks loads no KinopoiskService, and its getter throws there.
+        let service = null;
+        try {
+            service = globalThis.firebaseManager?.getKinopoiskService?.();
+        } catch { /* the GraphQL ratings below */ }
         if (service?.scrapeMoviePageRatingsOffscreen) {
             return service.scrapeMoviePageRatingsOffscreen(kinopoiskId, {
                 requestKey: `card-backfill:${kinopoiskId}`,

@@ -859,8 +859,10 @@ a.continue-watching-item:hover {
 .recent-ratings-layout {
     display: grid;
     grid-template-columns: 248px minmax(0, 1fr);
+    /* The list takes the height, so the field keeps its own beside the score filter. */
+    grid-template-rows: auto 1fr;
     align-items: start;
-    gap: 36px;
+    gap: 8px 36px;
 }
 
 .recent-ratings-layout:has(.rating-distribution[hidden]) {
@@ -868,12 +870,15 @@ a.continue-watching-item:hover {
 }
 
 .recent-ratings-main {
+    grid-column: 2;
     min-width: 0;
 }
 
 .rating-distribution {
     position: sticky;
     top: 84px;
+    grid-row: 1 / span 2;
+    grid-column: 1;
     margin-left: -8px;
 }
 
@@ -932,6 +937,92 @@ a.continue-watching-item:hover {
 
 .rating-distribution__row:is(.is-top, .is-active) .rating-distribution__bar i {
     background: var(--ui-color-content);
+}
+
+/* A block of its own, not part of the list: on a narrow window it stands above the score filter. */
+.recent-ratings-search {
+    position: relative;
+    grid-column: 2;
+}
+
+.recent-ratings-search[hidden] {
+    display: none;
+}
+
+.recent-ratings-layout:has(.rating-distribution[hidden]) > * {
+    grid-column: 1;
+}
+
+.recent-ratings-search__icon {
+    position: absolute;
+    top: 50%;
+    left: 12px;
+    display: flex;
+    color: var(--theme-text-secondary);
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.recent-ratings-search input {
+    width: 100%;
+    min-height: 42px;
+    padding: 0 44px 0 42px;
+    border: 1px solid var(--theme-border-hover);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--theme-text-primary);
+    font: inherit;
+    font-size: var(--font-size-md);
+}
+
+.recent-ratings-search input::placeholder {
+    color: var(--theme-text-secondary);
+}
+
+.recent-ratings-search input::-webkit-search-cancel-button {
+    display: none;
+}
+
+.recent-ratings-search input:hover {
+    border-color: var(--theme-text-secondary);
+}
+
+.recent-ratings-search input:focus-visible,
+.recent-ratings-search__clear:focus-visible {
+    outline: 2px solid var(--ui-color-content);
+    outline-offset: 1px;
+}
+
+.recent-ratings-search__clear {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--theme-text-secondary);
+    cursor: pointer;
+}
+
+.recent-ratings-search__clear[hidden] {
+    display: none;
+}
+
+.recent-ratings-search__clear:hover {
+    background: var(--theme-hover-bg);
+    color: var(--theme-text-primary);
+}
+
+.recent-rating-card mark {
+    background: none;
+    color: inherit;
+    text-decoration: underline 2px;
+    text-underline-offset: 3px;
 }
 
 .rating-filter-status {
@@ -2248,10 +2339,20 @@ a.continue-watching-item:hover {
     grid-template-columns: 112px minmax(0, 1fr) 34px 92px;
     align-items: center;
     gap: 12px;
+    width: calc(100% + 16px);
     min-height: 34px;
+    margin: 0 -8px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: none;
     color: var(--theme-text-secondary);
+    font-family: inherit;
     font-size: var(--font-size-md);
     font-variant-numeric: tabular-nums;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
 .insight-genres__name {
@@ -2276,9 +2377,34 @@ a.continue-watching-item:hover {
     border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
-.is-top > .insight-genres__bar i,
-.is-top > .insight-decades__bar i {
+/* One bright bar in a chart: the chosen one, or the longest while nothing is chosen. */
+:is(.insight-genres, .insight-decades):not(:has([aria-expanded="true"])) .is-top > :is(.insight-genres__bar, .insight-decades__bar) i,
+[aria-expanded="true"] > :is(.insight-genres__bar, .insight-decades__bar) i,
+.insight-strip__item[aria-pressed="true"] .insight-strip__bar i {
     background: var(--ui-color-content);
+}
+
+:is(.insight-genres__row, .insight-decades__button, .insight-strip__item):hover:not(:disabled) {
+    background: var(--theme-hover-bg);
+    color: var(--theme-text-primary);
+}
+
+:is(.insight-genres__row, .insight-decades__button, .insight-strip__item):disabled {
+    cursor: default;
+}
+
+:is(.insight-genres__row, .insight-decades__button, .insight-strip__item, .insight-strip__reset):focus-visible {
+    outline: 2px solid var(--ui-color-content);
+    outline-offset: 1px;
+}
+
+/* The frame is an inner shadow: a border would cut the axis the columns share. */
+:is(.insight-genres__row, .insight-decades__button)[aria-expanded="true"],
+.insight-strip__item[aria-pressed="true"] {
+    background: var(--theme-hover-bg);
+    box-shadow: inset 0 0 0 1px var(--theme-text-secondary);
+    color: var(--theme-text-primary);
+    font-weight: 600;
 }
 
 .insight-genres__count,
@@ -2297,16 +2423,29 @@ a.continue-watching-item:hover {
     height: 204px;
 }
 
-.insight-decades__item {
+.insight-decades__button {
     display: grid;
     grid-template-rows: 22px minmax(0, 1fr) 28px;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: none;
     color: var(--theme-text-secondary);
+    font-family: inherit;
     font-size: var(--font-size-md);
     font-variant-numeric: tabular-nums;
     text-align: center;
+    cursor: pointer;
+    transition: background-color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
-.insight-decades__item.is-top .insight-decades__count {
+.insight-decades__button.is-current {
+    anchor-name: --insight-opener;
+}
+
+.insight-decades:not(:has([aria-expanded="true"])) .is-top .insight-decades__count {
     color: var(--theme-text-primary);
     font-weight: 700;
 }
@@ -2326,15 +2465,23 @@ a.continue-watching-item:hover {
 
 .insight-decades__label {
     align-self: end;
+    padding-bottom: 4px;
     font-size: var(--font-size-sm);
 }
 
+/* Two groups and one panel under both, for the films of whatever is chosen in them. */
+.insight-taste__groups,
 .insight-people__groups {
     position: relative;
     display: grid;
     grid-template-columns: 2fr 1fr;
     gap: 0 40px;
-    anchor-scope: --insight-person, --insight-films;
+    anchor-scope: --insight-opener, --insight-films;
+}
+
+.insight-taste__groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 56px;
 }
 
 .insight-people__groups:not(:has(> .insight-people__group ~ .insight-people__group)) {
@@ -2393,7 +2540,7 @@ a.continue-watching-item:hover {
 }
 
 .insight-person.is-current .insight-person__photo {
-    anchor-name: --insight-person;
+    anchor-name: --insight-opener;
 }
 
 .insight-person__photo img {
@@ -2434,9 +2581,9 @@ a.continue-watching-item:hover {
     font-size: var(--font-size-sm);
 }
 
-/* The films of the chosen person, one panel under both groups. */
 .insight-films {
     grid-column: 1 / -1;
+    scroll-margin-top: 88px;
     block-size: 0;
     overflow: clip;
     visibility: hidden;
@@ -2465,18 +2612,27 @@ a.continue-watching-item:hover {
     anchor-name: --insight-films;
 }
 
-/* Points at the chosen photo. Positioned in the groups, so the panel does not clip it. */
+/* Points at the chosen photo or decade. Positioned in the groups, so the panel does not clip it. */
 .insight-films:not(:empty)::before {
     content: "";
     position: absolute;
     top: calc(anchor(--insight-films top) - 6px);
-    left: calc(anchor(--insight-person center) - 6px);
+    left: calc(anchor(--insight-opener center) - 6px);
     width: 12px;
     height: 12px;
     border: solid var(--theme-border);
     border-width: 1px 0 0 1px;
     background: linear-gradient(135deg, var(--theme-bg-secondary) 50%, transparent 50%);
     transform: rotate(45deg);
+}
+
+/* A genre is a row among rows: the pointer would stand under the last one. */
+.insight-films[data-group="genre"]::before {
+    display: none;
+}
+
+.insight-films__name::first-letter {
+    text-transform: uppercase;
 }
 
 .insight-films__name {
@@ -2561,6 +2717,138 @@ a.continue-watching-item:hover {
 
 .insight-films__more {
     margin-top: 18px;
+}
+
+.insight-films__actions:not([hidden]) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 10px;
+}
+
+.insight-films__panel > * {
+    min-width: 0;
+}
+
+.insight-facts {
+    display: grid;
+    gap: 10px;
+    margin: 16px 0 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--theme-border);
+}
+
+.insight-facts > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 0 12px;
+    font-size: var(--font-size-md);
+    font-variant-numeric: tabular-nums;
+}
+
+.insight-facts dt {
+    color: var(--theme-text-secondary);
+}
+
+.insight-facts dd {
+    margin: 0;
+    color: var(--theme-text-primary);
+    font-weight: 600;
+}
+
+.insight-facts .insight-facts__note {
+    grid-column: 1 / -1;
+    color: var(--theme-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: 400;
+    line-height: 1.4;
+}
+
+.insight-films__tools {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 232px;
+    align-items: end;
+    gap: 16px 32px;
+    margin-bottom: 22px;
+}
+
+.insight-strip__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 12px;
+    min-height: 22px;
+    margin-bottom: 8px;
+    color: var(--theme-text-secondary);
+    font-size: var(--font-size-md);
+    font-weight: 500;
+}
+
+.insight-strip__reset {
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--theme-text-primary);
+    font: inherit;
+    font-weight: 400;
+    text-decoration: underline;
+    text-decoration-color: var(--theme-text-secondary);
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+
+.insight-strip {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    max-width: 560px;
+    height: 92px;
+}
+
+.insight-strip__item {
+    display: grid;
+    grid-template-rows: 18px minmax(0, 1fr) 22px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--theme-text-secondary);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    cursor: pointer;
+}
+
+.insight-strip__item:disabled {
+    color: var(--theme-text-muted);
+}
+
+.insight-strip__bar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    border-bottom: 1px solid var(--theme-border-hover);
+}
+
+.insight-strip__bar i {
+    width: 18px;
+    max-width: 70%;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    background: color-mix(in srgb, var(--ui-color-content) 46%, var(--theme-bg-primary));
+}
+
+.insight-strip__item > :last-child {
+    align-self: center;
+}
+
+.insight-sort {
+    display: grid;
+    gap: 6px;
+    color: var(--theme-text-secondary);
+    font-size: var(--font-size-sm);
 }
 
 .insight-films__other {
@@ -2781,14 +3069,38 @@ a.continue-watching-item:hover {
     .continue-watching-items,
     .insight-columns,
     .insight-columns--wide,
+    .insight-taste__groups,
     .recent-ratings-layout,
     .activity-day,
-    .insight-films__panel {
+    .insight-films__panel,
+    .insight-films__tools {
         grid-template-columns: minmax(0, 1fr);
     }
 
     .insight-films__panel {
         gap: 20px;
+    }
+
+    /* The panel follows the chosen group, as it does for people. */
+    .insight-taste__genres,
+    .insight-films[data-group="genre"] {
+        order: 1;
+    }
+
+    .insight-taste__decades {
+        order: 2;
+        margin-top: 40px;
+    }
+
+    .recent-ratings-layout {
+        grid-template-rows: none;
+        gap: 16px;
+    }
+
+    .recent-ratings-layout > *,
+    .recent-ratings-layout > .rating-distribution {
+        grid-row: auto;
+        grid-column: 1;
     }
 
     .rating-distribution {
@@ -2810,6 +3122,15 @@ a.continue-watching-item:hover {
 
     .insight-genres__row {
         grid-template-columns: 96px minmax(0, 1fr) 30px;
+    }
+
+    .insight-taste__groups .insight-films__panel {
+        padding: 16px;
+    }
+
+    .insight-taste__groups .insight-films__grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px 10px;
     }
 
     .insight-genres__average,

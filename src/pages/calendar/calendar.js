@@ -38,6 +38,8 @@ function createCalendarView(content, totalBadge) {
         body.inert = !isOpen;
     });
 
+    let monthsMarkup = null;
+
     const rememberOpenMonths = () => {
         if (!rendered) return;
         openMonths = new Set([...content.querySelectorAll('.calendar-month-header.open')]
@@ -60,7 +62,10 @@ function createCalendarView(content, totalBadge) {
             content.setAttribute('aria-busy', 'false');
         } else {
             rememberOpenMonths();
-            content.innerHTML = renderMonths(state.data.grouped, { openMonths });
+            const markup = renderMonths(state.data.grouped, { openMonths });
+            // Fresh data equal to the snapshot leaves the painted months alone.
+            if (markup !== monthsMarkup || !content.querySelector('.calendar-month')) content.innerHTML = markup;
+            monthsMarkup = markup;
             totalBadge.textContent = state.data.total;
             content.setAttribute('aria-busy', String(!state.final));
         }

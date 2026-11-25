@@ -34,7 +34,17 @@ function createAppError(code, options = {}) {
 
 class PersonDetailsPageController {
     static FILMOGRAPHY_CATEGORIES = ['acting', 'directing', 'writing', 'production', 'music', 'self', 'other'];
-    static FILMOGRAPHY_SORTS = ['newest', 'oldest', 'rating', 'popular'];
+    static FILMOGRAPHY_SORTS = ['popular', 'newest', 'oldest', 'rating', 'title'];
+    static DEFAULT_SORT = 'popular';
+    // Few votes pull a rating toward the average: TMDB counts its votes in hundreds where
+    // Kinopoisk counts thousands.
+    static RATING_WEIGHT = { tmdb: 100, kp: 1000 };
+    static RATING_AVERAGE = 6.5;
+    // A one- or two-episode part in a popular series is not what a person is known for.
+    static GUEST_EPISODES = 2;
+    // Roles whose Known For votes are at least this share of the largest are equals.
+    static COMPARABLE_VOTES = 0.7;
+    static GUEST_WEIGHT = 0.25;
     static FILMOGRAPHY_SORT_KEY = 'personFilmographySortV1';
     // Rows shown at first and added by «Показать ещё»; the cards per row follow the grid.
     static FILMOGRAPHY_ROWS = 4;
@@ -158,6 +168,8 @@ class PersonDetailsPageController {
 
             this.renderPerson(person);
             this.showContent();
+            // The page renders hidden: its real number of columns fills whole rows at once.
+            this.syncFilmographyGrid(person);
             void this.loadPersonAwards(person, request);
             // Start only after the base page is mounted; updates preserve the page and carousel track.
             this.personDetailsService.enrichPersonDetails?.(person, {
@@ -823,7 +835,7 @@ class PersonDetailsPageController {
                     <button type="button" class="filmography-filter-pill filter-choice ${state.mediaFilter === filter ? 'active is-active' : ''}" aria-pressed="${state.mediaFilter === filter}" data-action="filter-filmography" data-filter="${filter}"${filter !== 'all' && state.mediaCounts[filter] === 0 ? ' disabled' : ''}>
                         <span>${this.escapeHtml(this.i18n.get(labelKey))}</span>${count(state.mediaCounts[filter])}
                     </button>`;
-        const sortOptions = this.getFilmographySortOptions(person)
+        const sortOptions = PersonDetailsPageController.FILMOGRAPHY_SORTS
             .map(sort => `<option value="${sort}"${sort === state.sort ? ' selected' : ''}>${this.escapeHtml(this.i18n.get(`person_details.sort_${sort}`))}</option>`)
             .join('');
 
@@ -907,7 +919,7 @@ class PersonDetailsPageController {
         for (const item of roleItems) mediaCounts[this.creditMediaType(item)]++;
         // A filter with nothing in this role falls back to all titles.
         const mediaFilter = this.activeMediaFilter !== 'all' && mediaCounts[this.activeMediaFilter] > 0 ? this.activeMediaFilter : 'all';
-        const sort = this.getFilmographySortOptions(person).includes(this.activeSort) ? this.activeSort : 'newest';
+        const sort = this.activeSort;
         const items = this.sortFilmographyItems(
             mediaFilter === 'all' ? roleItems : roleItems.filter(item => this.creditMediaType(item) === mediaFilter),
             sort
@@ -929,8 +941,9 @@ class PersonDetailsPageController {
 
     /**
      * The role the person is known for, so a director's page opens on directing:
-     * TMDB's department, a Kinopoisk person's first profession, otherwise the role
-     * with the most titles (appearances as themselves count last).
+     * TMDB's department, the role that has the votes of their Known For titles, a
+     * Kinopoisk person's first profession, otherwise the role with the most titles
+     * (appearances as themselves and other work count last).
      * @param {Object} person
      * @param {Array<{category: string, items: Array}>} roles
      * @returns {string|null}
@@ -942,6 +955,9 @@ class PersonDetailsPageController {
         }[String(person?.knownForDepartment || '').toLowerCase()];
         if (department && present.has(department)) return department;
 
+        const byVotes = this.getRoleByKnownForVotes(person, roles);
+        if (byVotes) return byVotes;
+
         const profession = String(person?.professions?.[0] || '').toLowerCase();
         const byProfession = [
             [/акт[её]р|актриса|actor|actress/, 'acting'],
@@ -952,31 +968,45 @@ class PersonDetailsPageController {
         ].find(([pattern]) => pattern.test(profession))?.[1];
         if (byProfession && present.has(byProfession)) return byProfession;
 
-        const candidates = roles.filter(role => role.category !== 'self');
+        const candidates = roles.filter(role => !['self', 'other'].includes(role.category));
         return (candidates.length > 0 ? candidates : roles)
             .reduce((best, role) => (!best || role.items.length > best.items.length ? role : best), null)?.category || null;
+    }
+
+    /**
+     * The role with the votes of the person's Known For titles. The same films are often
+     * in several roles (a director writes and produces them too), so among roles with
+     * comparable votes the order is acting, directing, writing, production, music.
+     * Uncredited parts are not what an actor is known for.
+     * @param {Object} person
+     * @param {Array<{category: string, items: Array}>} roles
+     * @returns {string|null}
+     */
+    getRoleByKnownForVotes(person, roles) {
+        const known = new Set((person?.knownFor || []).map(item => this.personMediaKey(item)));
+        const credited = item => item.category !== 'acting' || !(String(item.job).toLowerCase() === 'uncredited'
+            || /\((?:uncredited|archive footage)\)/i.test(item.character || ''));
+        const votes = new Map(['acting', 'directing', 'writing', 'production', 'music'].map(category => [
+            category,
+            (roles.find(role => role.category === category)?.items || [])
+                .filter(item => known.has(this.personMediaKey(item)) && credited(item))
+                .reduce((sum, item) => sum + (Number(item.voteCount) || 0), 0)
+        ]));
+        const most = Math.max(...votes.values());
+        if (most <= 0) return null;
+        return [...votes].find(([, sum]) => sum >= most * PersonDetailsPageController.COMPARABLE_VOTES)[0];
     }
 
     getFilmographyRoleLabel(category) {
         return this.i18n.get(`person_details.${category}`);
     }
 
-    /**
-     * Orders a person can sort by. Popularity needs vote counts, which only TMDB has.
-     * @param {Object} person
-     * @returns {string[]}
-     */
-    getFilmographySortOptions(person) {
-        const hasVotes = Object.values(person?.filmography || {}).flat().some(item => Number(item?.voteCount) > 0);
-        return PersonDetailsPageController.FILMOGRAPHY_SORTS.filter(sort => sort !== 'popular' || hasVotes);
-    }
-
     readStoredSort() {
         try {
             const value = globalThis.localStorage?.getItem(PersonDetailsPageController.FILMOGRAPHY_SORT_KEY);
-            return PersonDetailsPageController.FILMOGRAPHY_SORTS.includes(value) ? value : 'newest';
+            return PersonDetailsPageController.FILMOGRAPHY_SORTS.includes(value) ? value : PersonDetailsPageController.DEFAULT_SORT;
         } catch {
-            return 'newest';
+            return PersonDetailsPageController.DEFAULT_SORT;
         }
     }
 
@@ -1017,57 +1047,52 @@ class PersonDetailsPageController {
     }
 
     /**
-     * Sorts a role's titles. Newest first lists TMDB titles without a date at the top,
-     * where TMDB keeps work in production; a Kinopoisk title without a year is
-     * unknown, not upcoming, and goes last in every order. Ratings are TMDB's
-     * weighted toward the average for few votes, or Kinopoisk's own.
+     * Sorts a role's titles. Titles that are out lead, then announced ones, then those
+     * without a date, in every order but «newest», where an announced date is the
+     * newest one. Equal titles keep one order: votes, then rating, date and title.
      * @param {Array<Object>} items
      * @param {string} sort
      * @returns {Array<Object>}
      */
-    sortFilmographyItems(items, sort = 'newest') {
-        const titleOf = item => String(item?.name || item?.originalName || '');
-        const votesOf = item => Number(item?.voteCount) || 0;
-        const ratingOf = item => {
-            const rating = Number(item?.rating) || 0;
-            if (rating <= 0) return null;
-            if (!(Number(item?.tmdbId) > 0)) return rating;
-            const votes = votesOf(item);
-            if (votes <= 0) return null;
-            const weight = 100;
-            return (votes / (votes + weight)) * rating + (weight / (votes + weight)) * 6.5;
+    sortFilmographyItems(items, sort = PersonDetailsPageController.DEFAULT_SORT) {
+        const { RATING_WEIGHT, RATING_AVERAGE, GUEST_EPISODES, GUEST_WEIGHT } = PersonDetailsPageController;
+        const collator = new Intl.Collator(this.i18n?.currentLocale || 'ru', { numeric: true, sensitivity: 'base' });
+        const hasVotes = items.some(item => Number(item?.voteCount) > 0);
+        const entries = items.map(item => {
+            const votes = Number(item?.voteCount) || 0;
+            const score = Number(item?.rating) || 0;
+            const weight = Number(item?.tmdbId) > 0 ? RATING_WEIGHT.tmdb : RATING_WEIGHT.kp;
+            const episodes = Number(item?.episodeCount) || 0;
+            const guest = episodes > 0 && episodes <= GUEST_EPISODES && this.creditMediaType(item) === 'tv';
+            // Without votes at all (Kinopoisk's films could not be read) the bare rating is
+            // the only order there is.
+            let rating = score > 0 && !hasVotes ? score : 0;
+            if (score > 0 && votes > 0) rating = (votes * score + weight * RATING_AVERAGE) / (votes + weight);
+            const date = this.creditDate(item);
+            // A title people voted for is out, whatever date the provider lacks.
+            const group = this.isUpcomingCredit(item) ? 1 : (date || votes > 0 ? 0 : 2);
+            return {
+                item, date, group, votes, rating,
+                popularity: hasVotes ? votes * (guest ? GUEST_WEIGHT : 1) : rating,
+                title: String(item?.name || item?.originalName || ''),
+                key: this.personMediaKey(item)
+            };
+        });
+        const tie = (a, b) => b.votes - a.votes || b.rating - a.rating
+            || (b.date || '').localeCompare(a.date || '')
+            || collator.compare(a.title, b.title) || a.key.localeCompare(b.key, 'en', { numeric: true });
+        const byDate = direction => (a, b) => Number(!a.date) - Number(!b.date)
+            || direction * (a.date || '').localeCompare(b.date || '') || tie(a, b);
+        const byGroup = compare => (a, b) => a.group - b.group || compare(a, b) || tie(a, b);
+        const orders = {
+            newest: byDate(-1),
+            oldest: byDate(1),
+            rating: byGroup((a, b) => b.rating - a.rating),
+            title: byGroup((a, b) => collator.compare(a.title, b.title)),
+            popular: byGroup((a, b) => b.popularity - a.popularity
+                || (Number(b.item?.popularity) || 0) - (Number(a.item?.popularity) || 0))
         };
-        const dated = items.map(item => ({
-            item,
-            date: this.creditDate(item),
-            // TMDB keeps a date off titles still in production.
-            upcoming: !this.creditDate(item) && Number(item?.tmdbId) > 0
-        }));
-        const groupOf = entry => {
-            if (entry.date) return 1;
-            return entry.upcoming ? (sort === 'oldest' ? 2 : 0) : 3;
-        };
-        const byDate = (a, b, direction) => {
-            const group = groupOf(a) - groupOf(b);
-            if (group !== 0) return group;
-            if (a.date && b.date && a.date !== b.date) return direction * a.date.localeCompare(b.date);
-            return votesOf(b.item) - votesOf(a.item) || titleOf(a.item).localeCompare(titleOf(b.item), 'ru');
-        };
-        const byNumber = (a, b, value) => {
-            const left = value(a.item);
-            const right = value(b.item);
-            if (left === null && right === null) return byDate(a, b, -1);
-            if (left === null) return 1;
-            if (right === null) return -1;
-            return right - left || byDate(a, b, -1);
-        };
-        const compare = {
-            newest: (a, b) => byDate(a, b, -1),
-            oldest: (a, b) => byDate(a, b, 1),
-            rating: (a, b) => byNumber(a, b, ratingOf),
-            popular: (a, b) => byNumber(a, b, item => (votesOf(item) > 0 ? votesOf(item) + (Number(item?.popularity) || 0) / 1000 : null))
-        }[sort] || ((a, b) => byDate(a, b, -1));
-        return dated.sort(compare).map(entry => entry.item);
+        return entries.sort(orders[sort] || orders.popular).map(entry => entry.item);
     }
 
     /**
@@ -1200,7 +1225,7 @@ class PersonDetailsPageController {
      * shown are kept, in their new order, unless their data changed, so a late
      * poster or year neither reloads the other posters nor resets the page.
      * @param {Object} [person]
-     * @returns {Array<HTMLElement>} The cards added by this call
+     * @returns {Array<HTMLElement>} The cards created by this call
      */
     syncFilmographyGrid(person = this.currentPerson) {
         if (!person) return [];
@@ -1212,25 +1237,7 @@ class PersonDetailsPageController {
 
         this.filmographyColumns = this.measureFilmographyColumns(grid) || this.filmographyColumns;
         const visible = state.items.slice(0, this.getFilmographyVisibleLimit());
-        const current = Array.from(grid.children || []);
-        const existing = new Map(current.map(card => [card.dataset?.personMediaKey, card]));
-        const added = [];
-        const cards = visible.map(item => {
-            const card = existing.get(this.personMediaKey(item));
-            if (card && card.dataset.personCardState === this.personCardState(item)) return card;
-            const created = this.createPersonMovieCard(item, { lazyPoster: true });
-            added.push(created);
-            return created;
-        });
-        const unchanged = cards.length === current.length && cards.every((card, index) => card === current[index]);
-        if (!unchanged) {
-            if (typeof grid.replaceChildren === 'function') {
-                grid.replaceChildren(...cards);
-            } else {
-                grid.innerHTML = '';
-                cards.forEach(card => grid.appendChild(card));
-            }
-        }
+        const { added } = this.syncCards(grid, visible, { lazyPoster: true });
 
         const button = typeof document.querySelector === 'function'
             ? document.querySelector(`.btn-show-more-filmography[data-category="${state.role}"]`)
@@ -1608,19 +1615,75 @@ class PersonDetailsPageController {
     updateEnrichedCards(person) {
         this.currentPerson = person;
         this.refreshPlaceholderPosters(person);
-        // Known For cards change in place; the filmography grid is brought in line
-        // below, since a late year or type can also move a title or its filter.
-        const knownFor = new Map((person.knownFor || []).map(item => [this.personMediaKey(item), item]));
+        // Known For and the filmography grid are brought in line in place: late votes and
+        // years can also move a title, and a late type its filter.
         const track = document.getElementById('knownForCarousel');
-        for (const card of track?.querySelectorAll?.('[data-person-media-key]') || []) {
-            const item = knownFor.get(card.dataset.personMediaKey);
-            if (!item || card.dataset.personCardState === this.personCardState(item)) continue;
-            const replacement = this.createPersonMovieCard(item, { lazyPoster: card.dataset.lazyPoster === 'true' });
+        if (track && (person.knownFor || []).length >= 3) {
             const scrollLeft = track.scrollLeft;
-            card.replaceWith(replacement);
-            track.scrollLeft = scrollLeft;
+            const { changed } = this.syncCards(track, person.knownFor.filter(item => this.isRenderableFilmographyItem(item)), { lazyPoster: false });
+            if (changed) {
+                track.scrollLeft = scrollLeft;
+                this.scheduleKnownForControlUpdate();
+            }
         }
         this.syncFilmographyGrid(person);
+    }
+
+    /**
+     * Brings a row of cards in line with its titles, touching only what differs: a card
+     * whose data is the same is not moved out of the page, a new poster goes into the
+     * card already shown, and only a title with other changes gets a new card.
+     * @param {HTMLElement} container
+     * @param {Array<Object>} items
+     * @param {{lazyPoster: boolean}} options
+     * @returns {{added: Array<HTMLElement>, changed: boolean}}
+     */
+    syncCards(container, items, { lazyPoster }) {
+        const existing = new Map(Array.from(container.children || []).map(card => [card.dataset?.personMediaKey, card]));
+        const added = [];
+        let changed = false;
+        const cards = items.map(item => {
+            const card = existing.get(this.personMediaKey(item));
+            if (card && (card.dataset.personCardState === this.personCardState(item) || this.updateCardPoster(card, item, lazyPoster))) return card;
+            const created = this.createPersonMovieCard(item, { lazyPoster });
+            // In place of the old card, so the row keeps its order meanwhile.
+            if (card) card.replaceWith(created);
+            added.push(created);
+            changed = true;
+            return created;
+        });
+        const wanted = new Set(cards);
+        for (const child of Array.from(container.children || [])) {
+            if (wanted.has(child)) continue;
+            child.remove();
+            changed = true;
+        }
+        cards.forEach((card, index) => {
+            const current = container.children[index] || null;
+            if (current === card) return;
+            container.insertBefore(card, current);
+            changed = true;
+        });
+        return { added, changed };
+    }
+
+    /**
+     * Puts a late poster into a card that differs by nothing else.
+     * @param {HTMLElement} card
+     * @param {Object} item
+     * @param {boolean} lazyPoster
+     * @returns {boolean} Whether the card is up to date now
+     */
+    updateCardPoster(card, item, lazyPoster) {
+        const withoutPoster = state => JSON.stringify(JSON.parse(state || '[]').toSpliced(1, 2));
+        const state = this.personCardState(item);
+        if (!this.personPosterUrl(item) || withoutPoster(card.dataset.personCardState) !== withoutPoster(state)) return false;
+        const placeholder = card.querySelector?.('.person-details-poster-placeholder');
+        const poster = placeholder && this.createPersonMovieCard(item, { lazyPoster }).querySelector('.mc-poster');
+        if (!poster) return false;
+        placeholder.replaceWith(poster);
+        card.dataset.personCardState = state;
+        return true;
     }
 
     getPersonMoviePosterPlaceholder() {
@@ -1713,6 +1776,19 @@ class PersonDetailsPageController {
             this.syncFilmographyGrid(this.currentPerson);
             if (typeof Utils !== 'undefined') Utils.revealContent?.(container);
         }
+        void this.loadRoleFilmDetails();
+    }
+
+    /**
+     * The role's films that Kinopoisk's first batch left out (more than 250 titles),
+     * asked for once the user looks at them: the request spends API quota.
+     */
+    async loadRoleFilmDetails() {
+        const person = this.currentPerson;
+        const request = this.personRequestController;
+        if (!person || !this.activeRole) return;
+        const changed = await this.personDetailsService?.loadRoleFilmDetails?.(person, this.activeRole, { signal: request?.signal });
+        if (changed && this.currentPerson === person && !request?.signal.aborted) this.updateEnrichedCards(person);
     }
 
     /**
@@ -1749,6 +1825,8 @@ class PersonDetailsPageController {
             : null;
         const hadFocus = Boolean(button && document.activeElement === button);
         const added = this.syncFilmographyGrid(this.currentPerson);
+        const shown = this.getFilmographyState(this.currentPerson).items.slice(0, this.getFilmographyVisibleLimit());
+        if (this.currentPerson?.identity?.provider === 'KP' && shown.some(item => !item.detailsChecked)) void this.loadRoleFilmDetails();
         // The title link is the card's keyboard stop; the poster link is skipped by Tab.
         if (hadFocus && button.hidden) (added[0]?.querySelector?.('.mc-title-link') || added[0]?.querySelector?.('[data-action="view-details"]'))?.focus?.();
     }

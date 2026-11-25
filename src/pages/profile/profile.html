@@ -188,6 +188,13 @@
                     </button>
                 </div>
                 <div class="recent-ratings-layout">
+                <div class="recent-ratings-search" role="search">
+                    <span class="recent-ratings-search__icon"><svg data-icon="SEARCH" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3A6 6 0 1 0 9 15A6 6 0 1 0 9 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M9 3L9 15C12.32 15 15 12.31 15 9C15 5.69 12.32 3 9 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13.6 13.6L17.6 17.6"/></svg></span>
+                    <input type="search" id="ratingSearch" autocomplete="off" spellcheck="false" maxlength="100" placeholder="Search your ratings" aria-label="Search your ratings">
+                    <button class="recent-ratings-search__clear" id="ratingSearchClear" type="button" aria-label="Clear search" data-i18n="[aria-label]profile.taste.search_clear" hidden>
+                        <svg data-icon="CLOSE" aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5L15 15M15 5L5 15"/></svg>
+                    </button>
+                </div>
                 <div class="rating-distribution" id="ratingDistribution" role="group" aria-label="Filter by rating" data-i18n="[aria-label]profile.taste.filter_label"></div>
                 <div class="recent-ratings-main">
                 <div class="rating-filter-status" role="status">
@@ -482,6 +489,7 @@
         </div>
     </div>
 
+    <script defer src="../../shared/components/SortControl.js"></script>
     <script src="profile.js" type="module"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>

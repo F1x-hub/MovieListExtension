@@ -117,6 +117,21 @@ export function activityLevel(count) {
     return count >= 3 ? 3 : count;
 }
 
+/** A title's genres by lower-case name: a name repeated in another case counts once. */
+function genreNames(movie) {
+    const names = new Map();
+    for (const genre of Array.isArray(movie?.genres) ? movie.genres : []) {
+        const name = String(typeof genre === 'object' ? genre?.name || genre?.genre || '' : genre ?? '').trim();
+        if (name) names.set(name.toLowerCase(), name);
+    }
+    return names;
+}
+
+function releaseYear(movie) {
+    const year = Number(movie?.year);
+    return Number.isInteger(year) && year >= 1880 && year <= 2100 ? year : null;
+}
+
 /**
  * Genres of rated titles with the average score given, most rated first.
  * @returns {Array<{name: string, count: number, average: number}>}
@@ -125,14 +140,8 @@ export function computeGenres(ratings = [], movies = {}, { limit = 6 } = {}) {
     const genres = new Map();
     for (const rating of ratings) {
         const score = scoreOf(rating);
-        const list = movieFor(movies, rating.movieId)?.genres;
-        if (!score || !Array.isArray(list)) continue;
-        const names = new Map();
-        for (const genre of list) {
-            const name = String(typeof genre === 'object' ? genre?.name || genre?.genre || '' : genre ?? '').trim();
-            if (name) names.set(name.toLowerCase(), name);
-        }
-        for (const [key, name] of names) {
+        if (!score) continue;
+        for (const [key, name] of genreNames(movieFor(movies, rating.movieId))) {
             const entry = genres.get(key) || { name, count: 0, sum: 0 };
             entry.count++;
             entry.sum += score;
@@ -163,14 +172,97 @@ export function fillDecades(decades = []) {
 export function computeDecades(ratings = [], movies = {}) {
     const counts = new Map();
     for (const rating of ratings) {
-        const year = Number(movieFor(movies, rating.movieId)?.year);
-        if (!Number.isInteger(year) || year < 1880 || year > 2100) continue;
+        const year = releaseYear(movieFor(movies, rating.movieId));
+        if (year === null) continue;
         const decade = Math.floor(year / 10) * 10;
         counts.set(decade, (counts.get(decade) || 0) + 1);
     }
     return [...counts.entries()]
         .map(([decade, count]) => ({ decade, count }))
         .sort((a, b) => a.decade - b.decade);
+}
+
+/**
+ * Rated titles behind one bar of the statistics: of a genre, or of a release decade.
+ * The same titles that `computeGenres` and `computeDecades` count. `others` is the
+ * average of everyone else's scores, without the person's own; 0 means unknown.
+ * @returns {Array<{movieId: string, score: number|null, year: number|null, ratedAt: number, others: number}>}
+ */
+export function selectFilms(ratings = [], movies = {}, { genre = null, decade = null } = {}) {
+    const key = genre === null ? null : String(genre).trim().toLowerCase();
+    const films = [];
+    for (const rating of ratings) {
+        const movie = movieFor(movies, rating.movieId);
+        const score = scoreOf(rating);
+        const year = releaseYear(movie);
+        const fits = key === null
+            ? year !== null && Math.floor(year / 10) * 10 === decade
+            : score !== null && genreNames(movie).has(key);
+        if (!fits) continue;
+        const count = Number(movie?.ratingsCount) || 0;
+        const others = score !== null && count > 1 ? ((Number(movie?.ratingsSum) || 0) - score) / (count - 1) : 0;
+        films.push({
+            movieId: String(rating.movieId),
+            score,
+            year,
+            ratedAt: toMillis(rating.createdAt),
+            others: others >= 1 && others <= 10 ? others : 0
+        });
+    }
+    return films;
+}
+
+/** Average of the known scores, or null. */
+export function averageScore(films = []) {
+    const scores = films.map(film => film.score).filter(score => score !== null);
+    return scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null;
+}
+
+/**
+ * The other users' average (`others`) against the person's own, both over
+ * the titles that have the two scores: averages of different titles cannot be compared.
+ * @returns {{average: number, difference: number, films: number}|null}
+ */
+export function compareScores(films = [], field) {
+    const known = films.filter(film => film.score !== null && film[field] > 0);
+    if (!known.length) return null;
+    const average = known.reduce((sum, film) => sum + film[field], 0) / known.length;
+    return { average, difference: averageScore(known) - average, films: known.length };
+}
+
+/** Titles per value of a field, in the order of `keys`. */
+export function countFilms(films = [], field, keys = []) {
+    return keys.map(key => films.filter(film => film[field] === key).length);
+}
+
+/** best, worst, recent, or gap: how far the score is from the other users', unknown ones last. */
+export function sortFilms(films = [], order = 'best') {
+    const recent = (a, b) => b.ratedAt - a.ratedAt;
+    const gap = film => (film.others && film.score !== null ? Math.abs(film.score - film.others) : -1);
+    const compare = {
+        best: (a, b) => (b.score ?? 0) - (a.score ?? 0) || recent(a, b),
+        worst: (a, b) => (a.score ?? 11) - (b.score ?? 11) || recent(a, b),
+        recent,
+        gap: (a, b) => gap(b) - gap(a) || recent(a, b)
+    }[order];
+    return [...films].sort(compare);
+}
+
+function searchable(text) {
+    return String(text ?? '').toLowerCase().replaceAll('ё', 'е');
+}
+
+/** Ratings whose title, in any of its known names, holds every word of the query; «е» finds «ё». */
+export function searchRatings(ratings = [], movies = {}, query = '') {
+    const words = searchable(query).split(/\s+/).filter(Boolean);
+    if (!words.length) return [...ratings];
+    return ratings.filter(rating => {
+        const movie = movieFor(movies, rating.movieId);
+        return [movie?.name, movie?.alternativeName, movie?.enName, movie?.originalName, rating.movieTitle].some(name => {
+            const text = searchable(name);
+            return words.every(word => text.includes(word));
+        });
+    });
 }
 
 /**

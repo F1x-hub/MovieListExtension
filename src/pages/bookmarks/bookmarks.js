@@ -53,6 +53,8 @@ class BookmarksPageManager {
         if (filterParam) {
             if (filterParam === 'watchlist') filterParam = 'plan_to_watch';
             if (filterParam === 'favorites') filterParam = 'favorite';
+            // Only chooses the list: it would be drawn empty before any bookmark is read.
+            this.awaitingBookmarks = true;
             this.setFilter(filterParam);
         }
 
@@ -123,9 +125,9 @@ class BookmarksPageManager {
                 if (Date.now() - (bkCache.timestamp || 0) < BookmarksPageManager.CACHE_LIFETIME) {
                     console.log('BookmarksPage: Using cached bookmarks');
                     this.allBookmarks = bkCache.bookmarks;
+                    this.awaitingBookmarks = false;
                     this.updateCounts();
-                    this.applyFilters(); // This renders the grid
-                    this.page.showContent();
+                    this.applyFilters(); // Renders the grid, which then replaces the loader
                     result.bookmarks = true;
                 }
             }
@@ -430,11 +432,11 @@ class BookmarksPageManager {
                 this.filteredBookmarks = [];
                 // Another account's collections must not stay on screen.
                 this.availableCollections = [];
+                this.awaitingBookmarks = false;
                 this.renderCustomCollections([]);
                 this.closeCollectionMenu();
                 if (this.elements.collectionMenuBtn) this.elements.collectionMenuBtn.style.display = 'none';
                 this.updateCounts();
-                this.page.showContent();
                 this.applyFilters();
             } else if (!this.currentUser || this.currentUser.uid !== user.uid) {
                 this.currentUser = user;
@@ -452,7 +454,7 @@ class BookmarksPageManager {
     async loadBookmarks() {
         if (!this.currentUser) {
             // The empty state carries the sign-in message (the page has no error screen).
-            this.page.showContent();
+            this.awaitingBookmarks = false;
             this.applyFilters();
             return;
         }
@@ -463,15 +465,16 @@ class BookmarksPageManager {
             // If user has huge collection, we might need server-side filtering, but for now this is smoother
             // fetching all with one query
             this.allBookmarks = await this.favoriteService.getFavorites(this.currentUser.uid, 'all');
+            this.awaitingBookmarks = false;
             
             this.updateCounts();
             this.applyFilters();
         } catch (error) {
             console.error('Error loading bookmarks:', error);
             // Show error state?
-        } finally {
+            this.awaitingBookmarks = false;
             this.page.showContent();
-
+        } finally {
             // Cache the loaded bookmarks
             if (this.currentUser && this.allBookmarks.length > 0) {
                 try {
@@ -555,7 +558,7 @@ class BookmarksPageManager {
         const open = this.activeCollectionId && collections.find(col => col.id === this.activeCollectionId);
         if (open && this.elements.pageTitle) this.elements.pageTitle.textContent = open.name;
 
-        this.elements.customCollectionsList.innerHTML = collections.map(col => {
+        const markup = collections.map(col => {
             const iconHtml = CollectionService.renderIconHtml(col.icon, { size: 20 });
 
             return `
@@ -566,6 +569,10 @@ class BookmarksPageManager {
                 </button>
             `;
         }).join('');
+        // The refresh after a cached paint usually brings the same list.
+        if (markup === this.collectionsMarkup && this.elements.customCollectionsList.childElementCount) return;
+        this.collectionsMarkup = markup;
+        this.elements.customCollectionsList.innerHTML = markup;
 
         window.FilterChoice?.enhanceSingleGroup(this.elements.customCollectionsList, {
             selector: '.collection-item', label: 'Пользовательские подборки'
@@ -928,6 +935,7 @@ class BookmarksPageManager {
     }
 
     async applyFilters() {
+        if (this.awaitingBookmarks) return;
         const token = ++this.renderToken;
         let filtered = [];
 
@@ -1085,6 +1093,8 @@ class BookmarksPageManager {
         void this.loadCardMovies(this.allBookmarks.map(movie => movie.movieId || movie.kinopoiskId));
 
         grid.innerHTML = '';
+        // The loader holds the place until there is something to show instead.
+        this.page.showContent();
 
         if (movies.length === 0) {
             this.updateEmptyStateText();

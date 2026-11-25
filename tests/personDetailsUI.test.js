@@ -236,6 +236,8 @@ console.log('\n--- 4. Testing Facts Rendering & Expand Toggle ---');
     ];
 
     const factsHtml = controller.renderFacts({ facts });
+    const unsafe = controller.renderFacts({ facts: ['<script>alert(1)</script> «A» & B'] });
+    assert.ok(unsafe.includes('&lt;script&gt;') && !unsafe.includes('<script>'), 'A decoded tag is shown as text');
     assert.ok(factsHtml.includes('Fact 1: Deep sea diver'), 'Initial facts rendered');
     assert.ok(factsHtml.includes('Fact 6: Won 3 Oscars'), 'Remaining facts in expandable container');
     assert.ok(factsHtml.includes('btn-toggle-facts'), 'Toggle facts button rendered');
@@ -329,8 +331,10 @@ console.log('\n--- 6. Testing Filmography Roles, Filters, Sorting & Paging ---')
     assert.ok(!filmographyHtml.includes('data-role="music"'), 'A role without titles gets no tab');
     assert.ok(filmographyHtml.indexOf('data-role="directing"') < filmographyHtml.indexOf('data-role="acting"'), 'The role with most titles comes first when nothing else names one');
     assert.ok(/data-filter="tv"[^>]*disabled/.test(filmographyHtml), 'Series filter is disabled when the role has no series');
-    assert.ok(filmographyHtml.includes('id="filmographySort"') && filmographyHtml.includes('value="newest" selected'), 'Sort menu starts on the newest titles');
-    assert.ok(!filmographyHtml.includes('value="popular"'), 'Popularity needs vote counts, which this person lacks');
+    assert.ok(filmographyHtml.includes('id="filmographySort"') && filmographyHtml.includes('value="popular" selected'), 'Sort menu starts on the most popular titles');
+    assert.deepStrictEqual([...filmographyHtml.matchAll(/<option value="(\w+)"/g)].map(match => match[1]),
+        ['popular', 'newest', 'oldest', 'rating', 'title'], 'Every person has the same five orders');
+    assert.ok(filmographyHtml.includes('По названию'), 'The title order has a label');
     assert.ok(filmographyHtml.includes('id="filmographyTotal">27<'), 'The heading counts every title once');
 
     // 6.2 The grid of the role in view, with whole-row paging
@@ -355,8 +359,26 @@ console.log('\n--- 6. Testing Filmography Roles, Filters, Sorting & Paging ---')
     assert.deepStrictEqual(roles(mixed), ['directing', 'acting', 'self'], 'Appearances as themselves never lead');
     assert.deepStrictEqual(roles(mixed, { knownForDepartment: 'Acting' }), ['acting', 'directing', 'self'], 'TMDB department leads');
     assert.deepStrictEqual(roles(mixed, { professions: ['Актриса', 'Продюсер'] }), ['acting', 'directing', 'self'], 'A Kinopoisk profession leads');
+    // The role with the votes of the Known For titles, whatever profession Kinopoisk puts first.
+    const film = (id, voteCount, extra = {}) => ({ kinopoiskId: id, name: `Film ${id}`, voteCount, ...extra });
+    const votedRole = (filmography, knownIds, extra = {}) => roles(
+        Object.fromEntries(Object.entries(filmography).map(([category, list]) => [category, list.map(item => ({ ...item, category }))])),
+        { knownFor: knownIds.map(id => film(id)), professions: ['Продюсер'], ...extra })[0];
+    const films = [film(1, 900), film(2, 800)];
+    assert.strictEqual(votedRole({
+        acting: [film(7, 1), film(8, 1), film(9, 1)], directing: films, writing: films, production: [...films, film(3, 50), film(4, 50)], self: [film(5, 5000)], other: films
+    }, [1, 2]), 'directing', 'The same films in several roles: directing before writing and producing');
+    assert.strictEqual(votedRole({ acting: films, production: [films[1], film(3, 50), film(4, 50)] }, [1, 2]), 'acting', 'A producing star opens on acting');
+    assert.strictEqual(votedRole({ acting: [film(1, 900)], directing: films }, [1, 2]), 'directing', 'Acting in fewer of them does not lead');
+    assert.strictEqual(votedRole({ acting: [film(1, 900), film(2, 500)], directing: [film(1, 900), film(3, 600)] }, [1, 2, 3]), 'acting', 'Comparable acting leads');
+    assert.strictEqual(votedRole({
+        acting: [film(1, 900, { job: 'uncredited' }), film(2, 800, { character: 'Voice (uncredited)' })], directing: films
+    }, [1, 2]), 'directing', 'Uncredited parts in their own films do not make an actor');
+    assert.strictEqual(votedRole({ directing: [film(3, 10)], writing: films, production: films }, [1, 2, 3]), 'writing', 'A screenwriter opens on writing');
+    assert.strictEqual(votedRole({ acting: films, directing: films }, [1, 2], { knownForDepartment: 'Directing' }), 'directing', 'TMDB department decides first');
+    assert.strictEqual(votedRole({ production: [film(1, 0)], self: films, other: films }, [1, 2], { professions: [] }), 'production', '«Self» and other work never lead');
 
-    // 6.2.2 Orders: announced and newest first, oldest first, weighted rating, popularity
+    // 6.2.2 Orders: titles that are out, then announced ones, then those without a date
     const sortable = [
         { tmdbId: 10, name: 'Old classic', releaseDate: '1994-09-23', rating: 8.7, voteCount: 28000 },
         { tmdbId: 11, name: 'In production', releaseDate: null },
@@ -365,17 +387,44 @@ console.log('\n--- 6. Testing Filmography Roles, Filters, Sorting & Paging ---')
         { tmdbId: 14, name: 'Unrated', releaseDate: '2010-05-05', rating: 0, voteCount: 0 }
     ];
     const order = sort => controller.sortFilmographyItems(sortable, sort).map(item => item.tmdbId);
-    assert.deepStrictEqual(order('newest'), [11, 12, 13, 14, 10], 'TMDB titles without a date are in production and lead the newest');
+    assert.deepStrictEqual(order('newest'), [12, 13, 14, 10, 11], 'A title without a date goes last in the newest too');
     assert.deepStrictEqual(order('oldest'), [10, 14, 13, 12, 11], 'Oldest first puts undated titles after dated ones');
-    assert.deepStrictEqual(order('rating'), [10, 12, 13, 11, 14], 'Three votes of 9.8 do not beat thousands of 8.7');
-    assert.deepStrictEqual(order('popular'), [10, 12, 13, 11, 14], 'Popularity follows vote counts');
+    assert.deepStrictEqual(order('rating'), [10, 12, 13, 14, 11], 'Three votes of 9.8 do not beat thousands of 8.7');
+    assert.deepStrictEqual(order('popular'), [10, 12, 13, 14, 11], 'Popularity follows vote counts');
+    const announced = { tmdbId: 15, name: 'Announced', releaseDate: `${new Date().getFullYear() + 1}-03-01`, rating: 10, voteCount: 50000 };
+    const withAnnounced = sort => controller.sortFilmographyItems([announced, ...sortable], sort).map(item => item.tmdbId);
+    assert.strictEqual(withAnnounced('newest')[0], 15, 'An announced date is the newest');
+    for (const sort of ['popular', 'rating', 'title', 'oldest']) {
+        assert.deepStrictEqual(withAnnounced(sort).slice(-2), [15, 11], `${sort}: announced, then undated titles close the list`);
+    }
+    assert.deepStrictEqual(order('title'), [13, 10, 12, 14, 11], 'By title');
+    const titled = ['Фильм 10', 'ёж', 'Фильм 2', 'Ель', 'Alien'].map((name, i) => ({ kinopoiskId: i + 1, name, year: 2000 }));
+    assert.deepStrictEqual(controller.sortFilmographyItems(titled, 'title').map(item => item.name), ['ёж', 'Ель', 'Фильм 2', 'Фильм 10', 'Alien'].sort(new Intl.Collator('ru', { numeric: true, sensitivity: 'base' }).compare), 'The interface language orders titles, numbers by value');
+    // Equal titles keep one order whatever order the provider gave them in.
+    const equal = [3, 1, 2].map(id => ({ kinopoiskId: id, name: 'Same', year: 2000, rating: 7, voteCount: 10 }));
+    for (const sort of PersonDetailsPageController.FILMOGRAPHY_SORTS) {
+        assert.deepStrictEqual(controller.sortFilmographyItems(equal, sort).map(item => item.kinopoiskId), [1, 2, 3], `${sort}: ties are stable`);
+    }
+    // A guest part in a popular series does not lead.
+    assert.deepStrictEqual(controller.sortFilmographyItems([
+        { tmdbId: 1, providerMediaType: 'tv', name: 'Hit series', year: 2000, voteCount: 10000, episodeCount: 1 },
+        { tmdbId: 2, providerMediaType: 'movie', name: 'Lead role', year: 2001, voteCount: 4000 },
+        { tmdbId: 3, providerMediaType: 'tv', name: 'Own series', year: 2002, voteCount: 9000, episodeCount: 80 }
+    ], 'popular').map(item => item.tmdbId), [3, 2, 1], 'A one-episode guest part counts at a quarter');
+    const kpVoted = [
+        { kinopoiskId: 30, name: 'Three tens', year: 2015, rating: 10, voteCount: 3 },
+        { kinopoiskId: 31, name: 'Classic', year: 1999, rating: 8.5, voteCount: 900000 },
+        { kinopoiskId: 32, name: 'No year', rating: 8, voteCount: 50000 }
+    ];
+    assert.deepStrictEqual(controller.sortFilmographyItems(kpVoted, 'rating').map(item => item.kinopoiskId), [31, 32, 30], 'Kinopoisk ratings are weighted by votes');
+    assert.deepStrictEqual(controller.sortFilmographyItems(kpVoted, 'popular').map(item => item.kinopoiskId), [31, 32, 30], 'A voted title without a year is out, not announced');
     const kpSortable = [
         { kinopoiskId: 20, name: 'No year', rating: 7 },
         { kinopoiskId: 21, name: 'Year', year: 2015, rating: 6 },
         { kinopoiskId: 22, name: 'Later', year: 2019, rating: 8 }
     ];
     assert.deepStrictEqual(controller.sortFilmographyItems(kpSortable, 'newest').map(item => item.kinopoiskId), [22, 21, 20], 'A Kinopoisk title without a year is unknown and goes last');
-    assert.deepStrictEqual(controller.sortFilmographyItems(kpSortable, 'rating').map(item => item.kinopoiskId), [22, 20, 21], 'Kinopoisk ratings sort as they are');
+    assert.deepStrictEqual(controller.sortFilmographyItems(kpSortable, 'rating').map(item => item.kinopoiskId), [22, 21, 20], 'Without votes the ratings sort as they are, undated last');
 
     // 6.2.3 What the person did, episodes, and announcements
     assert.strictEqual(controller.creditRoleText({ category: 'acting', character: 'Victor Stone / Cyborg (voice)' }), 'Victor Stone / Cyborg (озвучка)', 'TMDB notes are translated');

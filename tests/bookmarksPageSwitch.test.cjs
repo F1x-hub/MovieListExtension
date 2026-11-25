@@ -42,6 +42,7 @@ function openPage({ batch } = {}) {
     window.Utils = {
         createPageStateManager: () => ({ showContent() {}, showLoader() {}, showError() {} }),
         cleanTitle: title => title,
+        escapeHtml: value => String(value),
         bindTabsAndMenus() {},
         showToast() {}
     };
@@ -154,6 +155,37 @@ async function checkLateRenderDoesNotWin() {
     }
 }
 
+async function checkNothingIsDrawnBeforeBookmarksAreRead() {
+    const { window, page, calls, shown } = openPage();
+    const emptyState = window.document.getElementById('emptyState');
+    let contentShown = 0;
+    page.page.showContent = () => { contentShown++; };
+    try {
+        page.allBookmarks = [];
+        page.awaitingBookmarks = true;
+        page.setFilter('watching');
+        await settle(window);
+        assert.notEqual(emptyState.style.display, 'flex', 'An unread list is not called empty');
+        assert.equal(contentShown, 0, 'The loader stays');
+
+        page.allBookmarks = BOOKMARKS.map(item => ({ ...item }));
+        page.awaitingBookmarks = false;
+        page.applyFilters();
+        assert.equal(contentShown, 0, 'The loader stays until cards are drawn');
+        await settle(window);
+        assert.deepEqual(shown(), ['2']);
+        assert.equal(contentShown, 1);
+        assert.equal(calls.batch[0].length, 1);
+
+        page.renderCustomCollections(page.availableCollections);
+        const item = window.document.querySelector('.collection-item');
+        page.renderCustomCollections(page.availableCollections);
+        assert.equal(window.document.querySelector('.collection-item'), item, 'An unchanged collection list is not rebuilt');
+    } finally {
+        window.close();
+    }
+}
+
 async function checkCollectionFromLoadedList() {
     const { window, page, calls, shown } = openPage();
     try {
@@ -214,6 +246,7 @@ async function checkCollectionMenu() {
     await checkSwitchesReuseData();
     await checkFirstListWarmsTheRest();
     await checkLateRenderDoesNotWin();
+    await checkNothingIsDrawnBeforeBookmarksAreRead();
     await checkCollectionFromLoadedList();
     await checkCollectionMenu();
     console.log('Bookmarks switching passed: card data and progress load once per visit, a late render cannot replace the chosen list, collections use the loaded list, and the collection menu opens, runs its items and closes (JSDOM).');

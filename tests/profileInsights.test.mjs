@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {
     activityLevel,
+    averageScore,
+    compareScores,
     computeDecades,
     computeGenres,
     fillDecades,
@@ -8,8 +10,12 @@ import {
     computeDailyActivity,
     computeTasteMatch,
     computeWatchTime,
+    countFilms,
     normalizePinned,
     reactableRatingIds,
+    searchRatings,
+    selectFilms,
+    sortFilms,
     summarizeReactions,
     swapPinned,
     togglePinned
@@ -77,6 +83,58 @@ assert.deepEqual(computeGenres([
 assert.deepEqual(fillDecades([{ decade: 1930, count: 1 }, { decade: 1950, count: 2 }]),
     [{ decade: 1930, count: 1 }, { decade: 1940, count: 0 }, { decade: 1950, count: 2 }]);
 assert.deepEqual(fillDecades([]), []);
+
+// The titles behind a bar are the ones the bar counts, whatever the case of the genre.
+const shelf = {
+    1: { year: 2003, genres: ['комедия', 'Комедия'], kpRating: 7.5, ratingsCount: 3, ratingsSum: 24 },
+    2: { year: 2009, genres: [{ name: 'Комедия' }], rating: { kp: 6 }, ratingsCount: 1, ratingsSum: 9 },
+    3: { year: 2003, genres: ['драма'] },
+    4: { year: 1999, genres: ['комедия'] },
+    5: { genres: ['комедия'] }
+};
+const shelfRatings = [
+    { movieId: 1, rating: 8, createdAt: { seconds: 10 } },
+    { movieId: '2', rating: 9, createdAt: { seconds: 20 } },
+    { movieId: 3, rating: '5', createdAt: { seconds: 30 } },
+    { movieId: 4, rating: 3, createdAt: { seconds: 40 } },
+    { movieId: 5, rating: null }
+];
+const comedies = selectFilms(shelfRatings, shelf, { genre: 'комедия' });
+assert.deepEqual(comedies.map(film => film.movieId), ['1', '2', '4']);
+assert.equal(comedies.length, computeGenres(shelfRatings, shelf).find(genre => genre.name.toLowerCase() === 'комедия').count);
+const noughties = selectFilms(shelfRatings, shelf, { decade: 2000 });
+assert.deepEqual(noughties.map(film => film.movieId), ['1', '2', '3']);
+assert.equal(noughties.length, computeDecades(shelfRatings, shelf).find(item => item.decade === 2000).count);
+assert.deepEqual(countFilms(noughties, 'year', [2002, 2003, 2009]), [0, 2, 1]);
+// Other people's average leaves the person's own score out; a title nobody else rated has none.
+assert.deepEqual(noughties.map(film => film.others), [8, 0, 0]);
+assert.equal('kinopoisk' in noughties[0], false, 'Only the users of the extension are compared');
+// The average is over the titles both sides rated.
+assert.deepEqual(compareScores(noughties, 'others'), { average: 8, difference: 0, films: 1 });
+assert.equal(compareScores([noughties[2]], 'others'), null);
+assert.equal(averageScore([]), null);
+// A title without a valid score counts in its decade, as the bar does, and leaves the average alone.
+assert.deepEqual(selectFilms([{ movieId: 1, rating: 'x' }], shelf, { decade: 2000 }).map(film => film.score), [null]);
+assert.equal(averageScore([{ score: null }, { score: 4 }]), 4);
+const orderOf = order => sortFilms(noughties, order).map(film => film.movieId);
+assert.deepEqual(orderOf('best'), ['2', '1', '3']);
+assert.deepEqual(orderOf('worst'), ['3', '1', '2']);
+assert.deepEqual(orderOf('recent'), ['3', '2', '1']);
+assert.deepEqual(orderOf('gap'), ['1', '3', '2'], 'titles nobody else rated come last, the newest of them first');
+
+// Search: every word, in any known name, with «е» for «ё».
+const named = {
+    1: { name: 'Чёрный рыцарь', enName: 'The Dark Knight' },
+    2: { name: 'Рыцарь дня', alternativeName: 'Knight & Day' },
+    3: {}
+};
+const namedRatings = [{ movieId: 1 }, { movieId: 2 }, { movieId: 3, movieTitle: 'Черный лебедь' }];
+const foundBy = query => searchRatings(namedRatings, named, query).map(rating => rating.movieId);
+assert.deepEqual(foundBy('черный'), [1, 3]);
+assert.deepEqual(foundBy(' РЫЦАРЬ  чёрный '), [1]);
+assert.deepEqual(foundBy('knight'), [1, 2]);
+assert.deepEqual(foundBy('нет такого'), []);
+assert.deepEqual(foundBy('  '), [1, 2, 3]);
 
 // Favorite people: only from titles rated 8+, at least two films.
 const people = computeFavoritePeople([

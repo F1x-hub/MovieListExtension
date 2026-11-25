@@ -7,6 +7,7 @@ import { frameLevel, rankFor, totalPoints } from '../../shared/achievements/Achi
 import { catFrameUnlocked } from '../../shared/achievements/catTrail.js';
 import { renderAvatarFrame } from '../../shared/achievements/AchievementBadge.js';
 import { compressAnimatedImage } from '../../shared/utils/animatedWebp.js';
+import { setMarkup } from '../../shared/utils/setMarkup.js';
 
 // Movie metadata comes from shared Firestore documents that any approved user may
 // edit, so image URLs are limited to the same schemes MovieCard.safeImageUrl allows.
@@ -152,17 +153,11 @@ class ProfilePageManager {
         this.setupTabs();
         this.setupEventListeners();
         
-        // Try to load cached profile immediately for instant render
-        await this.loadCachedProfile();
-
+        // The language first (one local read), so the cached profile is painted once.
         await i18n.init();
         i18n.translatePage();
         this.translateExtras();
-// The cached render ran before the locale loaded; repaint its dynamic text.
-        if (this.userProfile) {
-            this.displayProfile();
-            if (this.userProfile.stats) this.displayStatistics(this.userProfile.stats);
-        }
+        await this.loadCachedProfile();
 
         await this.setupFirebase();
         await this.loadProfile();
@@ -305,6 +300,8 @@ profileCover: document.querySelector('.profile-cover'),
             recentRatingsLoader: document.getElementById('recentRatingsLoader'),
             ratingFilterReset: document.getElementById('ratingFilterReset'),
             ratingFilterResetLabel: document.getElementById('ratingFilterResetLabel'),
+            ratingSearch: document.getElementById('ratingSearch'),
+            ratingSearchClear: document.getElementById('ratingSearchClear'),
             viewAllRatingsBtn: document.getElementById('viewAllRatingsBtn'),
 
             // Loading and error states
@@ -378,7 +375,8 @@ passwordSection: document.getElementById('passwordSection'),
     setupEventListeners() {
         // Use centralized menu delegation
         Utils.bindTabsAndMenus(document);
-        
+        this.setupRatingSearch();
+
         // Image fallbacks (inline onerror is blocked by the extension CSP)
         document.addEventListener('error', (e) => {
             if (e.target && e.target === this.elements.profilePhotoImg) {
@@ -1055,31 +1053,39 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
             </a>`;
     }
 
-    renderRatingDistribution(distribution = []) {
+    renderRatingDistribution(distribution = this.ratingDistribution) {
         const container = this.elements.ratingDistribution;
         if (!container) return;
 
         const values = Array.isArray(distribution) ? distribution : [];
-        this.ratingCounts = new Map(values.map(item => [Number(item.rating || 0), Number(item.count || 0)]));
-        const maxCount = Math.max(...this.ratingCounts.values(), 0);
-        container.hidden = maxCount === 0;
+        this.ratingDistribution = values;
+        const isEmpty = !values.some(item => Number(item.count) > 0);
+        // While a search is on, the bars count what it found.
+        this.ratingCounts = new Map(values.map(item => {
+            const score = Number(item.rating || 0);
+            return [score, this.ratingMatches ? this.ratingMatches.counts.get(score) || 0 : Number(item.count || 0)];
+        }));
+        const maxCount = Math.max(...this.ratingCounts.values(), 1);
+        container.hidden = isEmpty;
+        this.elements.ratingSearch?.parentElement?.toggleAttribute('hidden', isEmpty);
         this.updateRatingFilterStatus();
-        if (maxCount === 0) {
+        if (isEmpty) {
             container.replaceChildren();
             return;
         }
 
-        container.innerHTML = [...this.ratingCounts].reverse().map(([rating, count]) => {
+        const rows = [...this.ratingCounts].reverse().map(([rating, count]) => {
             const active = this.ratingFilter === rating;
             const label = i18n.get('profile.taste.filter_by_rating').replace('{rating}', rating).replace('{count}', count);
             return `
                 <button type="button" class="rating-distribution__row${active ? ' is-active' : ''}${count === maxCount ? ' is-top' : ''}" data-rating="${rating}"
-                    aria-pressed="${active}" aria-label="${Utils.escapeHtml(label)}"${count === 0 ? ' disabled' : ''}>
+                    aria-pressed="${active}" aria-label="${Utils.escapeHtml(label)}"${count === 0 && !active ? ' disabled' : ''}>
                     <span>${rating}</span>
                     <span class="rating-distribution__bar"><i style="width: ${(count / maxCount) * 100}%"></i></span>
                     <span class="rating-distribution__count">${count}</span>
                 </button>`;
         }).join('');
+        setMarkup(container, rows);
 
         if (!container.dataset.filterBound) {
             container.dataset.filterBound = 'true';
@@ -1117,9 +1123,12 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         const count = this.ratingCounts?.get(this.ratingFilter) || 0;
         const hasRatings = [...(this.ratingCounts?.values() || [])].some(Boolean);
         if (status) {
-            status.textContent = active
-                ? i18n.get('profile.taste.filter_active').replace('{rating}', this.ratingFilter).replace('{count}', count)
-                : hasRatings ? i18n.get('profile.taste.filter_hint') : '';
+            const found = active ? count : this.ratingMatches?.movieIds.size;
+            status.textContent = this.ratingMatches
+                ? i18n.get(active ? 'profile.taste.search_found_score' : 'profile.taste.search_found').replace('{rating}', this.ratingFilter).replace('{count}', found)
+                : active
+                    ? i18n.get('profile.taste.filter_active').replace('{rating}', this.ratingFilter).replace('{count}', count)
+                    : hasRatings ? i18n.get('profile.taste.filter_hint') : '';
         }
         if (!button) return;
         button.hidden = !active;
@@ -1134,6 +1143,53 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         }
     }
 
+    /** The search field over the ratings: every title of the profile, not only the cards on screen. */
+    setupRatingSearch() {
+        const { ratingSearch: input, ratingSearchClear: clear } = this.elements;
+        if (!input) return;
+        let timer = 0;
+        const apply = () => {
+            clearTimeout(timer);
+            clear.hidden = !input.value;
+            const query = input.value.trim();
+            if (query === this.ratingQuery) return;
+            this.ratingQuery = query;
+            if (this.ratingsUserId) this.loadRecentRatings(this.ratingsUserId);
+        };
+        const reset = () => {
+            input.value = '';
+            apply();
+        };
+        input.addEventListener('input', () => {
+            clear.hidden = !input.value;
+            clearTimeout(timer);
+            timer = setTimeout(apply, 150);
+        });
+        input.addEventListener('keydown', event => {
+            if (event.key !== 'Escape' || !input.value) return;
+            event.preventDefault();
+            reset();
+        });
+        clear.addEventListener('click', () => {
+            reset();
+            input.focus();
+        });
+    }
+
+    /** Matches of the search field for the current profile; null without a query. */
+    async findRatingMatches() {
+        return this.ratingQuery ? this.insightsView.findRatings(this.ratingQuery) : null;
+    }
+
+    /** A title with the searched words marked; the pieces are escaped one by one. */
+    static highlightTitle(title, query) {
+        const words = String(query || '').split(/\s+/).filter(Boolean)
+            .map(word => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[её]/giu, '[её]'));
+        if (!words.length) return Utils.escapeHtml(title);
+        return String(title).split(new RegExp(`(${words.join('|')})`, 'giu'))
+            .map((part, index) => (index % 2 ? `<mark>${Utils.escapeHtml(part)}</mark>` : Utils.escapeHtml(part))).join('');
+    }
+
     async loadRecentRatings(userId = null) {
         const targetUserId = userId || (this.currentUser ? this.currentUser.uid : null);
         if (!targetUserId) return;
@@ -1141,6 +1197,11 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         if (this.ratingsUserId !== targetUserId && this.ratingFilter != null) {
             this.ratingFilter = null;
             this.updateRatingFilterStatus();
+        }
+        if (this.elements.ratingSearch) {
+            const label = i18n.get(this.viewingOtherUser ? 'profile.taste.search_label_other' : 'profile.taste.search_label');
+            this.elements.ratingSearch.placeholder = label;
+            this.elements.ratingSearch.setAttribute('aria-label', label);
         }
         this.ratingsUserId = targetUserId;
         // Filter switches reload the list; only the latest request may render.
@@ -1151,7 +1212,13 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         this.isLoadingMoreRatings = false;
 
         try {
-            const ratings = await this.profileService.getRecentRatings(targetUserId, this.ratingsLimit, 0, { throwOnError: true, rating: this.ratingFilter ?? null });
+            const matches = await this.findRatingMatches();
+            if (this.ratingsRequestId !== requestId) return;
+            if (matches !== (this.ratingMatches ?? null)) {
+                this.ratingMatches = matches;
+                this.renderRatingDistribution();
+            }
+            const ratings = await this.profileService.getRecentRatings(targetUserId, this.ratingsLimit, 0, { throwOnError: true, rating: this.ratingFilter ?? null, onlyMovieIds: matches?.movieIds ?? null, knownMovies: this.insightsView?.data?.movies ?? null });
             if (this.ratingsRequestId !== requestId) return;
             this.displayRecentRatings(ratings);
             this.ratingsOffset = ratings.length;
@@ -1227,7 +1294,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
 
         try {
             const requestId = this.ratingsRequestId;
-            const newRatings = await this.profileService.getRecentRatings(this.ratingsUserId, this.ratingsLimit, this.ratingsOffset, { throwOnError: true, rating: this.ratingFilter ?? null });
+            const newRatings = await this.profileService.getRecentRatings(this.ratingsUserId, this.ratingsLimit, this.ratingsOffset, { throwOnError: true, rating: this.ratingFilter ?? null, onlyMovieIds: this.ratingMatches?.movieIds ?? null, knownMovies: this.insightsView?.data?.movies ?? null });
             if (this.ratingsRequestId !== requestId) return;
             if (newRatings.length < this.ratingsLimit) {
                 this.hasMoreRatings = false;
@@ -1279,7 +1346,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
                     }
                 </div>
                 <div class="info">
-                    <div class="title">${safeTitle}${Utils.escapeHtml(movieYear)}</div>
+                    <div class="title">${ProfilePageManager.highlightTitle(movieTitle, this.ratingQuery)}${Utils.escapeHtml(movieYear)}</div>
                     <div class="genres">${Utils.escapeHtml(genres)}</div>
                     <div class="date">${Utils.escapeHtml(ratedPrefix)}${Utils.escapeHtml(ratingDate)}</div>
                 </div>
@@ -1297,7 +1364,10 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
         if (!this.elements.recentRatingsList) return;
 
         if (ratings.length === 0) {
-            const emptyText = this.ratingFilter != null
+            const emptyText = this.ratingMatches
+                ? i18n.get(this.ratingFilter != null ? 'profile.taste.search_empty_score' : 'profile.taste.search_empty')
+                    .replace('{rating}', this.ratingFilter).replace('{query}', () => this.ratingQuery)
+                : this.ratingFilter != null
                 ? i18n.get('profile.taste.filter_empty')
                 : i18n.get(this.viewingOtherUser ? 'profile.ui.ratings_empty_other' : 'profile.ui.ratings_empty');
             this.elements.recentRatingsList.innerHTML = `<p class="recent-ratings-empty">${Utils.escapeHtml(emptyText)}</p>`;
@@ -1489,7 +1559,7 @@ onClick(document.getElementById('headerEditBtn'), () => this.openEditModal());
             frame.hidden = !visible;
             // The ribbon hangs below the photo: keep it clear of the name.
             frame.parentElement?.classList.toggle('has-rank-frame', visible);
-            frame.innerHTML = visible ? renderAvatarFrame(shownLevel) : '';
+            setMarkup(frame, visible ? renderAvatarFrame(shownLevel) : '');
             // The frame is decorative; the rank is spelled out in the header metadata.
             const label = document.getElementById('profileRank');
             const text = document.getElementById('profileRankText');

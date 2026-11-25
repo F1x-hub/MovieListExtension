@@ -946,3 +946,8 @@
 }
 
 @keyframes search-pane-enter { from { opacity: 0; transform: translateY(var(--motion-distance-pane)); } to { opacity: 1; transform: translateY(0); } }
+
+/* A search opened by a link starts with its loader (search-boot.js). */
+.search-route-opening .empty-state[data-initial] {
+    visibility: hidden;
+}
