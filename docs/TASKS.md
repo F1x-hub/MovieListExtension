@@ -1,7 +1,7 @@
 # Remaining work
 
 What is still open after the first-load fixes and the removal of the old list pages.
-Last reviewed on 2026-11-18. Delete an entry once it is done; the README changelog
+Last reviewed on 2026-11-26. Delete an entry once it is done; the README changelog
 records what was finished.
 
 ## Do first
@@ -60,6 +60,31 @@ records what was finished.
 - **The language list in very short windows.** Below about 400px high, the upper option
   can sit under the header when the page is scrolled to the end; scrolling up reveals
   it. This comes from the geometry, and no test covers it.
+
+## Planned features
+
+In the owner's order (2026-11-26). Each needs a mock-up and the owner's go-ahead before
+it is built.
+
+1. **Year in review.** A full-screen story the user pages through: hours watched,
+   favourite genre, actor and director, the film of the year, the most unexpected score,
+   the friend with the closest taste, marathon winners. It ends with a card the user can
+   save as a picture. Most numbers are already counted for the profile: `ProfileInsights`
+   (genres, decades, people, hours), the activity calendar and `marathonHistory`. When it
+   opens, and for which period, is still the owner's call.
+2. **Picking a film by swiping, for the company.** Everyone in a room sees the same posters
+   and swipes yes or no; a film everyone liked shows as a match. Candidates can come from
+   the Random pool or the members' watchlists. Watch rooms already keep shared room state.
+3. **Reactions on the timeline.** In a watch room or on Live, reactions are tied to the
+   moment of the film; a later viewing shows above the seek bar where the company laughed
+   or jumped. Needs a decision on where reactions are stored and how long.
+4. **Light around the player.** The page around the video picks up the colours of the
+   frame, like YouTube's ambient mode. Only for players whose frames the extension can
+   read (its own HLS and direct video, the torrent player); provider frames on other
+   sites cannot be read.
+5. **World map of films watched.** Countries whose films the user rated are filled in,
+   next to the «Путешественник» achievement. Country data is already on the film
+   documents; it needs a map drawing without an external map service.
 
 ## Film page speed
 

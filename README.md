@@ -1,9 +1,13 @@
 <div align="center">
 
-# Movie Rating Extension
+# Сеанс
 
-Chrome extension for discovering, rating, organizing, and watching movies,
-series, cartoons, and anime.
+**Screening** in the English interface. A Chrome extension for a circle of friends
+who discover, rate and watch movies, series, cartoons and anime together: shared
+ratings and reviews, a live channel, movie marathons and a built-in player.
+
+Chrome shows the name from `_locales` by its own interface language; pages inside
+the extension follow the language chosen in its settings.
 
 <p>
   <img src="https://img.shields.io/badge/MANIFEST-V3-1687c9?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3">
@@ -466,7 +470,7 @@ keeps npm-compatible three-component semver metadata.
 
 ### Features
 
-- The extension is called «Сеанс», «Screening» in English: in Chrome's extension list and toolbar (by Chrome's language, through _locales) and in page titles, the popup, the sign-in window, the live channel and the admin panel (by the extension's language). MovieList Hub and MovieListSetup.exe keep their names, since that is how the Windows program is installed.
+- The extension is called «Сеанс», «Screening» in English: in Chrome's extension list and toolbar (by Chrome's language, through _locales) and in page titles, the popup, the sign-in window, the live channel and the admin panel (by the extension's language). The README is renamed too. MovieList Hub and MovieListSetup.exe keep their names, since that is how the Windows program is installed.
 
 ### Fixes
 
