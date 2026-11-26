@@ -14,7 +14,7 @@
     "copy-libs": "copyfiles \"libs/*\" \"dist/\" && copyfiles \"src/**/*.js\" \"dist/\"",
     "copy-scripts": "copyfiles \"content-scripts/**/*\" \"dist/\"",
     "copy-json": "copyfiles \"src/**/*.json\" \"dist/\"",
-    "copy-manifest": "copyfiles \"manifest.json\" \"dist/\"",
+    "copy-manifest": "copyfiles \"manifest.json\" \"_locales/**/*\" \"dist/\"",
     "dev": "npm run build && npm run watch",
     "watch": "nodemon --watch src --watch popup.js --watch background.js --watch search.js --watch firestore.js --watch popup.html --watch search.html --watch popup.css --watch manifest.json --exec \"npm run build\"",
     "package": "npm run package-release",

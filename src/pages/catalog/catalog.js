@@ -222,7 +222,7 @@ class CatalogPage {
         });
         this.elements.title.textContent = copy.title;
         this.elements.description.textContent = copy.description;
-        document.title = `${copy.title} | Movie Rating Extension`;
+        document.title = `${copy.title} — ${window.i18n?.get?.('app.name') || 'Screening'}`;
 
         document.querySelectorAll('[data-catalog-category]').forEach(link => {
             link.classList.toggle('is-active', link.dataset.catalogCategory === this.state.category);

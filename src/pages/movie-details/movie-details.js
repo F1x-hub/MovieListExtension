@@ -2690,7 +2690,8 @@ class MovieDetailsManager {
         document.documentElement.lang = locale;
         const title = (locale === 'en' && movie?.alternativeName) ? movie.alternativeName : (movie?.name || movie?.alternativeName || '');
         if (!title) return;
-        document.title = movie?.year ? `${title} (${movie.year}) — Movie Rating Extension` : `${title} — Movie Rating Extension`;
+        const brand = (typeof i18n !== 'undefined' && i18n.get?.('app.name')) || 'Сеанс';
+        document.title = movie?.year ? `${title} (${movie.year}) — ${brand}` : `${title} — ${brand}`;
     }
 
     startPostRenderEnrichment(movie, pageContext = this.capturePageContext(movie)) {

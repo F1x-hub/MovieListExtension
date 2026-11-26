@@ -1,0 +1,4 @@
+{
+  "appName": { "message": "Сеанс", "description": "Название расширения в Chrome" },
+  "appDescription": { "message": "Оценки фильмов с друзьями, общий эфир, марафоны и плеер", "description": "Описание расширения в Chrome" }
+}

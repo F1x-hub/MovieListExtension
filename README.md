@@ -464,6 +464,10 @@ keeps npm-compatible three-component semver metadata.
 <details open>
 <summary><strong>Unreleased</strong></summary>
 
+### Features
+
+- The extension is called «Сеанс», «Screening» in English: in Chrome's extension list and toolbar (by Chrome's language, through _locales) and in page titles, the popup, the sign-in window, the live channel and the admin panel (by the extension's language). MovieList Hub and MovieListSetup.exe keep their names, since that is how the Windows program is installed.
+
 ### Fixes
 
 - Interface copy reads less like a template: messages no longer say «успешно … !» or «Будьте первым!», empty lists say what will appear in them, the email check shows the expected form, loaders and errors drop developer words («парсим», «метаданные», «правила Firestore») and officialese («находится на рассмотрении»), in Russian and English. Released What's New entries are unchanged.

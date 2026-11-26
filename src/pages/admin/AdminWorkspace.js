@@ -72,7 +72,7 @@
         window.addEventListener('hashchange', () => this.showSection(sectionFromHash() || 'overview', { fromHistory: true }));
 
         const version = typeof chrome !== 'undefined' && chrome.runtime?.getManifest ? chrome.runtime.getManifest()?.version : '';
-        if (version && $('adminBrandVersion')) $('adminBrandVersion').textContent = `MovieList · v${version}`;
+        if (version && $('adminBrandVersion')) $('adminBrandVersion').textContent = `Сеанс · v${version}`;
 
         this.initAdminSearch();
         this.initLiveMirror();

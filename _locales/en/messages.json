@@ -1,0 +1,4 @@
+{
+  "appName": { "message": "Screening", "description": "Extension name in Chrome" },
+  "appDescription": { "message": "Film ratings with friends, a shared live channel, marathons and a player", "description": "Extension description in Chrome" }
+}

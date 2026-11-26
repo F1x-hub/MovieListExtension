@@ -396,7 +396,7 @@ class PersonDetailsPageController {
 
         // Update document title
         const primaryName = person.name || person.originalName || 'Person';
-        document.title = `${primaryName} — Movie Rating Extension`;
+        document.title = `${primaryName} — ${(typeof i18n !== 'undefined' && i18n.get?.('app.name')) || 'Сеанс'}`;
 
         // A new person starts on their main role, all media and the first rows.
         this.filmographySortControl?.destroy?.();

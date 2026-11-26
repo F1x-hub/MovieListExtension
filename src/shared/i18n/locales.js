@@ -1,5 +1,9 @@
 export const locales = {
     en: {
+        app: {
+            name: 'Screening',
+            titles: { achievements: 'Achievements — Screening', bookmarks: 'Bookmarks — Screening', search: 'Search — Screening', movie: 'Film — Screening', person: 'Person — Screening', profile: 'Profile — Screening' }
+        },
         player: {
             diagnostics_no_data: 'No data', diagnostics_ms: 'ms', diagnostics_qoe_sessions: 'Measured sessions',
             diagnostics_stalls: 'Buffering stalls', diagnostics_rebuffer_total: 'Total rebuffer time', diagnostics_rebuffer_max: 'Longest rebuffer',
@@ -1404,7 +1408,7 @@ export const locales = {
             }
         },
         downloads: {
-            page_title: "Downloads - Movie Ratings",
+            page_title: "Downloads — Screening",
             sidebar: { label: "Downloads", title: "Downloads", filters_label: "Filter downloads" },
             filters: { all: "All", active: "Downloading", ready: "Ready", paused: "Paused", error: "Errors" },
             titles: { all: "All downloads", active: "Downloading", ready: "Ready to watch", paused: "Paused", error: "Errors" },
@@ -1564,7 +1568,7 @@ export const locales = {
         },
         live_page: {
             title: "Live",
-            page_title: "Live — Movie Rating Extension",
+            page_title: "Live — Screening",
             movie_on_air: "Movie on air",
             open_movie: "Open the movie page",
             open_youtube: "Open on YouTube in a new tab",
@@ -2059,7 +2063,7 @@ export const locales = {
             }
         },
         home: {
-            page_title: "Home | MovieList Extension",
+            page_title: "Home — Screening",
             page_heading: "Home",
             rated_badge: "You rated this",
             because: {
@@ -2171,7 +2175,7 @@ export const locales = {
         },
         ratings: {
             title: "Rated",
-            page_title: "Rated - Movie Rating Extension",
+            page_title: "Rated — Screening",
             unknown_user: "Unknown user",
             subtitle: "Manage and explore your movie ratings",
             filters: {
@@ -2305,7 +2309,7 @@ export const locales = {
             unknown_movie: "Unknown Movie"
         },
         random: {
-            page_title: "Random movie - Movie Rating Extension",
+            page_title: "Random movie — Screening",
             pool_marathon: {
                 pool_remove: "Remove from pool",
                 pool_add: "Add to pool",
@@ -2578,7 +2582,7 @@ export const locales = {
             }
         },
         calendar: {
-            page_title: "Calendar - Movie Rating Extension",
+            page_title: "Calendar — Screening",
             title: "Calendar",
             subtitle: "Upcoming episodes and premieres from your Watching and Plan to Watch lists",
             loading_label: "Loading the calendar",
@@ -2867,7 +2871,7 @@ export const locales = {
                 dismiss: "Dismiss update"
             },
             header: {
-                title: "Movie Ratings",
+                title: "Screening",
                 not_authenticated: "Not authenticated",
                 signed_in_as: "Signed in as {user}",
                 home: "Open Home",
@@ -2905,7 +2909,7 @@ export const locales = {
                 last_name_required: "Enter your last name",
                 confirm_password_required: "Repeat your password",
                 close: "Close",
-                logo_alt: "Movie Ratings logo",
+                logo_alt: "Screening logo",
                 password_show: "Show password",
                 password_hide: "Hide password",
                 logout_failed: "Could not sign out. Try again.",
@@ -3081,6 +3085,10 @@ export const locales = {
         }
     },
     ru: {
+        app: {
+            name: 'Сеанс',
+            titles: { achievements: 'Достижения — Сеанс', bookmarks: 'Закладки — Сеанс', search: 'Поиск — Сеанс', movie: 'Фильм — Сеанс', person: 'Персона — Сеанс', profile: 'Профиль — Сеанс' }
+        },
         player: {
             diagnostics_no_data: 'Нет данных', diagnostics_ms: 'мс', diagnostics_qoe_sessions: 'Сессий с измерением',
             diagnostics_stalls: 'Остановок для буферизации', diagnostics_rebuffer_total: 'Всего буферизация', diagnostics_rebuffer_max: 'Самая долгая буферизация',
@@ -4485,7 +4493,7 @@ export const locales = {
             }
         },
         downloads: {
-            page_title: "Загрузки - Movie Ratings",
+            page_title: "Загрузки — Сеанс",
             sidebar: { label: "Загрузки", title: "Загрузки", filters_label: "Фильтр загрузок" },
             filters: { all: "Все", active: "Качаются", ready: "Готовы", paused: "На паузе", error: "Ошибки" },
             titles: { all: "Все загрузки", active: "Качаются", ready: "Готовы к просмотру", paused: "На паузе", error: "Ошибки" },
@@ -4645,7 +4653,7 @@ export const locales = {
         },
         live_page: {
             title: "Эфир",
-            page_title: "Эфир — Movie Rating Extension",
+            page_title: "Эфир — Сеанс",
             movie_on_air: "Фильм в эфире",
             open_movie: "Открыть страницу фильма",
             open_youtube: "Открыть на YouTube в новой вкладке",
@@ -5178,7 +5186,7 @@ export const locales = {
             }
         },
         home: {
-            page_title: "Главная | MovieList Extension",
+            page_title: "Главная — Сеанс",
             page_heading: "Главная",
             rated_badge: "Вы оценили",
             because: {
@@ -5292,7 +5300,7 @@ export const locales = {
         },
         ratings: {
             title: "Оцененные",
-            page_title: "Оценённые - Movie Rating Extension",
+            page_title: "Оценённые — Сеанс",
             unknown_user: "Неизвестный пользователь",
             subtitle: "Управляйте и изучайте свои оценки",
             filters: {
@@ -5426,7 +5434,7 @@ export const locales = {
             unknown_movie: "Неизвестный фильм"
         },
         random: {
-            page_title: "Случайный фильм - Movie Rating Extension",
+            page_title: "Случайный фильм — Сеанс",
             pool_marathon: {
                 pool_remove: "Убрать из пула",
                 pool_add: "Добавить в пул",
@@ -5699,7 +5707,7 @@ export const locales = {
             }
         },
         calendar: {
-            page_title: "Календарь - Movie Rating Extension",
+            page_title: "Календарь — Сеанс",
             title: "Календарь",
             subtitle: "Ближайшие серии и премьеры из списков «Смотрю» и «Буду смотреть»",
             loading_label: "Загрузка календаря",
@@ -5990,7 +5998,7 @@ export const locales = {
                 dismiss: "Закрыть уведомление об обновлении"
             },
             header: {
-                title: "Movie Ratings",
+                title: "Сеанс",
                 not_authenticated: "Не авторизован",
                 signed_in_as: "Вошли как {user}",
                 home: "Открыть главную",
@@ -6028,7 +6036,7 @@ export const locales = {
                 last_name_required: "Введите фамилию",
                 confirm_password_required: "Повторите пароль",
                 close: "Закрыть",
-                logo_alt: "Логотип Movie Ratings",
+                logo_alt: "Логотип Сеанса",
                 password_show: "Показать пароль",
                 password_hide: "Скрыть пароль",
                 logout_failed: "Не удалось выйти. Попробуйте ещё раз.",

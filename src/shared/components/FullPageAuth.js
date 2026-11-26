@@ -254,7 +254,7 @@ class FullPageAuth {
         const title = document.createElement('h2');
         title.className = 'full-page-auth-title';
         title.id = 'fullPageAuthTitle';
-        title.textContent = this.options.title || this.t('popup.header.title', 'Movie Ratings');
+        title.textContent = this.options.title || this.t('popup.header.title', 'Сеанс');
         header.appendChild(title);
 
         const subtitle = document.createElement('p');
