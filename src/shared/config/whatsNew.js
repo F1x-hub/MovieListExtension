@@ -1,5 +1,15 @@
 export const whatsNew = [
     {
+        id: '1.5.12', version: '1.5.12', date: '2026-11-26',
+        highlights: [
+            { id: 'marathon-history', title: { ru: 'Итоги марафонов', en: 'Marathon results' }, text: { ru: 'Под текущим раундом видны все прошлые: победитель, средняя оценка компании, кто какой фильм принёс и как его оценили.', en: 'Every past round shows under the current one: the winner, the company’s average, who brought each film and how it was rated.' } },
+            { id: 'taste-panel', title: { ru: 'Жанр и год в статистике', en: 'Genres and years in Statistics' }, text: { ru: 'Нажмите на жанр или десятилетие, и под графиком откроются его фильмы с вашей оценкой и оценкой компании. В «Недавних оценках» появился поиск по названию.', en: 'Press a genre or a decade to open its films under the chart, with your score and the company’s. Recent ratings now have a title search.' } },
+            { id: 'random-filters', title: { ru: 'Фильтры «Случайного» работают сразу', en: 'Random filters apply at once' }, text: { ru: 'У открытой панели фильтров своя кнопка «Найти фильм», мультсериалы стали отдельным типом, а самые популярные фильмы больше не выпадают из поиска.', en: 'The open filter panel has its own «Find a film» button, animated series are a type of their own, and the most popular films are no longer left out.' } },
+            { id: 'players-back', title: { ru: 'KinoGo и AnimeGo снова играют', en: 'KinoGo and AnimeGo play again' }, text: { ru: 'Оба источника снова открываются в плеере расширения, а HDRezka больше не застревает на 360p.', en: 'Both sources open in the extension player again, and HDRezka no longer sticks to 360p.' } },
+            { id: 'calmer-pages', title: { ru: 'Страницы без мерцания', en: 'Pages that stop flickering' }, text: { ru: '«Оценённые» и профиль больше не появляются дважды, а Главная, профиль и достижения открываются быстрее: они не перечитывают каждый раз все оценки.', en: 'Rated and the profile no longer appear twice, and Home, the profile and Achievements open faster: they stop rereading every rating each time.' } }
+        ]
+    },
+    {
         id: '1.5.11', version: '1.5.11', date: '2026-11-25',
         highlights: [
             { id: 'profile-statistics', title: { ru: 'Новый профиль', en: 'A rebuilt profile' }, text: { ru: 'Вкладка «Статистика» с жанрами, годами, актёрами и режиссёрами, а в календаре видно, что вы оценили в любой день года.', en: 'A Statistics tab with genres, years, actors and directors, and a calendar that shows what you rated on any day of the year.' } },
