@@ -104,7 +104,8 @@
     "http://127.0.0.1:3000/*"
   ],
   "optional_host_permissions": [
-    "https://*/*"
+    "https://*/*",
+    "<all_urls>"
   ],
   "oauth2": {
     "client_id": "532518163829-5kst3gcs78q6omaljmua2vdrooi6fcb3.apps.googleusercontent.com",

@@ -13,6 +13,15 @@
             if (host && global.PlayerDiagnosticsPanel) this.playerDiagnosticsPanel ||= new global.PlayerDiagnosticsPanel({
                 host, before, playerHost: this.elements?.videoContainer
             });
+            const playerModal = global.document?.getElementById('videoPlayerModal');
+            const playerStage = global.document?.getElementById('playerStage');
+            if (playerModal && playerStage && this.elements?.videoContainer && global.PlayerAmbientLight && !this.playerAmbientLight) {
+                this.playerAmbientLight = new global.PlayerAmbientLight({
+                    modal: playerModal, stage: playerStage, container: this.elements.videoContainer
+                });
+                // The player menu on this page reads the light's state from here.
+                global.movieAmbientLight = this.playerAmbientLight;
+            }
             this.watchLocaleUnsubscribe?.();
             this.watchLocaleUnsubscribe = global.PlayerLocale?.subscribe(() => {
                 this.syncWatchEntry();
@@ -35,6 +44,8 @@
                     this.playerMetricsDispose?.();
                     this.playerDiagnosticsPanel?.destroy();
                     this.playerDiagnosticsPanel = null;
+                    this.playerAmbientLight?.destroy();
+                    this.playerAmbientLight = null;
                     this.sourceRefreshCoordinator?.invalidate();
                 };
                 global.addEventListener('pagehide', this.watchEntryPageCleanup);

@@ -86,6 +86,13 @@ Color is allowed only when it carries content or an unavoidable semantic:
    buttons stay neutral, and every state is also told in text. The dialog keeps its
    size while the text changes. The cat lives only while the scene is open, a press
    plays any story to its end, and under reduced motion poses change at once.
+10. the ambient light behind the player: on the film page the colours of the playing
+   picture, blurred, spread over the scrim around the video
+   (`src/pages/movie-details/PlayerAmbientLight.js`, `.player-ambient` in `player.css`).
+   It is the picture itself, not a colour chosen by the interface: the player dialog,
+   its buttons and the menu paint over it and stay neutral, it carries no meaning, and
+   «Подсветка» in the player menu turns it off. The same in both themes, since the
+   scrim is dark in both.
 
 Exceptions must remain local, documented, and visually subordinate to the
 neutral interface. Semantic states require a label, icon, shape, border style, or

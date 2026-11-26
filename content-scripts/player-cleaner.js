@@ -951,6 +951,84 @@
         return { ok: true, code: 'APPLIED' };
     }
 
+    // Ambient light (src/pages/movie-details/PlayerAmbientLight.js). While the film page keeps
+    // asking (PLAYER_AMBIENT_START), a provider frame sends it a 48x27 copy of its picture.
+    // A picture from another site without CORS cannot be read here; the page then captures
+    // its own tab instead. On the extension page the host draws its videos itself.
+    const AMBIENT_WIDTH = 48;
+    const AMBIENT_HEIGHT = 27;
+    const AMBIENT_SAMPLE_MS = 200;
+    const AMBIENT_SLOW_MS = 1000;
+    const AMBIENT_LEASE_MS = 6000;
+    const AMBIENT_STATUSES = new Set(['on', 'off', 'needs-access']);
+    let ambientRequestId = null;
+    let ambientStatus = null;
+    let ambientSampling = false;
+    let ambientLeaseUntil = 0;
+    let ambientTimer = null;
+    let ambientContext = null;
+
+    function readAmbientStatus() {
+        if (isExtensionPageContext()) return window.movieAmbientLight?.status || null;
+        return ambientRequestId === null ? null : ambientStatus;
+    }
+
+    function setAmbientLight(enabled) {
+        // Sent inside the menu click: the page may need it to ask Chrome for capture access.
+        if (isExtensionPageContext()) {
+            window.dispatchEvent(new CustomEvent('movie-player-ambient-set', { detail: { enabled } }));
+        } else if (ambientRequestId !== null) {
+            postToHost({ type: 'PLAYER_AMBIENT_SET', requestId: ambientRequestId, enabled });
+        }
+    }
+
+    function sampleAmbientFrame() {
+        ambientTimer = null;
+        if (!ambientSampling || ambientRequestId === null || Date.now() > ambientLeaseUntil) return;
+        const video = permanentVideo || document.querySelector('video:not(.ghost-video)');
+        let delay = AMBIENT_SAMPLE_MS;
+        if (!video || !video.videoWidth || !video.videoHeight) {
+            postToHost({ type: 'PLAYER_AMBIENT_UNAVAILABLE', requestId: ambientRequestId, reason: 'no-video' });
+            delay = AMBIENT_SLOW_MS;
+        } else {
+            try {
+                if (!ambientContext) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = AMBIENT_WIDTH;
+                    canvas.height = AMBIENT_HEIGHT;
+                    ambientContext = canvas.getContext('2d', { willReadFrequently: true });
+                }
+                ambientContext.drawImage(video, 0, 0, AMBIENT_WIDTH, AMBIENT_HEIGHT);
+                const { data } = ambientContext.getImageData(0, 0, AMBIENT_WIDTH, AMBIENT_HEIGHT);
+                postToHost({
+                    type: 'PLAYER_AMBIENT_FRAME', requestId: ambientRequestId,
+                    width: AMBIENT_WIDTH, height: AMBIENT_HEIGHT, pixels: data
+                });
+                // A paused picture changes only on a seek.
+                if (video.paused) delay = AMBIENT_SLOW_MS;
+            } catch {
+                postToHost({ type: 'PLAYER_AMBIENT_UNAVAILABLE', requestId: ambientRequestId, reason: 'protected' });
+                delay = AMBIENT_SLOW_MS * 2;
+            }
+        }
+        ambientTimer = setTimeout(sampleAmbientFrame, delay);
+    }
+
+    window.addEventListener('message', (event) => {
+        if (isExtensionPageContext() || !isTrustedHostMessage(event)) return;
+        if (event.data?.type !== 'PLAYER_AMBIENT_START' || !Number.isSafeInteger(event.data.requestId)) return;
+        ambientRequestId = event.data.requestId;
+        ambientStatus = AMBIENT_STATUSES.has(event.data.status) ? event.data.status : 'off';
+        ambientSampling = event.data.sampling === true && ambientStatus !== 'off';
+        ambientLeaseUntil = Date.now() + AMBIENT_LEASE_MS;
+        if (!ambientSampling) {
+            clearTimeout(ambientTimer);
+            ambientTimer = null;
+        } else if (ambientTimer === null) {
+            sampleAmbientFrame();
+        }
+    });
+
     window.addEventListener('message', (event) => {
         if (!isTrustedHostMessage(event)) return;
         if (event.data?.type === 'RESET_PERMANENT_VIDEO') {
@@ -5116,6 +5194,20 @@
                 renderSubMenuView(pt('speed', 'Скорость'), items);
             }
 
+            const ambientStatusLabel = status => status === 'off'
+                ? pt('off', 'Откл')
+                : status === 'needs-access' ? pt('ambient_needs_access', 'Нужен доступ') : pt('ambient_on', 'Вкл');
+
+            // «Вкл» while access is missing asks Chrome for it again.
+            const renderAmbientView = () => {
+                const status = readAmbientStatus();
+                const refreshFn = () => refreshCurrentSettingsView(renderAmbientView);
+                renderSubMenuView(pt('ambient_light', 'Подсветка'), [
+                    { label: pt('ambient_on', 'Вкл'), isActive: status !== 'off', action: () => setAmbientLight(true), refreshFn },
+                    { label: pt('off', 'Откл'), isActive: status === 'off', action: () => setAmbientLight(false), refreshFn }
+                ]);
+            };
+
             const appendSubtitleAppearanceItem = () => {
                 const list = settingsMenu.querySelector('.player-settings-menu__list');
                 if (!list) return;
@@ -5718,6 +5810,13 @@
                 const subsItem = createMenuItem(pt('subtitles', 'Субтитры'), subLabel);
                 subsItem.onclick = (e) => { e.stopPropagation(); renderSubsView(); };
                 settingsMenu.appendChild(subsItem);
+
+                const ambient = readAmbientStatus();
+                if (ambient) {
+                    const ambientItem = createMenuItem(pt('ambient_light', 'Подсветка'), ambientStatusLabel(ambient));
+                    ambientItem.onclick = (e) => { e.stopPropagation(); renderAmbientView(); };
+                    settingsMenu.appendChild(ambientItem);
+                }
                 if ((isExtensionPageContext() && window.PlayerDiagnosticsPanel) || diagnosticsRequestId !== null) {
                     window.PlayerSettingsMenu.appendDiagnostics(settingsMenu, {
                         label: pt('diagnostics', 'Диагностика'),

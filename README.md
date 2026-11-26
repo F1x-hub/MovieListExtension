@@ -58,6 +58,9 @@ lists, provider-aware playback, and Firebase synchronization in one interface.
   provider frames. Embedded Rutube/VidSrc players are supported when their
   active HLS source is exposed; opaque, DRM, and DASH-only sources without an
   HLS/file alternative cannot supply frames to the independent preview decoder.
+- Watch with an ambient light: the colours of the picture spread behind the player on
+  every source («Подсветка» in the player menu). Sources whose picture the page cannot
+  read use a tab capture, which needs Chrome's optional access to all sites.
 - Use light/dark themes with optional seasonal decor, Popup or Side Panel mode,
   localized UI, and accessible controls.
 - Give administrators tools for user approval, moderation, mappings, and service
@@ -471,6 +474,7 @@ keeps npm-compatible three-component semver metadata.
 ### Features
 
 - The extension is called «Сеанс», «Screening» in English: in Chrome's extension list and toolbar (by Chrome's language, through _locales) and in page titles, the popup, the sign-in window, the live channel and the admin panel (by the extension's language). The README is renamed too. MovieList Hub and MovieListSetup.exe keep their names, since that is how the Windows program is installed.
+- Player: the colours of the playing picture spread softly behind the player window, like YouTube's ambient mode, on every source. Videos of the film page are drawn directly, provider frames send a small copy of their picture, and a picture that cannot be read (a protected stream, a player nested deeper) is taken from a capture of the tab, which needs Chrome's access to all sites: the player menu then says «Нужен доступ» under «Подсветка», and choosing «Вкл» asks Chrome for it once. The window and its controls stay grey; the light goes out when the player is minimised, hidden or full screen, and the choice is kept on this computer only.
 
 ### Fixes
 

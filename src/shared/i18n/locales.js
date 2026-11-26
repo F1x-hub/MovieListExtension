@@ -25,6 +25,7 @@ export const locales = {
             subtitle_preview: 'Subtitle preview', subtitle_sample: 'Subtitle example', bottom: 'Bottom', top: 'Top', none: 'None', soft: 'Soft', strong: 'Strong',
             size: 'Size', text_color: 'Text color', position: 'Position', edge_offset: 'Edge offset', text_background: 'Text background', text_shadow: 'Text shadow',
             subtitle_note: 'Changes apply immediately and are saved for future videos.', reset_settings: 'Reset settings', off: 'Off', track: 'Track {number}',
+            ambient_light: 'Ambient light', ambient_on: 'On', ambient_needs_access: 'Needs access',
             auto: 'Auto', automatic: 'Automatic', quality: 'Quality', voiceover: 'Audio', main_track: 'Main', fullscreen: 'Fullscreen',
             player_settings: 'Player settings', toggle_subtitles: 'Toggle subtitles', skip_opening: 'Skip opening', forward: 'Next: {title}'
         },
@@ -3110,6 +3111,7 @@ export const locales = {
             subtitle_preview: 'Предпросмотр субтитров', subtitle_sample: 'Пример субтитров', bottom: 'Снизу', top: 'Сверху', none: 'Нет', soft: 'Мягкая', strong: 'Сильная',
             size: 'Размер', text_color: 'Цвет текста', position: 'Расположение', edge_offset: 'Отступ от края', text_background: 'Фон под текстом', text_shadow: 'Тень текста',
             subtitle_note: 'Изменения применяются сразу и сохраняются для следующих видео.', reset_settings: 'Сбросить настройки', off: 'Откл', track: 'Дорожка {number}',
+            ambient_light: 'Подсветка', ambient_on: 'Вкл', ambient_needs_access: 'Нужен доступ',
             auto: 'Авто', automatic: 'Автоматически', quality: 'Качество', voiceover: 'Озвучка', main_track: 'Основная', fullscreen: 'Полный экран',
             player_settings: 'Настройки плеера', toggle_subtitles: 'Включить или выключить субтитры', skip_opening: 'Пропустить опенинг', forward: 'Вперёд: {title}'
         },

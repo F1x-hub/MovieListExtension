@@ -127,6 +127,7 @@ browser's name resolver, and `safety.spec.cjs` checks that on every run.
 | `controls.spec.cjs` | Pause, the timeline, keys, volume, settings, full screen, minimise and close, on KinoGo (provider frame) and Rutube (extension page) |
 | `look.spec.cjs` | Layout around a real picture in both themes at three window sizes, and Esc on the source list |
 | `series.spec.cjs` | Next, previous, the episode list, a source change, and «Попробовать другой источник» |
+| `ambient.spec.cjs` | Which way the light behind the player gets each playing source's picture (page video, frame pixels, or a tab capture the rig has no access for) |
 | `safety.spec.cjs` | The control group: unreachable production, uBlock really blocking, and each guard shown catching what it should |
 
 A source counts as playing only when frames are being decoded, time is moving, the

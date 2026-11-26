@@ -437,6 +437,29 @@ checklist; `npm run test:visual-design` enforces much of it.
   selection or room state. YouTube trailers play through the HTTPS wrapper
   `public/player/embed.html` on Firebase Hosting, which avoids embed errors 150/153.
 
+### Ambient light
+
+- `src/pages/movie-details/PlayerAmbientLight.js` owns the light behind the player dialog and
+  its setting (`movieExtension_ambientLight` in `chrome.storage.local`, on by default, never in
+  a watch room). It takes the picture from the first path that works: a `<video>` in
+  `#videoContainer` is drawn directly (drawing never reads pixels, so another site's file
+  without CORS is fine); a provider frame's `player-cleaner` sends 48x27 pixels
+  (`PLAYER_AMBIENT_FRAME`) while the page keeps asking (`PLAYER_AMBIENT_START`, a 6 s lease,
+  so a frame stops by itself); otherwise `chrome.tabs.captureVisibleTab`, cropped to the
+  video, which Chrome allows only with the literal `<all_urls>` (optional; asked when «Вкл» is
+  chosen while the menu says «Нужен доступ», never for a frame that sends its own pixels).
+  Host permissions such as `*://*/*` and `tabCapture` do not satisfy it.
+- Frame messages count only from the current iframe's window and origin with its
+  `requestId`. «Подсветка» in a frame's menu posts `PLAYER_AMBIENT_SET`; the click activates
+  the page as well, so `chrome.permissions.request` works from that message. Frames whose
+  video is protected or nested out of the cleaner's reach answer `PLAYER_AMBIENT_UNAVAILABLE`
+  or nothing, and the light falls back to capture or says «Нужен доступ».
+- It stops when the dialog is hidden or minimized, the tab is hidden, in full screen and in
+  picture-in-picture; a new source starts dark. Capture is off inside another page (Live's
+  frame), where a tab capture would be cropped wrongly. Checks:
+  `node tests/playerAmbientLightBrowser.test.cjs`, `tests/e2e/specs/player-ambient.spec.cjs`,
+  and on real providers `tests/e2e/player/ambient.spec.cjs`.
+
 ### Torrents and the local MediaPlayer
 
 - `MediaPlayerService.js` is the only client of the optional local MediaPlayer. Pair through
