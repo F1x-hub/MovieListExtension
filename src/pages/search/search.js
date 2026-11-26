@@ -1479,7 +1479,7 @@ class SearchManager {
             <div class="initial-loading-content search-loading-state app-loader app-loader--section" role="status" aria-live="polite">
                 <div class="app-loader__indicator" aria-hidden="true"></div>
                 <h3 class="loading-title">Ищем фильмы</h3>
-                <p class="loading-text app-loader__label">Сначала парсим результаты, затем загружаем данные фильмов...</p>
+                <p class="loading-text app-loader__label">Ищем фильмы…</p>
             </div>
         `;
     }

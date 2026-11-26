@@ -1317,7 +1317,7 @@ class MovieDetailsManager {
         const titleElement = this.elements.loadingState?.querySelector('.loading-title');
         const textElement = this.elements.loadingState?.querySelector('.loading-text');
         if (titleElement) titleElement.textContent = `Ищем «${title}» в Kinopoisk`;
-        if (textElement) textElement.textContent = 'Подбираем точную карточку фильма, пожалуйста, подождите';
+        if (textElement) textElement.textContent = 'Подбираем карточку фильма…';
         this.page.showLoader();
     }
 

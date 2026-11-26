@@ -1327,7 +1327,7 @@ export const locales = {
             viewing_desc: "Subtitle and comfortable viewing preferences.",
             subtitle_appearance: {
                 title: "Subtitle appearance",
-                description: "Adjust subtitle text size, color, and position for a more comfortable viewing experience.",
+                description: "Subtitle size, color and position.",
                 support_note: "These settings apply to supported subtitles in the built-in player.",
                 preview_aria: "Subtitle appearance preview",
                 preview_caption: "Sample subtitles",
@@ -1369,7 +1369,7 @@ export const locales = {
             save: "Save Settings",
             reset: "Reset to Defaults",
             reset_confirm: "Are you sure you want to reset all settings to default?",
-            saved: "Settings saved successfully!",
+            saved: "Settings saved",
             save_failed: "Failed to save settings",
             reset_done: "Settings reset to defaults",
             updates: {
@@ -1978,7 +1978,7 @@ export const locales = {
                 loading_ratings: "Loading ratings",
                 close: "Close",
                 rated_prefix: "Rated: ",
-                ratings_empty: "No ratings yet. Start rating movies!",
+                ratings_empty: "No ratings yet",
                 ratings_empty_other: "This user has no ratings yet.",
                 unknown_genres: "Genre not specified"
             },
@@ -2070,8 +2070,8 @@ export const locales = {
                 halloween: {
                     title: "Halloween season",
                     before: {
-                        one: "{count} day until Halloween. Perfect time for a horror movie night.",
-                        other: "{count} days until Halloween. Perfect time for a horror movie night."
+                        one: "{count} day until Halloween. A good week for horror films.",
+                        other: "{count} days until Halloween. A good week for horror films."
                     },
                     today: "Happy Halloween! Lights off, something scary on.",
                     after: "Halloween is over, but it is never too late for a scary story.",
@@ -2245,7 +2245,7 @@ export const locales = {
             },
             empty: {
                 title: "No movies found",
-                message: "Try adjusting your filters or start rating some movies!",
+                message: "Try other filters or rate a few movies.",
                 search_btn: "Search Movies"
             },
             error: {
@@ -2373,7 +2373,7 @@ export const locales = {
                 err_ORIGIN_NOT_ALLOWED: "The request origin is not allowed.",
                 err_INVALID_MOVIE: "Could not verify the movie data.",
                 err_INVALID_RESOLUTION: "Unknown viewing result.",
-                no_access: "No access to the movie marathon. Check that the Firestore rules are published and your account is approved by an administrator.",
+                no_access: "No access to the movie marathon. It opens once an administrator approves your account.",
                 action_failed: "Could not complete the action",
                 searching: "Searching...",
                 nothing_found: "Nothing found",
@@ -2460,7 +2460,7 @@ export const locales = {
                 marathon: "Marathon"
             },
             title: "Random Movie",
-            subtitle: "Let the dice decide what to watch next!",
+            subtitle: "Let the dice decide what to watch next",
             config: {
                 title: "Configuration",
                 reset: "Restore defaults",
@@ -2589,7 +2589,7 @@ export const locales = {
             in_days_other: "in {n} days",
             movie_premiere: "Movie premiere",
             empty_title: "No upcoming dates",
-            empty_message: "Add movies or series to your Watching or Plan to Watch lists and they will appear here automatically.",
+            empty_message: "Add movies or series to your Watching or Plan to Watch lists, and they will appear here.",
             signed_out_title: "Sign in to see the calendar",
             signed_out_message: "Sign in to your account to see upcoming episodes and premieres from your lists.",
             error_title: "Could not load the calendar",
@@ -2621,7 +2621,7 @@ export const locales = {
             spoiler_aria: "Hide the selected text as a spoiler",
             spoiler_too_long: "Adding a spoiler would go over the {max} character limit.",
             choose_rating: "Select a rating",
-            saved: "Rating saved!",
+            saved: "Rating saved",
             save_error: "Couldn't save the rating. Please try again.",
             cancel: "Cancel",
             save: "Save"
@@ -2728,8 +2728,8 @@ export const locales = {
             },
             loading_reviews: "Loading reviews...",
             error_loading_reviews: "Error loading reviews",
-            empty_reviews: "Be the first to rate this movie!",
-            be_first: "Be the first!",
+            empty_reviews: "No one has rated this movie yet",
+            be_first: "No ratings yet",
             edit: "Edit",
             delete: "Delete",
             votes_count: "{count} votes",
@@ -2796,7 +2796,7 @@ export const locales = {
             error_login: "Please log in to search for movies",
             error_api: "Kinopoisk API key not configured. Please check the configuration.",
             error_generic: "An error occurred while searching for movies",
-            error_cyrillic: "Problem with Cyrillic search \"{query}\". Try English title or other keywords.",
+            error_cyrillic: "Nothing found for \"{query}\". Try the English title or other words.",
             error_server: "Server temporarily unavailable. Try later or change query.",
             error_not_found: "Nothing found for your query. Try other keywords.",
             error_forbidden: "API access problem. Check settings.",
@@ -2921,9 +2921,9 @@ export const locales = {
             },
             approval: {
                 pending_registered_title: "Application Under Review",
-                pending_registered_msg: "Your account has been successfully registered and is waiting for administrator approval. Once approved, you will receive full access to the extension.",
+                pending_registered_msg: "Account created. Once an administrator approves it, the whole extension opens up.",
                 pending_login_title: "Account Awaiting Approval",
-                pending_login_msg: "Your registration is currently under review by the administrator. Access will be granted once approved.",
+                pending_login_msg: "An administrator has not approved your account yet. Once they do, the whole extension opens up.",
                 rejected_title: "Access Restricted",
                 rejected_msg: "Your registration was rejected by the administrator.",
                 back_to_login: "Back to Sign In",
@@ -2950,7 +2950,7 @@ export const locales = {
                 view_all: "View All",
                 refresh: "Refresh",
                 empty_title: "No ratings yet",
-                empty_text: "Start rating movies to see them here!",
+                empty_text: "Movies you rate will show up here",
                 empty_all_title: "No ratings yet",
                 empty_all_text: "Find a movie to add the first rating.",
                 empty_my_title: "You haven't rated any movies yet",
@@ -4408,7 +4408,7 @@ export const locales = {
             viewing_desc: "Настройки субтитров и комфортного просмотра.",
             subtitle_appearance: {
                 title: "Оформление субтитров",
-                description: "Настройте размер, цвет и положение текста для более комфортного просмотра.",
+                description: "Размер, цвет и положение субтитров.",
                 support_note: "Настройки применяются к поддерживаемым субтитрам встроенного плеера.",
                 preview_aria: "Предпросмотр оформления субтитров",
                 preview_caption: "Пример субтитров",
@@ -4450,7 +4450,7 @@ export const locales = {
             save: "Сохранить настройки",
             reset: "Сбросить по умолчанию",
             reset_confirm: "Вы уверены, что хотите сбросить все настройки к значениям по умолчанию?",
-            saved: "Настройки успешно сохранены!",
+            saved: "Настройки сохранены",
             save_failed: "Не удалось сохранить настройки",
             reset_done: "Настройки сброшены",
             updates: {
@@ -4535,7 +4535,7 @@ export const locales = {
                 off_text: "Торренты скачивает и хранит MediaPlayer Suite на этом компьютере. Подключите его в настройках, и здесь появятся все загрузки.",
                 off_action: "Открыть настройки MediaPlayer",
                 none_title: "Загрузок пока нет",
-                none_text: "Откройте фильм, выберите источник «Торрент» и раздачу — загрузка появится здесь.",
+                none_text: "Откройте фильм, выберите источник «Торрент» и раздачу, и загрузка появится здесь.",
                 filter_title: "Здесь пусто",
                 filter_text: "В этом разделе нет загрузок.",
                 filter_action: "Показать все",
@@ -4649,7 +4649,7 @@ export const locales = {
             movie_on_air: "Фильм в эфире",
             open_movie: "Открыть страницу фильма",
             open_youtube: "Открыть на YouTube в новой вкладке",
-            intro: "Общий показ для всех: заходите — и смотрите с того же момента, что и остальные.",
+            intro: "Общий показ для всех: зайдите, и фильм пойдёт с того же момента, что и у остальных.",
             connecting: "Подключаемся к эфиру…",
             off_title: "Сейчас ничего не идёт",
             off_text: "Когда начнётся показ, он появится здесь автоматически — страницу обновлять не нужно.",
@@ -5097,7 +5097,7 @@ export const locales = {
                 loading_ratings: "Загрузка оценок",
                 close: "Закрыть",
                 rated_prefix: "Оценено: ",
-                ratings_empty: "Оценок пока нет. Начните оценивать фильмы!",
+                ratings_empty: "Оценок пока нет",
                 ratings_empty_other: "У пользователя пока нет оценок.",
                 unknown_genres: "Жанр не указан"
             },
@@ -5366,7 +5366,7 @@ export const locales = {
             },
             empty: {
                 title: "Фильмы не найдены",
-                message: "Попробуйте изменить фильтры или оцените пару фильмов!",
+                message: "Попробуйте другие фильтры или оцените пару фильмов.",
                 search_btn: "Найти фильмы"
             },
             error: {
@@ -5494,7 +5494,7 @@ export const locales = {
                 err_ORIGIN_NOT_ALLOWED: "Источник запроса не разрешён.",
                 err_INVALID_MOVIE: "Не удалось проверить данные фильма.",
                 err_INVALID_RESOLUTION: "Неизвестный результат просмотра.",
-                no_access: "Нет доступа к киномарафону. Проверьте, что опубликованы правила Firestore и ваш аккаунт одобрен администратором.",
+                no_access: "Нет доступа к киномарафону. Он откроется, когда администратор одобрит ваш аккаунт.",
                 action_failed: "Не удалось выполнить действие",
                 searching: "Поиск...",
                 nothing_found: "Ничего не найдено",
@@ -5581,7 +5581,7 @@ export const locales = {
                 marathon: "Марафон"
             },
             title: "Случайный фильм",
-            subtitle: "Пусть кости решат, что смотреть дальше!",
+            subtitle: "Пусть кости решат, что смотреть дальше",
             config: {
                 title: "Настройка",
                 reset: "Вернуть по умолчанию",
@@ -5712,7 +5712,7 @@ export const locales = {
             in_days_other: "через {n} дня",
             movie_premiere: "Премьера фильма",
             empty_title: "Нет предстоящих дат",
-            empty_message: "Добавьте фильмы или сериалы в списки «Смотрю» или «Буду смотреть», и они появятся здесь автоматически.",
+            empty_message: "Добавьте фильмы или сериалы в списки «Смотрю» или «Буду смотреть», и они появятся здесь.",
             signed_out_title: "Войдите в аккаунт",
             signed_out_message: "Войдите в аккаунт, чтобы видеть ближайшие серии и премьеры из своих списков.",
             error_title: "Ошибка загрузки календаря",
@@ -5744,7 +5744,7 @@ export const locales = {
             spoiler_aria: "Скрыть выделенный текст как спойлер",
             spoiler_too_long: "Добавление спойлера превысит лимит {max} символов.",
             choose_rating: "Выберите оценку",
-            saved: "Оценка сохранена!",
+            saved: "Оценка сохранена",
             save_error: "Не удалось сохранить оценку. Попробуйте ещё раз.",
             cancel: "Отмена",
             save: "Сохранить"
@@ -5851,8 +5851,8 @@ export const locales = {
             },
             loading_reviews: "Загрузка отзывов...",
             error_loading_reviews: "Ошибка загрузки отзывов",
-            empty_reviews: "Будьте первым, кто оценит этот фильм!",
-            be_first: "Будьте первым!",
+            empty_reviews: "Этот фильм ещё никто не оценил",
+            be_first: "Пока никто не оценил",
             edit: "Редактировать",
             delete: "Удалить",
             votes_count: "{count} оценок",
@@ -5919,7 +5919,7 @@ export const locales = {
             error_login: "Пожалуйста, войдите в систему для поиска фильмов",
             error_api: "Ключ Kinopoisk API не настроен. Пожалуйста, проверьте конфигурацию.",
             error_generic: "Произошла ошибка при поиске фильмов",
-            error_cyrillic: "Проблема с поиском на кириллице \"{query}\". Попробуйте английское название или другие ключевые слова.",
+            error_cyrillic: "По запросу \"{query}\" ничего не нашлось. Попробуйте английское название или другие слова.",
             error_server: "Сервер временно недоступен. Попробуйте позже или измените запрос.",
             error_not_found: "По вашему запросу ничего не найдено. Попробуйте другие ключевые слова.",
             error_forbidden: "Проблема с доступом к API. Проверьте настройки.",
@@ -6044,9 +6044,9 @@ export const locales = {
             },
             approval: {
                 pending_registered_title: "Заявка на рассмотрении",
-                pending_registered_msg: "Ваш аккаунт успешно создан и ожидает подтверждения администратором. После одобрения вы получите полный доступ к расширению.",
+                pending_registered_msg: "Аккаунт создан. Как только администратор его одобрит, откроется всё расширение.",
                 pending_login_title: "Аккаунт ожидает подтверждения",
-                pending_login_msg: "Ваша регистрация находится на рассмотрении у администратора. Доступ будет открыт сразу после проверки.",
+                pending_login_msg: "Администратор ещё не одобрил ваш аккаунт. Как только одобрит, откроется всё расширение.",
                 rejected_title: "Доступ ограничен",
                 rejected_msg: "Ваша регистрация была отклонена администратором.",
                 back_to_login: "Вернуться ко входу",
@@ -6073,7 +6073,7 @@ export const locales = {
                 view_all: "Все оценки",
                 refresh: "Обновить",
                 empty_title: "Оценок пока нет",
-                empty_text: "Оцените фильмы, чтобы увидеть их здесь!",
+                empty_text: "Здесь появятся фильмы, которые вы оцените",
                 empty_all_title: "Оценок пока нет",
                 empty_all_text: "Найдите фильм и добавьте первую оценку.",
                 empty_my_title: "Вы ещё не оценивали фильмы",

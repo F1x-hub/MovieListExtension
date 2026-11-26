@@ -384,7 +384,7 @@ class ReportWidget {
             const pageUrl = window.location.href;
             await window.firebaseManager.addReport(text, file, pageUrl, this.reportContext);
 
-            this.showMessage('Ваше сообщение успешно отправлено!', 'success');
+            this.showMessage('Сообщение отправлено', 'success');
             
             // Auto close after success
             setTimeout(() => {

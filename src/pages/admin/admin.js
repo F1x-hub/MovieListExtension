@@ -3169,7 +3169,7 @@ class AdminPanelManager {
                         }
                     }
 
-                    Utils.showToast(`Авто-сопоставление завершено! Найдено и привязано: ${resolvedCount}, отложено (нет на КП): ${notFoundCount}`, 'success');
+                    Utils.showToast(`Авто-сопоставление завершено. Найдено и привязано: ${resolvedCount}, отложено (нет на КП): ${notFoundCount}`, 'success');
                     await this.loadTmdbFallbacks();
                 } catch (err) {
                     console.error('Error during auto-mapping queue:', err);
@@ -3324,7 +3324,7 @@ class AdminPanelManager {
                         Utils.showToast(`Импортировано: ${res.imported}. Ошибок: ${res.errors.length}`, 'warning');
                         console.warn('Import warnings/errors:', res.errors);
                     } else {
-                        Utils.showToast(`Успешно импортировано привязок: ${res.imported}`, 'success');
+                        Utils.showToast(`Импортировано привязок: ${res.imported}`, 'success');
                     }
                     importFile.value = '';
                     await this.loadTmdbFallbacks();
@@ -3351,11 +3351,11 @@ class AdminPanelManager {
                 const kpId = this.extractNumericId(kpInput);
 
                 if (!tmdbId) {
-                    Utils.showToast('Пожалуйста, укажите корректный числовой TMDB ID или ссылку', 'warning');
+                    Utils.showToast('Укажите числовой TMDB ID или ссылку на TMDB', 'warning');
                     return;
                 }
                 if (!kpId) {
-                    Utils.showToast('Пожалуйста, укажите корректный числовой Kinopoisk ID или ссылку', 'warning');
+                    Utils.showToast('Укажите числовой Kinopoisk ID или ссылку на Кинопоиск', 'warning');
                     return;
                 }
 
@@ -4024,7 +4024,7 @@ class AdminPanelManager {
             container.innerHTML = `
                 <div class="tmdb-empty-state">
                                         <div class="tmdb-empty-title">Нет пользовательских привязок</div>
-                    <div class="tmdb-empty-desc">Здесь будут отображаться созданные вручную связки TMDB → Кинопоиск.</div>
+                    <div class="tmdb-empty-desc">Здесь появятся связи TMDB → Кинопоиск, созданные вручную.</div>
                 </div>
             `;
             return;
@@ -4101,7 +4101,7 @@ class AdminPanelManager {
             container.innerHTML = `
                 <div class="tmdb-empty-state">
                                         <div class="tmdb-empty-title">Все фильмы имеют IMDb ID</div>
-                    <div class="tmdb-empty-desc">В данный момент нет фильмов Кинопоиска, требующих ручного ввода IMDb ID.</div>
+                    <div class="tmdb-empty-desc">Сейчас нет фильмов Кинопоиска, которым нужен IMDb ID.</div>
                 </div>
             `;
             return;
@@ -4147,7 +4147,7 @@ class AdminPanelManager {
                 const imdbId = input?.value?.trim();
 
                 if (!imdbId || !TmdbFallbackQueueService.isValidImdbId(imdbId)) {
-                    Utils.showToast('Пожалуйста, укажите валидный IMDb ID в формате tt1234567', 'warning');
+                    Utils.showToast('Укажите IMDb ID в формате tt1234567', 'warning');
                     return;
                 }
 
@@ -4157,7 +4157,7 @@ class AdminPanelManager {
                     const item = pendingItems.find(p => String(p.kinopoiskId) === String(kpId));
                     await this.tmdbFallbackService.saveManualMapping(item, imdbId, this.currentUser?.uid || 'admin');
 
-                    Utils.showToast(`IMDb ID ${imdbId} успешно сохранён для фильма [KP: ${kpId}]`, 'success');
+                    Utils.showToast(`IMDb ID ${imdbId} сохранён для фильма [KP: ${kpId}]`, 'success');
                     await this.loadTmdbFallbacks();
                 } catch (err) {
                     console.error('Error saving IMDb mapping:', err);

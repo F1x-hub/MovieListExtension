@@ -555,7 +555,7 @@ class FullPageAuth {
         msgEl.className = 'full-page-auth-approval-msg';
         if (status === 'pending') {
             msgEl.textContent = isNewRegistration
-                ? this.t('popup.approval.pending_registered_msg', 'Ваш аккаунт успешно создан и ожидает подтверждения администратором. После одобрения вы получите полный доступ к расширению.')
+                ? this.t('popup.approval.pending_registered_msg', 'Аккаунт создан. Как только администратор его одобрит, откроется всё расширение.')
                 : this.t('popup.approval.pending_login_msg', 'Ваша регистрация находится на рассмотрении у администратора. Доступ будет открыт сразу после проверки.');
         } else {
             msgEl.textContent = this.t('popup.approval.rejected_msg', 'Ваша регистрация была отклонена администратором.');

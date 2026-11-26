@@ -1477,7 +1477,7 @@ class PopupManager {
         }
 
         if (!this.isValidEmail(email)) {
-            this.showAuthError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите корректный адрес электронной почты' : 'Please enter a valid email address', this.elements.registerEmail, this.elements.registerEmailError);
+            this.showAuthError(i18n.currentLocale === 'ru' ? 'Проверьте адрес почты: он должен выглядеть как name@example.com' : 'Check the email address: it should look like name@example.com', this.elements.registerEmail, this.elements.registerEmailError);
             return;
         }
         
@@ -1542,7 +1542,7 @@ class PopupManager {
         }
         
         if (!this.isValidEmail(email)) {
-            this.showAuthError(i18n.currentLocale === 'ru' ? 'Пожалуйста, введите корректный адрес электронной почты' : 'Please enter a valid email address', this.elements.loginEmail, this.elements.loginEmailError);
+            this.showAuthError(i18n.currentLocale === 'ru' ? 'Проверьте адрес почты: он должен выглядеть как name@example.com' : 'Check the email address: it should look like name@example.com', this.elements.loginEmail, this.elements.loginEmailError);
             return;
         }
         
@@ -1708,7 +1708,7 @@ class PopupManager {
             
             if (isNewRegistration) {
                 if (titleEl) titleEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.pending_registered_title') : 'Заявка на рассмотрении';
-                if (msgEl) msgEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.pending_registered_msg') : 'Ваш аккаунт успешно создан и ожидает подтверждения администратором. После одобрения вы получите полный доступ к расширению.';
+                if (msgEl) msgEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.pending_registered_msg') : 'Аккаунт создан. Как только администратор его одобрит, откроется всё расширение.';
             } else {
                 if (titleEl) titleEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.pending_login_title') : 'Аккаунт ожидает подтверждения';
                 if (msgEl) msgEl.textContent = (typeof i18n !== 'undefined' && i18n.get) ? i18n.get('popup.approval.pending_login_msg') : 'Ваша регистрация находится на рассмотрении у администратора. Доступ будет открыт сразу после проверки.';

@@ -461,6 +461,15 @@ Release entries are intentionally collapsed to keep this page readable.
 The extension manifest is the source of truth for the Chrome build version; `package.json`
 keeps npm-compatible three-component semver metadata.
 
+<details open>
+<summary><strong>Unreleased</strong></summary>
+
+### Fixes
+
+- Interface copy reads less like a template: messages no longer say «успешно … !» or «Будьте первым!», empty lists say what will appear in them, the email check shows the expected form, loaders and errors drop developer words («парсим», «метаданные», «правила Firestore») and officialese («находится на рассмотрении»), in Russian and English. Released What's New entries are unchanged.
+
+</details>
+
 <details>
 <summary><strong>1.5.12</strong> — marathon results, genres and years in Statistics, Random filters that apply, players back, a rebuilt admin panel and far fewer reads</summary>
 
