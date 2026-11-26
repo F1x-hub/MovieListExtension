@@ -282,24 +282,32 @@ class MovieCacheService {
     /**
      * Get multiple cached movies by Kinopoisk IDs (batch operation)
      * @param {Array<number>} kinopoiskIds - Array of Kinopoisk movie IDs
+     * @param {Object} [options]
+     * @param {number} [options.localMaxAgeMs] - pages that show hundreds of rated films at
+     *   once (Profile, Achievements): take a film this browser read from Firestore less than
+     *   this long ago from its compact local copy (see slimMovie) instead of reading it again.
+     *   Community aggregates may then be up to that old, and the copy lacks the heavy fields.
      * @returns {Promise<Object>} - Map of movieId to cached movie data
      */
-    async getBatchCachedMovies(kinopoiskIds) {
+    async getBatchCachedMovies(kinopoiskIds, options = {}) {
         const uniqueIds = Array.from(new Set(kinopoiskIds.map(id => id?.toString()).filter(Boolean)));
         try {
             const cachedMovies = {};
+            const maxAge = Number(options.localMaxAgeMs) || 0;
+            const remoteIds = maxAge > 0 ? await this.takeFreshSlimMovies(uniqueIds, maxAge, cachedMovies) : uniqueIds;
 
             // Firestore 'in' queries take at most 10 document IDs; chunks run in parallel
             const CHUNK_SIZE = 10;
             const chunks = [];
-            for (let i = 0; i < uniqueIds.length; i += CHUNK_SIZE) {
-                chunks.push(uniqueIds.slice(i, i + CHUNK_SIZE));
+            for (let i = 0; i < remoteIds.length; i += CHUNK_SIZE) {
+                chunks.push(remoteIds.slice(i, i + CHUNK_SIZE));
             }
 
             const snapshots = await Promise.all(chunks.map(chunk => this.db.collection(this.collection)
                 .where(firebase.firestore.FieldPath.documentId(), 'in', chunk)
                 .get()));
 
+            const slimCopies = {};
             snapshots.forEach(querySnapshot => querySnapshot.forEach(doc => {
                 const kinopoiskId = parseInt(doc.id);
                 const data = doc.data();
@@ -311,7 +319,13 @@ class MovieCacheService {
                 } else if (data.hasCommunityRating === true) {
                     cachedMovies[kinopoiskId] = { id: doc.id, ...data, _cacheExpired: true };
                 }
+                if (maxAge > 0 && data.hasCommunityRating === true) {
+                    slimCopies[MovieCacheService.slimMovieKey(doc.id)] = { fetchedAt: Date.now(), movie: MovieCacheService.slimMovie({ id: doc.id, ...data }) };
+                }
             }));
+            if (Object.keys(slimCopies).length && typeof chrome !== 'undefined' && chrome.storage?.local) {
+                chrome.storage.local.set(slimCopies).catch(error => console.warn('[MovieCache] Could not keep compact copies:', error));
+            }
 
             await this.getLocalCachedMovies(uniqueIds.filter(id => !cachedMovies[id]), cachedMovies);
             return cachedMovies;
@@ -319,6 +333,56 @@ class MovieCacheService {
             console.error('[MovieCache] Error batch checking cache:', error);
             return {};
         }
+    }
+
+    static slimMovieKey(id) {
+        return `slim_movie_${id}`;
+    }
+
+    // Film documents run to 15–66 KB, mostly credits, facts, frames and similar films. The
+    // profile, its statistics and the achievements read titles, years, genres, countries,
+    // lengths, posters, community aggregates and the actors and directors in `persons`.
+    static SLIM_MOVIE_DROPPED_FIELDS = [
+        'credits', 'tmdbCredits', 'facts', 'frames', 'similarMovies', 'sequelsAndPrequels',
+        'description', 'shortDescription', 'slogan', 'productionCompanies', 'distributors',
+        'fees', 'budget', 'premiere', 'audience', 'videos', 'networks', 'watchability', '_meta'
+    ];
+
+    static slimMovie(movie) {
+        const slim = { ...movie };
+        for (const field of MovieCacheService.SLIM_MOVIE_DROPPED_FIELDS) delete slim[field];
+        if (Array.isArray(movie.persons)) {
+            slim.persons = movie.persons
+                .filter(person => ['actor', 'director'].includes(String(person?.enProfession || '').toLowerCase()))
+                .map(({ id, name, enName, photo, profession, enProfession }) => ({ id, name, enName, photo, profession, enProfession }));
+        }
+        return slim;
+    }
+
+    /**
+     * Fills `target` with compact copies younger than `maxAgeMs` that still carry a community
+     * rating; one with old Kinopoisk metadata keeps its _cacheExpired mark, as a Firestore
+     * read would give it. Returns the IDs still to read from Firestore.
+     */
+    async takeFreshSlimMovies(ids, maxAgeMs, target) {
+        if (typeof chrome === 'undefined' || !chrome.storage?.local) return ids;
+        const stored = await chrome.storage.local.get(ids.map(id => MovieCacheService.slimMovieKey(id))).catch(() => null);
+        if (!stored) return ids;
+        const now = Date.now();
+        const remaining = [];
+        for (const id of ids) {
+            const entry = stored[MovieCacheService.slimMovieKey(id)];
+            const movie = entry?.movie;
+            if (movie && movie.hasCommunityRating === true && now - (Number(entry.fetchedAt) || 0) < maxAgeMs
+                && MovieCacheService.hasDisplayTitle(movie)) {
+                target[parseInt(id, 10)] = this.isMetadataCacheValid(movie)
+                    ? { ...movie, id: String(id) }
+                    : { ...movie, id: String(id), _cacheExpired: true };
+                continue;
+            }
+            remaining.push(id);
+        }
+        return remaining;
     }
 
     /**

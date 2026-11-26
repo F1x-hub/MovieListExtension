@@ -85,4 +85,30 @@ assert.deepEqual(await loadMarathonItems(db), [{ id: '1_2', roundId: 1 }]);
 await loadMarathonItems(db);
 assert.equal(reads, 2);
 
+// Finished rounds are kept locally; a later visit reads only the last round seen onward.
+const stored = {};
+globalThis.chrome = { storage: { local: {
+    get: async keys => Object.fromEntries(keys.filter(k => k in stored).map(k => [k, JSON.parse(JSON.stringify(stored[k]))])),
+    set: async values => { Object.assign(stored, JSON.parse(JSON.stringify(values))); }
+} } };
+const marathonDocs = [1, 1, 2, 2, 3].map((roundId, index) => ({ id: `${roundId}_${index}`, roundId }));
+const queries = [];
+const marathonDb = () => ({ collection: () => ({ doc: () => ({ collection: () => ({
+    get: async () => { queries.push('all'); return { docs: marathonDocs.map(d => ({ id: d.id, data: () => ({ roundId: d.roundId }) })) }; },
+    where: (field, op, value) => ({ get: async () => {
+        queries.push(`${field} ${op} ${value}`);
+        const docs = marathonDocs.filter(d => d.roundId >= value);
+        return { docs: docs.map(d => ({ id: d.id, data: () => ({ roundId: d.roundId }) })) };
+    } })
+}) }) }) });
+assert.equal((await loadMarathonItems(marathonDb())).length, 5);
+assert.deepEqual(queries, ['all']);
+assert.equal(stored.profile_cache_marathon_items.fromRound, 3, 'rounds before the latest are stored');
+assert.equal(stored.profile_cache_marathon_items.items.length, 4);
+marathonDocs.push({ id: '3_9', roundId: 3 });
+const again = await loadMarathonItems(marathonDb());
+assert.deepEqual(queries, ['all', 'roundId >= 3'], 'only the current round is read again');
+assert.deepEqual(again.map(i => i.id).sort(), ['1_0', '1_1', '2_2', '2_3', '3_4', '3_9']);
+delete globalThis.chrome;
+
 console.log('Marathon history: rounds, company scores, participation and shared reads passed');

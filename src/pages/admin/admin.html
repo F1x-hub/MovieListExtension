@@ -22,81 +22,89 @@
         <!-- Navigation will be injected here -->
         <nav class="navbar" id="navbar" aria-label="Основная навигация"></nav>
         
-        <main class="main-content settings-main">
+        <main class="main-content settings-main admin-main">
             <div class="settings-layout admin-shell">
-                <header class="admin-intro">
-                    <div>
-                        <h1>Администрирование</h1>
-                        <p>Управляйте сообществом, качеством данных и очередью ручной проверки.</p>
-                    </div>
-                </header>
-
                 <!-- Section navigation -->
                 <aside class="settings-sidebar admin-section-nav" id="adminSectionNav" style="display: none;">
-                    
+                    <div class="admin-brand">
+                        <span class="admin-brand-mark" aria-hidden="true">ML</span>
+                        <span class="admin-brand-text">
+                            <strong>Админка</strong>
+                            <small id="adminBrandVersion">MovieList</small>
+                        </span>
+                    </div>
                     <nav class="sidebar-nav" aria-label="Разделы админ-панели">
-                        <button class="sidebar-link active" data-target="users">
-                            <span class="icon">
-                                <svg data-icon="USERS" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7.5 2.5A3.5 3.5 0 1 0 7.5 9.5A3.5 3.5 0 1 0 7.5 2.5Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 12C10.4 12 12.4 13.6 13 16C13.1 16.6 12.7 17 12.1 17H2.9C2.3 17 1.9 16.6 2 16C2.6 13.6 4.6 12 7.5 12Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.4 3.2A3 3 0 0 1 13.4 8.8M15.6 12.4C17.2 13.2 18 14.6 18.2 16.4"/></svg>
-                            </span>
-                            <span>Пользователи</span>
-                            <span class="admin-nav-count" id="adminNavUsersCount">—</span>
+                        <button class="sidebar-link active" data-target="overview" type="button" aria-current="page">
+                            <span class="icon" aria-hidden="true"><svg data-icon="GRID" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 3H7A1 1 0 0 1 8 4V7A1 1 0 0 1 7 8H4A1 1 0 0 1 3 7V4A1 1 0 0 1 4 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 3H16A1 1 0 0 1 17 4V7A1 1 0 0 1 16 8H13A1 1 0 0 1 12 7V4A1 1 0 0 1 13 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12H7A1 1 0 0 1 8 13V16A1 1 0 0 1 7 17H4A1 1 0 0 1 3 16V13A1 1 0 0 1 4 12Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M13 11H16A2 2 0 0 1 18 13V16A2 2 0 0 1 16 18H13A2 2 0 0 1 11 16V13A2 2 0 0 1 13 11Z"/></svg></span>
+                            <span class="sidebar-link-label">Обзор</span>
+                            <span class="admin-nav-count" id="adminNavOverviewCount"></span>
                         </button>
-                        <button class="sidebar-link" data-target="approvals">
-                            <span class="icon">
-                                <svg data-icon="CLOCK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 0 10 17A7 7 0 1 0 10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6V10L12.6 12"/></svg>
-                            </span>
-                            <span>Заявки</span>
-                            <span class="admin-nav-count admin-nav-count-warning" id="adminNavApprovalsCount">—</span>
+                        <p class="admin-nav-group">Сообщество</p>
+                        <button class="sidebar-link" data-target="users" type="button">
+                            <span class="icon" aria-hidden="true"><svg data-icon="USERS" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7.5 2.5A3.5 3.5 0 1 0 7.5 9.5A3.5 3.5 0 1 0 7.5 2.5Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 12C10.4 12 12.4 13.6 13 16C13.1 16.6 12.7 17 12.1 17H2.9C2.3 17 1.9 16.6 2 16C2.6 13.6 4.6 12 7.5 12Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.4 3.2A3 3 0 0 1 13.4 8.8M15.6 12.4C17.2 13.2 18 14.6 18.2 16.4"/></svg></span>
+                            <span class="sidebar-link-label">Пользователи</span>
+                            <span class="admin-nav-count" id="adminNavUsersCount"></span>
                         </button>
-                        <button class="sidebar-link" data-target="ratings">
-                            <span class="icon">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                            </span>
-                            <span>Оценки</span>
-                            <span class="admin-nav-count" id="adminNavRatingsCount">—</span>
+                        <button class="sidebar-link" data-target="approvals" type="button">
+                            <span class="icon" aria-hidden="true"><svg data-icon="CLOCK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3A7 7 0 1 0 10 17A7 7 0 1 0 10 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6V10L12.6 12"/></svg></span>
+                            <span class="sidebar-link-label">Заявки</span>
+                            <span class="admin-nav-count" id="adminNavApprovalsCount"></span>
                         </button>
-                        <button class="sidebar-link" data-target="reports">
-                            <span class="icon">
-                                <svg data-icon="WARNING" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3.2L17.4 16H2.6Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3.2L17.4 16H2.6ZM10 7H10A1 1 0 0 1 11 8V10.6A1 1 0 0 1 10 11.6H10A1 1 0 0 1 9 10.6V8A1 1 0 0 1 10 7ZM10 12.45A1.15 1.15 0 1 0 10 14.75A1.15 1.15 0 1 0 10 12.45Z"/></svg>
-                            </span>
-                            <span>Репорты</span>
-                            <span class="admin-nav-count" id="adminNavReportsCount">—</span>
+                        <button class="sidebar-link" data-target="reports" type="button">
+                            <span class="icon" aria-hidden="true"><svg data-icon="WARNING" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3.2L17.4 16H2.6Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3.2L17.4 16H2.6ZM10 7H10A1 1 0 0 1 11 8V10.6A1 1 0 0 1 10 11.6H10A1 1 0 0 1 9 10.6V8A1 1 0 0 1 10 7ZM10 12.45A1.15 1.15 0 1 0 10 14.75A1.15 1.15 0 1 0 10 12.45Z"/></svg></span>
+                            <span class="sidebar-link-label">Репорты</span>
+                            <span class="admin-nav-count" id="adminNavReportsCount"></span>
                         </button>
-                        <button class="sidebar-link" data-target="tmdb-fallbacks">
-                            <span class="icon" aria-hidden="true"><svg data-icon="LINK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.4 11.6L11.6 8.4M9.6 5.9L11.2 4.3A3.18 3.18 0 0 1 15.7 8.8L14.1 10.4M10.4 14.1L8.8 15.7A3.18 3.18 0 0 1 4.3 11.2L5.9 9.6"/></svg></span>
-                            <span>Проверка TMDB</span>
-                            <span class="admin-nav-count admin-nav-count-warning" id="adminNavTmdbCount">—</span>
-                        </button>
-                        <button class="sidebar-link" data-target="usage">
-                            <span class="icon">
-                                <svg data-icon="CHART_LINE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3V15A2 2 0 0 0 5 17H17M7 12.4L10 8.6L12.6 11L17 5.6"/></svg>
-                            </span>
-                            <span>Использование</span>
-                            <span class="admin-nav-count" id="adminNavUsageStatus">—</span>
-                        </button>
-                        <button class="sidebar-link" data-target="provider-keys">
-                            <span class="icon" aria-hidden="true">
-                                <svg data-icon="KEY" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.6 10A3.4 3.4 0 1 0 6.6 16.8A3.4 3.4 0 1 0 6.6 10Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 11L16.6 3.4M13 7L15.8 9.8"/></svg>
-                            </span>
-                            <span>API-ключи</span>
-                            <span class="admin-nav-count" id="adminNavProviderKeysCount">—</span>
-                        </button>
-                        <button class="sidebar-link" data-target="reaction-settings">
+                        <button class="sidebar-link" data-target="reaction-settings" type="button">
                             <span class="icon" aria-hidden="true"><svg data-icon="SMILE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 3H12A5 5 0 0 1 17 8V12A5 5 0 0 1 12 17H8A5 5 0 0 1 3 12V8A5 5 0 0 1 8 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M7.4 6.7A1.3 1.3 0 1 0 7.4 9.3A1.3 1.3 0 1 0 7.4 6.7ZM12.6 6.7A1.3 1.3 0 1 0 12.6 9.3A1.3 1.3 0 1 0 12.6 6.7ZM6.4 11H13.6A3.6 3.6 0 0 1 6.4 11Z"/></svg></span>
-                            <span>Реакции</span>
-                            <span class="admin-nav-count" id="adminNavReactionCount">—</span>
+                            <span class="sidebar-link-label">Реакции</span>
+                            <span class="admin-nav-count" id="adminNavReactionCount"></span>
                         </button>
+                        <p class="admin-nav-group">Каталог</p>
+                        <button class="sidebar-link" data-target="tmdb-fallbacks" type="button">
+                            <span class="icon" aria-hidden="true"><svg data-icon="LINK" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.4 11.6L11.6 8.4M9.6 5.9L11.2 4.3A3.18 3.18 0 0 1 15.7 8.8L14.1 10.4M10.4 14.1L8.8 15.7A3.18 3.18 0 0 1 4.3 11.2L5.9 9.6"/></svg></span>
+                            <span class="sidebar-link-label">Проверка ID</span>
+                            <span class="admin-nav-count" id="adminNavTmdbCount"></span>
+                        </button>
+                        <button class="sidebar-link" data-target="ratings" type="button">
+                            <span class="icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
+                            <span class="sidebar-link-label">Оценки</span>
+                            <span class="admin-nav-count" id="adminNavRatingsCount"></span>
+                        </button>
+                        <p class="admin-nav-group">Эфир</p>
                         <button class="sidebar-link" data-target="live-channel" type="button">
                             <span class="icon" aria-hidden="true"><svg data-icon="LIVE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 7A3 3 0 1 0 10 13A3 3 0 1 0 10 7Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.2 4.6A8 8 0 0 0 4.2 15.4M15.8 4.6A8 8 0 0 1 15.8 15.4"/></svg></span>
-                            <span>Эфир</span>
+                            <span class="sidebar-link-label">Программа</span>
+                            <span class="admin-nav-count" id="adminNavLiveState"></span>
                         </button>
-                        <div class="sidebar-spacer"></div>
+                        <p class="admin-nav-group">Система</p>
+                        <button class="sidebar-link" data-target="usage" type="button">
+                            <span class="icon" aria-hidden="true"><svg data-icon="CHART_LINE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3V15A2 2 0 0 0 5 17H17M7 12.4L10 8.6L12.6 11L17 5.6"/></svg></span>
+                            <span class="sidebar-link-label">Firestore</span>
+                            <span class="admin-nav-count" id="adminNavUsageStatus"></span>
+                        </button>
+                        <button class="sidebar-link" data-target="provider-keys" type="button">
+                            <span class="icon" aria-hidden="true"><svg data-icon="KEY" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.6 10A3.4 3.4 0 1 0 6.6 16.8A3.4 3.4 0 1 0 6.6 10Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 11L16.6 3.4M13 7L15.8 9.8"/></svg></span>
+                            <span class="sidebar-link-label">API-ключи</span>
+                            <span class="admin-nav-count" id="adminNavProviderKeysCount"></span>
+                        </button>
                     </nav>
                 </aside>
 
                 <!-- Content Area -->
                 <section class="settings-content-area admin-content-area">
+                    <header class="admin-topbar">
+                        <h1 class="admin-topbar-title">Администрирование</h1>
+                        <div class="admin-search" id="adminSearch" hidden>
+                            <label class="admin-search-field" for="adminSearchInput">
+                                <svg data-icon="SEARCH" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3A6 6 0 1 0 9 15A6 6 0 1 0 9 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M9 3L9 15C12.32 15 15 12.31 15 9C15 5.69 12.32 3 9 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13.6 13.6L17.6 17.6"/></svg>
+                                <span class="admin-visually-hidden">Поиск по админке</span>
+                                <input type="search" id="adminSearchInput" autocomplete="off" spellcheck="false" placeholder="Раздел, пользователь, фильм или ID" role="combobox" aria-expanded="false" aria-controls="adminSearchResults" aria-autocomplete="list">
+                                <kbd class="admin-search-kbd" aria-hidden="true">Ctrl K</kbd>
+                            </label>
+                            <div class="admin-search-results" id="adminSearchResults" role="listbox" aria-label="Результаты поиска" hidden></div>
+                        </div>
+                    </header>
                     <!-- Loading State -->
                     <div class="admin-loading app-loader app-loader--section" id="adminLoading" role="status" aria-live="polite">
                         <div class="app-loader__indicator" aria-hidden="true"></div>
@@ -110,8 +118,83 @@
                     </div>
 
                     <div id="adminContent" style="display: none;">
+                        <!-- Overview Pane -->
+                        <div class="settings-pane active" id="pane-overview">
+                            <div class="pane-header admin-pane-header">
+                                <div>
+                                    <h2>Обзор</h2>
+                                    <p>Что ждёт решения и как себя чувствует расширение.</p>
+                                </div>
+                                <div class="pane-actions">
+                                    <span class="admin-overview-updated" id="adminOverviewUpdated" aria-live="polite"></span>
+                                    <button id="refreshOverviewBtn" class="button-refresh" type="button">
+                                        <span class="refresh-icon"><svg data-icon="REFRESH" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9A7 7 0 0 1 15.6 5.6L17 7M17 3V7H13M17 11A7 7 0 0 1 4.4 14.4L3 13M3 17V13H7"/></svg></span> Обновить
+                                    </button>
+                                </div>
+                            </div>
+
+                            <section class="admin-panel-card admin-attention" aria-labelledby="adminAttentionTitle">
+                                <div class="admin-panel-card-head">
+                                    <h3 id="adminAttentionTitle">Требует внимания</h3>
+                                    <span class="admin-panel-card-meta" id="adminAttentionSummary">Собираем задачи…</span>
+                                </div>
+                                <ul class="admin-attention-list" id="adminAttentionList" aria-busy="true">
+                                    <li class="admin-attention-item admin-attention-item--skeleton" aria-hidden="true"></li>
+                                    <li class="admin-attention-item admin-attention-item--skeleton" aria-hidden="true"></li>
+                                    <li class="admin-attention-item admin-attention-item--skeleton" aria-hidden="true"></li>
+                                </ul>
+                            </section>
+
+                            <section class="admin-health-grid" aria-label="Состояние расширения">
+                                <button class="admin-health-card" type="button" data-goto="live-channel">
+                                    <span class="admin-health-head">
+                                        <span class="admin-health-kicker">Эфир</span>
+                                        <span class="admin-health-badge" id="adminHealthLiveBadge" data-tone="neutral">—</span>
+                                    </span>
+                                    <strong class="admin-health-title" id="adminHealthLiveTitle">Загружаем эфир…</strong>
+                                    <span class="admin-health-note" id="adminHealthLiveMeta"></span>
+                                </button>
+                                <button class="admin-health-card" type="button" data-goto="usage">
+                                    <span class="admin-health-head">
+                                        <span class="admin-health-kicker">Firestore, чтения сегодня</span>
+                                        <span class="admin-health-badge" id="adminHealthReadsBadge" data-tone="neutral">—</span>
+                                    </span>
+                                    <strong class="admin-health-value" id="adminHealthReadsValue">—</strong>
+                                    <span class="admin-health-bar" aria-hidden="true"><span id="adminHealthReadsBar"></span></span>
+                                    <span class="admin-health-note" id="adminHealthReadsNote">Загружаем статистику…</span>
+                                </button>
+                                <button class="admin-health-card" type="button" data-goto="provider-keys">
+                                    <span class="admin-health-head">
+                                        <span class="admin-health-kicker">API-ключи</span>
+                                        <span class="admin-health-badge" id="adminHealthKeysBadge" data-tone="neutral">—</span>
+                                    </span>
+                                    <strong class="admin-health-value" id="adminHealthKeysValue">—</strong>
+                                    <span class="admin-health-note" id="adminHealthKeysNote">Загружаем ключи…</span>
+                                </button>
+                                <button class="admin-health-card" type="button" data-goto="users">
+                                    <span class="admin-health-head">
+                                        <span class="admin-health-kicker">Сообщество</span>
+                                    </span>
+                                    <strong class="admin-health-value" id="adminHealthUsersValue">—</strong>
+                                    <span class="admin-health-note" id="adminHealthUsersNote">Считаем участников…</span>
+                                </button>
+                            </section>
+
+                            <section class="admin-panel-card admin-quick-actions" aria-labelledby="adminQuickActionsTitle">
+                                <div class="admin-panel-card-head">
+                                    <h3 id="adminQuickActionsTitle">Быстрые действия</h3>
+                                </div>
+                                <div class="admin-quick-actions-grid">
+                                    <button class="admin-quick-action" type="button" data-quick-action="live-add">Поставить передачу в эфир</button>
+                                    <button class="admin-quick-action" type="button" data-quick-action="manual-mapping">Связать TMDB и Кинопоиск вручную</button>
+                                    <button class="admin-quick-action" type="button" data-quick-action="add-key">Добавить API-ключ</button>
+                                    <button class="admin-quick-action" type="button" data-quick-action="approvals">Разобрать заявки на вход</button>
+                                </div>
+                            </section>
+                        </div>
+
                         <!-- Users Pane -->
-                        <div class="settings-pane active" id="pane-users">
+                        <div class="settings-pane" id="pane-users">
                             <div class="pane-header admin-pane-header">
                                 <div>
                                     <h2>Пользователи</h2>
@@ -123,58 +206,60 @@
                             </div>
 
                             <div class="settings-section">
-                                <div class="ratings-filters" style="margin-bottom: var(--space-lg); padding: var(--space-md); border-radius: var(--radius-md); display: flex; gap: var(--space-md); flex-wrap: wrap;">
-                                    <div class="filter-group" style="flex: 1; min-width: 260px; max-width: 400px;">
-                                        <label class="filter-label" for="userSearchFilterInput">Найти пользователя</label>
-                                        <input type="text" id="userSearchFilterInput" class="filter-input" placeholder="Имя, email или ID…">
+                                <div class="admin-users-toolbar">
+                                    <div class="admin-segmented" id="userStatusTabs" role="group" aria-label="Статус аккаунта">
+                                        <button class="admin-segment is-active" type="button" data-user-status="all" aria-pressed="true">Все</button>
+                                        <button class="admin-segment" type="button" data-user-status="pending" aria-pressed="false">Ждут <span class="admin-segment-count" id="userStatusCountPending"></span></button>
+                                        <button class="admin-segment" type="button" data-user-status="approved" aria-pressed="false">Одобрены</button>
+                                        <button class="admin-segment" type="button" data-user-status="rejected" aria-pressed="false">Заблокированы</button>
                                     </div>
-                                    <div class="filter-group" style="min-width: 180px; max-width: 220px;">
-                                        <label class="filter-label" for="userStatusFilterSelect">Статус аккаунта</label>
-                                        <select id="userStatusFilterSelect" class="filter-input filter-select">
-                                            <option value="all">Все статусы</option>
-                                            <option value="approved">Одобрен</option>
-                                            <option value="pending">Ожидает</option>
-                                            <option value="rejected">Отклонён</option>
-                                        </select>
+                                    <div class="admin-users-search">
+                                        <label class="admin-visually-hidden" for="userSearchFilterInput">Найти пользователя</label>
+                                        <input type="search" id="userSearchFilterInput" class="filter-input" placeholder="Имя, email или ID…" autocomplete="off">
                                     </div>
                                 </div>
-                                
-                                <div class="users-table-container" tabindex="0" role="region" aria-label="Таблица пользователей">
-                                    <table class="users-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Пользователь</th>
-                                                <th>Email</th>
-                                                <th>ID</th>
-                                                <th>Статус</th>
-                                                <th>С нами с</th>
-                                                <th>Оценки</th>
-                                                <th>Коллекции</th>
-                                                <th class="admin-text-right">Действия</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="usersTableBody">
-                                            <!-- Users will be inserted here -->
-                                        </tbody>
-                                    </table>
-                                </div>
-                                
-                                <!-- Users Pagination -->
-                                <div class="pagination-container" id="usersPaginationContainer">
-                                    <div class="pagination-controls">
-                                        <button id="user-first-page" class="btn-page" title="Первая страница">«</button>
-                                        <button id="user-prev-page" class="btn-page">‹ Назад</button>
-                                        <span id="user-page-numbers" class="page-numbers">Страница 1</span>
-                                        <button id="user-next-page" class="btn-page">Вперед ›</button>
-                                        
-                                        <select id="user-page-size-select" class="page-size-select" aria-label="Строк на странице">
-                                            <option value="20" selected>20 / стр</option>
-                                            <option value="50">50 / стр</option>
-                                            <option value="100">100 / стр</option>
-                                        </select>
+
+                                <div class="admin-users-layout">
+                                    <div class="admin-users-main">
+                                        <div class="users-table-container" tabindex="0" role="region" aria-label="Таблица пользователей">
+                                            <table class="users-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Пользователь</th>
+                                                        <th>Статус</th>
+                                                        <th>Оценки</th>
+                                                        <th>Коллекции</th>
+                                                        <th>С нами с</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="usersTableBody">
+                                                    <!-- Users will be inserted here -->
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        <!-- Users Pagination -->
+                                        <div class="pagination-container" id="usersPaginationContainer">
+                                            <div class="pagination-controls">
+                                                <button id="user-first-page" class="btn-page" type="button" title="Первая страница">«</button>
+                                                <button id="user-prev-page" class="btn-page" type="button">‹ Назад</button>
+                                                <span id="user-page-numbers" class="page-numbers">Страница 1</span>
+                                                <button id="user-next-page" class="btn-page" type="button">Вперёд ›</button>
+
+                                                <select id="user-page-size-select" class="page-size-select" aria-label="Строк на странице">
+                                                    <option value="20" selected>20 / стр</option>
+                                                    <option value="50">50 / стр</option>
+                                                    <option value="100">100 / стр</option>
+                                                </select>
+                                            </div>
+                                            <div class="pagination-info" id="usersPaginationInfo">
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div class="pagination-info" id="usersPaginationInfo">
-                                    </div>
+
+                                    <aside class="admin-panel-card admin-user-panel" id="userDetailPanel" aria-label="Карточка пользователя" aria-live="polite">
+                                        <p class="admin-user-panel-empty">Выберите пользователя в таблице, чтобы увидеть его карточку и действия.</p>
+                                    </aside>
                                 </div>
 
                             </div>
@@ -432,16 +517,21 @@
                                     <!-- Priority & Category Filters -->
                                     <div class="queue-filter-bar" id="tmdbQueueFilterBar">
                                         <button class="queue-filter-btn active" data-filter="all" type="button">Все <span class="badge-count-inline" id="filterCountAll">0</span></button>
-                                        <button class="queue-filter-btn" data-filter="critical" type="button"><svg data-icon="FIRE" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.4 2.6C10.8 5.8 15.8 7.4 15.8 12A5.8 5.6 0 0 1 4.2 12C4.2 10 5.2 8.6 6.4 7.6C6.8 8.8 7.4 9.4 8.2 9.6C9.2 7.6 8.8 4.8 10.4 2.6Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3.23L10 17.6C13.21 17.6 15.8 15.09 15.8 12C15.8 7.4 10.8 5.8 10.4 2.6C10.25 2.8 10.12 3.01 10 3.23Z"/></svg> Critical (Top-12) <span class="badge-count-inline" id="filterCountCritical">0</span></button>
+                                        <button class="queue-filter-btn" data-filter="critical" type="button"><svg data-icon="FIRE" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.4 2.6C10.8 5.8 15.8 7.4 15.8 12A5.8 5.6 0 0 1 4.2 12C4.2 10 5.2 8.6 6.4 7.6C6.8 8.8 7.4 9.4 8.2 9.6C9.2 7.6 8.8 4.8 10.4 2.6Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 3.23L10 17.6C13.21 17.6 15.8 15.09 15.8 12C15.8 7.4 10.8 5.8 10.4 2.6C10.25 2.8 10.12 3.01 10 3.23Z"/></svg> Топ-12 Главной <span class="badge-count-inline" id="filterCountCritical">0</span></button>
                                         <button class="queue-filter-btn" data-filter="films" type="button">Фильмы <span class="badge-count-inline" id="filterCountFilms">0</span></button>
                                         <button class="queue-filter-btn" data-filter="series" type="button">Сериалы <span class="badge-count-inline" id="filterCountSeries">0</span></button>
                                         <button class="queue-filter-btn" data-filter="cartoons" type="button">Мультфильмы <span class="badge-count-inline" id="filterCountCartoons">0</span></button>
                                         <button class="queue-filter-btn" data-filter="anime" type="button">Аниме <span class="badge-count-inline" id="filterCountAnime">0</span></button>
-                                        <button class="queue-filter-btn" data-filter="snoozed" type="button" style="color: var(--text-secondary);">⏳ Отложенные <span class="badge-count-inline" id="filterCountSnoozed">0</span></button>
+                                        <button class="queue-filter-btn" data-filter="snoozed" type="button">Отложенные <span class="badge-count-inline" id="filterCountSnoozed">0</span></button>
                                     </div>
 
-                                    <div id="tmdbUnmappedList" class="tmdb-fallback-list">
-                                        <div class="reports-loading">Загрузка очереди TMDB...</div>
+                                    <div class="identity-focus" id="tmdbFocusWorkspace">
+                                        <div id="tmdbUnmappedList" class="identity-queue" aria-label="Очередь TMDB">
+                                            <div class="reports-loading">Загрузка очереди TMDB…</div>
+                                        </div>
+                                        <section class="identity-task" id="tmdbTaskPanel" aria-label="Текущая задача" aria-live="polite">
+                                            <p class="identity-task-empty">Выберите тайтл в очереди слева.</p>
+                                        </section>
                                     </div>
                                 </div>
 
@@ -554,6 +644,13 @@
                                 </div>
 
                                 <div class="firestore-usage-error" id="firestoreUsageError" role="alert" hidden></div>
+                                <section class="admin-panel-card firestore-hourly" id="firestoreUsageHourlyCard" aria-labelledby="firestoreUsageHourlyTitle" hidden>
+                                    <div class="admin-panel-card-head">
+                                        <h3 id="firestoreUsageHourlyTitle">Чтения по часам</h3>
+                                        <span class="admin-panel-card-meta" id="firestoreUsageHourlyMeta"></span>
+                                    </div>
+                                    <ol class="firestore-hourly-bars" id="firestoreUsageHourly"></ol>
+                                </section>
                                 <div class="firestore-usage-footnote" id="firestoreUsageFootnote">
                                     Данные поступают из Cloud Monitoring и могут обновляться с задержкой до нескольких минут.
                                 </div>
@@ -912,6 +1009,7 @@
     <script src="LiveSchedulePlanner.js"></script>
     <script src="LiveSeriesEditor.js"></script>
     <script src="admin.js"></script>
+    <script src="AdminWorkspace.js"></script>
     <script src="admin-live.js"></script>
     <script defer src="../../shared/components/ReportWidget.js"></script>
 </body>

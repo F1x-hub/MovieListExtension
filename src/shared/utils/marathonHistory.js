@@ -217,12 +217,73 @@ export function summarizePerson(items, uid, ownRatings, ratings) {
 const CACHE_MS = 60 * 1000;
 const cache = new WeakMap();
 
+/**
+ * Finished rounds never change: the function writes only items of the current round and
+ * refuses older ones (STALE_MOVIE), and clients cannot write items at all. Their items are
+ * kept in chrome.storage.local (prefix `profile_cache_`, cleared on sign-out); a visit reads
+ * only the rounds from the last one seen onward. Everything is read again once a day.
+ */
+const STORE_KEY = 'profile_cache_marathon_items';
+const STORE_FULL_REFRESH_MS = 24 * 60 * 60 * 1000;
+
+function localStore() {
+    return typeof chrome !== 'undefined' ? chrome.storage?.local || null : null;
+}
+
+function packItem(item) {
+    const packed = {};
+    for (const [key, value] of Object.entries(item)) {
+        packed[key] = value && typeof value.toMillis === 'function' && Number.isFinite(value.seconds)
+            ? { __ts: [value.seconds, value.nanoseconds || 0] }
+            : value;
+    }
+    return packed;
+}
+
+function unpackItem(item) {
+    const Timestamp = typeof firebase !== 'undefined' ? firebase.firestore?.Timestamp : null;
+    const unpacked = {};
+    for (const [key, value] of Object.entries(item)) {
+        unpacked[key] = value && Array.isArray(value.__ts)
+            ? (Timestamp ? new Timestamp(value.__ts[0], value.__ts[1]) : { seconds: value.__ts[0], nanoseconds: value.__ts[1] })
+            : value;
+    }
+    return unpacked;
+}
+
+async function readItems(db) {
+    const itemsRef = db.collection('randomMarathons').doc('current').collection('items');
+    const toItems = snapshot => snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const storage = localStore();
+    const stored = storage ? await storage.get([STORE_KEY]).then(result => result[STORE_KEY], () => null) : null;
+    const usable = stored && stored.v === 1 && Array.isArray(stored.items) && Number.isInteger(stored.fromRound)
+        && stored.fromRound > 0 && Date.now() - (stored.fullAt || 0) < STORE_FULL_REFRESH_MS;
+
+    let items;
+    let fullAt = Date.now();
+    if (usable) {
+        const fresh = toItems(await itemsRef.where('roundId', '>=', stored.fromRound).get());
+        items = [...stored.items.map(unpackItem), ...fresh];
+        fullAt = stored.fullAt;
+    } else {
+        items = toItems(await itemsRef.get());
+    }
+
+    if (storage) {
+        const latest = items.reduce((max, item) => Math.max(max, Number(item.roundId) || 0), 0);
+        if (latest > 0) {
+            const finished = items.filter(item => Number(item.roundId) < latest).map(packItem);
+            storage.set({ [STORE_KEY]: { v: 1, fromRound: latest, fullAt, items: finished } }).catch(() => {});
+        }
+    }
+    return items;
+}
+
 /** Items of every round; the profile's statistics and achievements share one read. */
 export function loadMarathonItems(db) {
     const saved = cache.get(db);
     if (saved && saved.expiresAt > Date.now()) return saved.promise;
-    const promise = db.collection('randomMarathons').doc('current').collection('items').get()
-        .then(snapshot => snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    const promise = readItems(db);
     cache.set(db, { expiresAt: Date.now() + CACHE_MS, promise });
     promise.catch(() => cache.delete(db));
     return promise;

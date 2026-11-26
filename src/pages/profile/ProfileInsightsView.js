@@ -138,7 +138,7 @@ export class ProfileInsightsView {
         const movieIds = [...new Set(ratings.map(rating => rating.movieId).filter(Boolean).map(String))];
         let movies = {};
         try {
-            movies = movieIds.length ? await this.profileService.movieCacheService.getBatchCachedMovies(movieIds) : {};
+            movies = movieIds.length ? await this.profileService.movieCacheService.getBatchCachedMovies(movieIds, { localMaxAgeMs: this.profileService.constructor.MOVIE_LOCAL_MAX_AGE_MS }) : {};
         } catch (error) {
             console.warn('ProfileInsights: movie metadata unavailable', error);
         }

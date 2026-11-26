@@ -119,6 +119,41 @@ function sumDeltaTimeSeries(timeSeries = []) {
   return { value: Math.max(0, Math.round(value)), latestPointAt };
 }
 
+/**
+ * Per-hour totals of a delta metric from the start of the Pacific day, so a spike can be
+ * placed in time. Hours without points are zero.
+ */
+function hourlyDeltaTimeSeries(timeSeries = [], periodStart, measuredAt) {
+  const startMs = periodStart.getTime();
+  const hours = Math.max(1, Math.ceil((measuredAt.getTime() - startMs) / 3_600_000));
+  const buckets = Array.from({ length: hours }, (_, index) => ({
+    startAt: new Date(startMs + index * 3_600_000).toISOString(),
+    count: 0,
+  }));
+  for (const series of timeSeries) {
+    for (const point of series.points || []) {
+      const index = Math.floor((getPointTimestamp(point) - 1 - startMs) / 3_600_000);
+      if (index >= 0 && index < buckets.length) buckets[index].count += getPointValue(point);
+    }
+  }
+  return buckets.map((bucket) => ({ ...bucket, count: Math.round(bucket.count) }));
+}
+
+/** Totals per metric label set (for reads: lookups versus queries), largest first. */
+function labelDeltaTimeSeries(timeSeries = []) {
+  const totals = new Map();
+  for (const series of timeSeries) {
+    const labels = series?.metric?.labels || {};
+    const key = Object.keys(labels).sort().map((name) => name + "=" + labels[name]).join(", ") || "all";
+    let sum = 0;
+    for (const point of series.points || []) sum += getPointValue(point);
+    totals.set(key, (totals.get(key) || 0) + sum);
+  }
+  return [...totals.entries()]
+    .map(([labels, count]) => ({ labels, count: Math.round(count) }))
+    .sort((left, right) => right.count - left.count);
+}
+
 function sumLatestGaugeTimeSeries(timeSeries = []) {
   let value = 0;
   let latestPointAt = 0;
@@ -252,6 +287,11 @@ async function getFirestoreUsage({
     ? sumLatestGaugeTimeSeries(storageResult.value)
     : null;
 
+  const readsHourly = readsResult.status === "fulfilled"
+    ? hourlyDeltaTimeSeries(readsResult.value, periodStart, measuredAt)
+    : [];
+  const readsByLabel = readsResult.status === "fulfilled" ? labelDeltaTimeSeries(readsResult.value) : [];
+
   const response = {
     source: "cloud-monitoring",
     measuredAt: measuredAt.toISOString(),
@@ -262,7 +302,7 @@ async function getFirestoreUsage({
       ? createAvailableMetric(storage.value, FIRESTORE_FREE_LIMITS.storageBytes, storage.latestPointAt, measuredAt, "usedBytes")
       : createUnavailableMetric(FIRESTORE_FREE_LIMITS.storageBytes, "usedBytes"),
     reads: reads
-      ? createAvailableMetric(reads.value, FIRESTORE_FREE_LIMITS.readsPerDay, reads.latestPointAt, measuredAt, "usedToday")
+      ? { ...createAvailableMetric(reads.value, FIRESTORE_FREE_LIMITS.readsPerDay, reads.latestPointAt, measuredAt, "usedToday"), hourly: readsHourly, byLabel: readsByLabel }
       : createUnavailableMetric(FIRESTORE_FREE_LIMITS.readsPerDay, "usedToday"),
     writes: writes
       ? createAvailableMetric(writes.value, FIRESTORE_FREE_LIMITS.writesPerDay, writes.latestPointAt, measuredAt, "usedToday")
@@ -290,6 +330,8 @@ module.exports = {
   getFirestoreUsage,
   getPacificDayStart,
   getUsageStatus,
+  hourlyDeltaTimeSeries,
+  labelDeltaTimeSeries,
   resetUsageCache,
   sumDeltaTimeSeries,
   sumLatestGaugeTimeSeries,

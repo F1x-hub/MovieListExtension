@@ -50,7 +50,7 @@ export class AchievementService {
         }, 0);
 
         const [movies, reactionSummaries, reactionsGiven, marathonItems, watchlistCount, watchingCount, collections] = await Promise.all([
-            this.safe('movies', () => movieIds.length ? this.profileService.movieCacheService.getBatchCachedMovies(movieIds) : {}, {}),
+            this.safe('movies', () => movieIds.length ? this.profileService.movieCacheService.getBatchCachedMovies(movieIds, { localMaxAgeMs: this.profileService.constructor.MOVIE_LOCAL_MAX_AGE_MS }) : {}, {}),
             this.safe('reactions', async () => {
                 const snapshots = await Promise.all(chunk(reactableIds, IN_QUERY_CHUNK).map(part => this.db
                     .collection('commentReactionSummaries').where(documentId, 'in', part).get()));

@@ -233,62 +233,8 @@ class AdminService {
     }
 
     /**
-     * Get all users with their statistics (Optimized with Promise.all and counts if possible, fallback to size)
-     * @returns {Promise<Array>} - Array of user objects with stats
-     */
-    async getAllUsers() {
-        try {
-            const usersSnapshot = await this.db.collection('users').get();
-            
-            const userPromises = usersSnapshot.docs.map(async (doc) => {
-                const userData = doc.data();
-                
-                // Fetch stats concurrently via Promise.all
-                // `count().get()` is an optimized feature in modern Firestore, we use try/catch fallback
-                let ratingsCount;
-                let collectionCount;
-                
-                try {
-                    const [ratingsSnapshot, collectionSnapshot] = await Promise.all([
-                        this.db.collection('ratings').where('userId', '==', doc.id).count().get(),
-                        this.db.collection('collections').where('userId', '==', doc.id).count().get()
-                    ]);
-                    ratingsCount = ratingsSnapshot.data().count;
-                    collectionCount = collectionSnapshot.data().count;
-                } catch {
-                    console.warn(`[AdminService] count() failed, falling back to .get() for user ${doc.id}`);
-                    const [ratingsSnapshot, collectionSnapshot] = await Promise.all([
-                        this.db.collection('ratings').where('userId', '==', doc.id).get(),
-                        this.db.collection('collections').where('userId', '==', doc.id).get()
-                    ]);
-                    ratingsCount = ratingsSnapshot.size;
-                    collectionCount = collectionSnapshot.size;
-                }
-
-                return {
-                    id: doc.id,
-                    ...userData,
-                    ratingsCount,
-                    collectionCount
-                };
-            });
-
-            const users = await Promise.all(userPromises);
-
-            return users.sort((a, b) => {
-                // Sort by creation date (newest first)
-                const dateA = a.createdAt?.toDate?.() || new Date(0);
-                const dateB = b.createdAt?.toDate?.() || new Date(0);
-                return dateB - dateA;
-            });
-        } catch (error) {
-            console.error('Error getting all users:', error);
-            throw new Error(`Failed to fetch users: ${error.message}`, { cause: error });
-        }
-    }
-
-    /**
-     * Get users paginated
+     * Get users paginated. Counters are not included: the page renders the rows first and
+     * fills them from getUserActivityCounts, so one slow count never holds the table.
      * @param {Object} lastVisibleDoc - Last document from previous page
      * @param {number} pageSize - Number of users to fetch
      * @returns {Promise<{users: Array, lastDoc: Object, hasMore: boolean}>}
@@ -299,52 +245,51 @@ class AdminService {
             // excluding legacy users that don't have a 'createdAt' field.
             let query = this.db.collection('users')
                 .limit(pageSize);
-                
+
             if (lastVisibleDoc) {
                 query = query.startAfter(lastVisibleDoc);
             }
-            
+
             const snapshot = await query.get();
             const lastDoc = snapshot.docs[snapshot.docs.length - 1];
             const hasMore = snapshot.size === pageSize;
-            
-            const userPromises = snapshot.docs.map(async (doc) => {
-                const userData = doc.data();
-                
-                let ratingsCount;
-                let collectionCount;
-                
-                try {
-                    const [ratingsSnapshot, collectionSnapshot] = await Promise.all([
-                        this.db.collection('ratings').where('userId', '==', doc.id).count().get(),
-                        this.db.collection('collections').where('userId', '==', doc.id).count().get()
-                    ]);
-                    ratingsCount = ratingsSnapshot.data().count;
-                    collectionCount = collectionSnapshot.data().count;
-                } catch {
-                    const [ratingsSnapshot, collectionSnapshot] = await Promise.all([
-                        this.db.collection('ratings').where('userId', '==', doc.id).get(),
-                        this.db.collection('collections').where('userId', '==', doc.id).get()
-                    ]);
-                    ratingsCount = ratingsSnapshot.size;
-                    collectionCount = collectionSnapshot.size;
-                }
+            const users = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
-                return {
-                    id: doc.id,
-                    ...userData,
-                    ratingsCount,
-                    collectionCount
-                };
-            });
-            
-            const users = await Promise.all(userPromises);
-            
             return { users, lastDoc, hasMore };
         } catch (error) {
             console.error('Error getting users page:', error);
             throw new Error(`Failed to fetch users page: ${error.message}`, { cause: error });
         }
+    }
+
+    /**
+     * Ratings and collections of one user, as aggregate counts (one read per 1000 entries).
+     * A failed count stays null; the documents themselves are never downloaded to count them.
+     * @param {string} userId
+     * @returns {Promise<{ratingsCount: number|null, collectionCount: number|null}>}
+     */
+    async getUserActivityCounts(userId) {
+        const where = { field: 'userId', value: userId };
+        const [ratingsCount, collectionCount] = await Promise.all([
+            this.countDocuments('ratings', where),
+            this.countDocuments('collections', where)
+        ]);
+        return { ratingsCount, collectionCount };
+    }
+
+    /**
+     * Totals for the admin overview: members and ratings, as aggregate counts.
+     * @returns {Promise<{users: number|null, ratings: number|null}>}
+     */
+    async getCommunityCounts() {
+        const [users, ratings] = await Promise.all([this.countDocuments('users'), this.countDocuments('ratings')]);
+        return { users, ratings };
+    }
+
+    /** Server-side count; see FirebaseManager.countDocuments. Resolves to null when unavailable. */
+    async countDocuments(collectionId, where = null) {
+        if (typeof this.firebaseManager?.countDocuments !== 'function') return null;
+        return this.firebaseManager.countDocuments(collectionId, where);
     }
 
     /**

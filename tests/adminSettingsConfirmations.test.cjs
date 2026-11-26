@@ -282,8 +282,9 @@ function testToastContract() {
     }
     assert.match(settingsJs, /Utils\.showToast\(i18n\.get\('settings\.save_failed'\), 'error'\)/,
         'a failed save is painted as an error');
-    // Only states that replace the panel keep the page-level block.
-    assert.equal([...adminJs.matchAll(/this\.showAccessError\(/g)].length, 4);
+    // Only states that replace the panel keep the page-level block: denied, a failed admin
+    // check (with «Повторить»), a failed start, and the two session changes.
+    assert.equal([...adminJs.matchAll(/this\.showAccessError\(/g)].length, 5);
 }
 
 (async () => {

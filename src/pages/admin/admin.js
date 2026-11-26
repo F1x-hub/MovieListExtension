@@ -92,6 +92,10 @@ class AdminPanelManager {
             console.timeEnd('[Admin Perf] 2. Check Admin Access');
             this.setAdminAccessState(isAdmin);
             
+            if (!isAdmin && this.adminCheckFailed) {
+                this.showAccessError('Не удалось проверить права администратора: Firebase не ответил. Проверьте соединение и повторите.', { retry: true });
+                return;
+            }
             if (!isAdmin) {
                 this.showAccessError('Доступ запрещён. Для просмотра этой страницы требуются права администратора.');
                 if (window.adminNav && typeof window.adminNav.showAuthModal === 'function') {
@@ -118,17 +122,11 @@ class AdminPanelManager {
             this.setupEventListeners();
             console.timeEnd('[Admin Perf] 4. UI & Event Setup');
 
-            console.time('[Admin Perf] 5. Load Data Sequentially');
-            // Load users, movies and approvals sequentially to avoid WebChannel stream congestion
-            this.showLoading();
-            await this.loadUsers();
-            await this.loadMovies();
-            await this.loadApprovals();
+            // The shell opens at once; each section loads its own data the first time it is shown
+            // (AdminWorkspace.js), so no section waits for another one.
             this.hideLoading();
-            console.timeEnd('[Admin Perf] 5. Load Data Sequentially');
+            this.initWorkspace();
             console.timeEnd('[Admin Perf] Total Init');
-            
-            console.log(`[Admin Performance] Init fully complete. Data size - Users: ${this.users.length}, Movies: ${this.movies.length}`);
         } catch (error) {
             console.error('Error initializing admin panel:', error);
             this.showAccessError('Не удалось открыть админ-панель. Повторите попытку.');
@@ -174,6 +172,7 @@ class AdminPanelManager {
     }
 
     async checkAdminAccess() {
+        this.adminCheckFailed = false;
         try {
             console.time('[Admin Perf] checkAdminAccess - getUserManager');
             this.currentUser = firebaseManager.getCurrentUser();
@@ -197,7 +196,11 @@ class AdminPanelManager {
             // Try fetching from server first, then cache if offline
             let userProfile;
             try {
-                userProfile = await userService.getUserProfile(this.currentUser.uid);
+                // A read that never settles would keep the loader forever; give up after 15 s.
+                userProfile = await this.withTimeout(
+                    userService.getUserProfile(this.currentUser.uid, { throwOnError: true }),
+                    15000
+                );
             } catch (err) {
                 console.warn('[Admin Panel] Firestore fetch error (possibly offline), trying again or ignoring:', err);
                 throw err;
@@ -222,6 +225,8 @@ class AdminPanelManager {
             return hasAdminAccess;
         } catch (error) {
             console.error('[Admin Panel] Error checking admin access:', error);
+            // Not a refusal: the check itself failed, so the page offers to retry.
+            this.adminCheckFailed = true;
             return false;
         }
     }
@@ -272,13 +277,10 @@ class AdminPanelManager {
                             <div><div class="skeleton-text" style="width: 100px;"></div></div>
                         </div>
                     </td>
-                    <td><div class="skeleton-text" style="width: 150px;"></div></td>
-                    <td><div class="skeleton-text" style="width: 80px;"></div></td>
                     <td><div class="skeleton-text" style="width: 70px;"></div></td>
+                    <td><div class="skeleton-text" style="width: 40px;"></div></td>
+                    <td><div class="skeleton-text" style="width: 40px;"></div></td>
                     <td><div class="skeleton-text" style="width: 80px;"></div></td>
-                    <td><div class="skeleton-text" style="width: 40px;"></div></td>
-                    <td><div class="skeleton-text" style="width: 40px;"></div></td>
-                    <td><div class="skeleton-text" style="width: 120px;"></div></td>
                 </tr>
             `;
         }
@@ -317,6 +319,7 @@ class AdminPanelManager {
             }
 
             this.applyUserFilters();
+            this.hydrateUserCounts(this.users);
         } catch (error) {
             console.error('Error fetching users from DB:', error);
             if (!isBackground) {
@@ -392,7 +395,7 @@ class AdminPanelManager {
         if (this.displayedUsers.length === 0) {
             tableBody.innerHTML = `
                 <tr>
-                    <td colspan="8" style="text-align: center; padding: var(--space-xl); color: var(--text-secondary);">
+                    <td colspan="5" class="admin-table-empty">
                         Пользователи не найдены
                     </td>
                 </tr>
@@ -436,111 +439,39 @@ class AdminPanelManager {
     createUserRow(user) {
         const row = document.createElement('tr');
         const isCurrentUser = this.currentUser && user.id === this.currentUser.uid;
-        const joinDate = user.createdAt?.toDate ? 
-            user.createdAt.toDate().toLocaleDateString() : 
-            (user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'Неизвестно');
-
         const status = user.approvalStatus || 'approved';
-        let statusBadge;
-        if (status === 'approved') {
-            statusBadge = '<span class="status-badge status-badge-approved">Одобрен</span>';
-        } else if (status === 'pending') {
-            statusBadge = '<span class="status-badge status-badge-pending">Ожидает</span>';
-        } else if (status === 'rejected') {
-            statusBadge = '<span class="status-badge status-badge-rejected">Отклонён</span>';
-        } else {
-            statusBadge = `<span class="status-badge status-badge-approved">${this.escapeHtml(status)}</span>`;
-        }
-
-        let actionsHtml;
-        if (isCurrentUser) {
-            actionsHtml = `
-                <div class="row-actions-group">
-                    <button class="btn-delete" 
-                            data-user-id="${user.id}"
-                            disabled title="Нельзя удалить собственный аккаунт">
-                        Удалить
-                    </button>
-                </div>
-            `;
-        } else {
-            let statusButtons = '';
-            if (status === 'approved') {
-                statusButtons = `
-                    <button class="btn-status-toggle btn-reject-sm" data-action="reject" data-user-id="${user.id}">Заблокировать</button>
-                    <button class="btn-status-toggle" data-action="pending" data-user-id="${user.id}">В ожидание</button>
-                `;
-            } else if (status === 'pending') {
-                statusButtons = `
-                    <button class="btn-approve-sm" data-action="approve" data-user-id="${user.id}">Одобрить</button>
-                    <button class="btn-reject-sm" data-action="reject" data-user-id="${user.id}">Отклонить</button>
-                `;
-            } else if (status === 'rejected') {
-                statusButtons = `
-                    <button class="btn-approve-sm" data-action="approve" data-user-id="${user.id}">Разблокировать</button>
-                    <button class="btn-status-toggle" data-action="pending" data-user-id="${user.id}">В ожидание</button>
-                `;
-            }
-
-            actionsHtml = `
-                <div class="row-actions-group">
-                    ${statusButtons}
-                    <button class="btn-delete" data-user-id="${user.id}">
-                        Удалить
-                    </button>
-                </div>
-            `;
-        }
+        const name = user.displayName || 'Пользователь без имени';
+        row.dataset.userId = user.id;
+        row.classList.add('admin-user-row');
+        row.classList.toggle('is-selected', this.selectedUserId === user.id);
 
         row.innerHTML = `
             <td>
                 <div class="user-info">
-                    <img src="${user.photoURL || IconUtils.getCurrentThemeIconPath(48)}"
-                         alt="${user.displayName || 'Пользователь'}"
+                    <img src="${this.escapeHtml(user.photoURL || IconUtils.getCurrentThemeIconPath(48))}"
+                         alt=""
                          class="user-avatar"
                          loading="lazy">
-                    <div>
-                        <div class="user-name">
-                            ${this.escapeHtml(user.displayName || 'Пользователь без имени')}
-                            ${user.isAdmin ? '<span class="admin-badge"><svg data-icon="ADMIN" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 2.4C11.8 3.7 13.8 4.4 16 4.5V9.6C16 13.2 13.8 15.9 10 17.6C6.2 15.9 4 13.2 4 9.6V4.5C6.2 4.4 8.2 3.7 10 2.4Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M10 2.4L10 17.6C13.8 15.9 16 13.2 16 9.6L16 4.5C13.8 4.4 11.8 3.7 10 2.4Z"/></svg> Админ</span>' : ''}
+                    <div class="user-info-text">
+                        <button class="user-row-open" type="button" data-user-id="${this.escapeHtml(user.id)}" aria-controls="userDetailPanel">
+                            <span class="user-name">${this.escapeHtml(name)}</span>
+                            ${user.isAdmin ? '<span class="admin-badge">Админ</span>' : ''}
                             ${isCurrentUser ? '<span class="you-badge">Вы</span>' : ''}
-                        </div>
+                        </button>
+                        <div class="user-email">${this.escapeHtml(user.email || 'Нет email')}</div>
                     </div>
                 </div>
             </td>
-            <td>
-                <div class="user-email">${this.escapeHtml(user.email || 'Нет email')}</div>
-            </td>
-            <td>
-                <div class="user-id">${this.escapeHtml(user.id.substring(0, 12))}...</div>
-            </td>
-            <td>${statusBadge}</td>
-            <td>${joinDate}</td>
-            <td>
-                <div class="user-stats">${user.ratingsCount || 0}</div>
-            </td>
-            <td>
-                <div class="user-stats">${user.collectionCount || 0}</div>
-            </td>
-            <td style="text-align: right;">
-                ${actionsHtml}
-            </td>
+            <td>${this.renderUserStatusBadge(status)}</td>
+            <td><div class="user-stats" data-user-count="ratings">${this.formatUserCount(user.ratingsCount)}</div></td>
+            <td><div class="user-stats" data-user-count="collections">${this.formatUserCount(user.collectionCount)}</div></td>
+            <td class="user-joined">${this.formatUserJoinDate(user)}</td>
         `;
 
-        // Add event listeners for status toggle buttons
-        const actionBtns = row.querySelectorAll('[data-action]');
-        actionBtns.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.handleUserApprovalAction(btn.dataset.userId, btn.dataset.action, btn);
-            });
+        row.addEventListener('click', (event) => {
+            if (event.target.closest('a')) return;
+            this.selectUser(user.id);
         });
-
-        // Add click handler for delete button
-        const deleteBtn = row.querySelector('.btn-delete');
-        if (deleteBtn && !isCurrentUser) {
-            deleteBtn.addEventListener('click', () => this.showDeleteConfirmation(user, deleteBtn));
-        }
 
         const avatar = row.querySelector('.user-avatar');
         if (avatar) {
@@ -550,6 +481,136 @@ class AdminPanelManager {
         }
 
         return row;
+    }
+
+    renderUserStatusBadge(status) {
+        if (status === 'approved') return '<span class="status-badge status-badge-approved">Одобрен</span>';
+        if (status === 'pending') return '<span class="status-badge status-badge-pending">Ожидает</span>';
+        if (status === 'rejected') return '<span class="status-badge status-badge-rejected">Заблокирован</span>';
+        return `<span class="status-badge status-badge-approved">${this.escapeHtml(status)}</span>`;
+    }
+
+    formatUserCount(value) {
+        return Number.isFinite(value) ? value.toLocaleString('ru-RU') : '<span class="user-stats-pending" aria-label="Загрузка">…</span>';
+    }
+
+    formatUserJoinDate(user) {
+        const formatted = this.formatAdminDate(user?.createdAt);
+        return formatted === '—' ? 'Неизвестно' : formatted;
+    }
+
+    // Fills the counters of a page that has just been drawn, a few users at a time.
+    async hydrateUserCounts(users) {
+        const pending = (users || []).filter((user) => !Number.isFinite(user.ratingsCount) || !Number.isFinite(user.collectionCount));
+        if (!pending.length || !this.adminService?.getUserActivityCounts) return;
+        const token = Symbol('userCounts');
+        this.userCountsToken = token;
+        const batchSize = 5;
+        for (let index = 0; index < pending.length; index += batchSize) {
+            const batch = pending.slice(index, index + batchSize);
+            const results = await Promise.all(batch.map((user) => this.adminService.getUserActivityCounts(user.id)));
+            if (this.userCountsToken !== token) return;
+            batch.forEach((user, position) => {
+                const counts = results[position] || {};
+                if (Number.isFinite(counts.ratingsCount)) user.ratingsCount = counts.ratingsCount;
+                if (Number.isFinite(counts.collectionCount)) user.collectionCount = counts.collectionCount;
+                const row = document.querySelector(`#usersTableBody tr[data-user-id="${CSS.escape(user.id)}"]`);
+                if (row) {
+                    const ratingsCell = row.querySelector('[data-user-count="ratings"]');
+                    const collectionsCell = row.querySelector('[data-user-count="collections"]');
+                    if (ratingsCell) ratingsCell.innerHTML = Number.isFinite(user.ratingsCount) ? this.formatUserCount(user.ratingsCount) : '—';
+                    if (collectionsCell) collectionsCell.innerHTML = Number.isFinite(user.collectionCount) ? this.formatUserCount(user.collectionCount) : '—';
+                }
+                if (this.selectedUserId === user.id) this.renderUserDetail(user);
+            });
+        }
+        if (this.userPagination.currentPage === 1 && !this.userSearchTerm) {
+            this.cacheService?.saveUsersToCache(this.users);
+        }
+    }
+
+    selectUser(userId) {
+        this.selectedUserId = userId;
+        document.querySelectorAll('#usersTableBody tr[data-user-id]').forEach((row) => {
+            row.classList.toggle('is-selected', row.dataset.userId === userId);
+        });
+        const user = this.users.find((candidate) => candidate.id === userId)
+            || this.pendingUsers.find((candidate) => candidate.id === userId);
+        this.renderUserDetail(user || null);
+        // In one column the card sits under the table.
+        if (user && window.matchMedia?.('(max-width: 1024px)').matches) {
+            document.getElementById('userDetailPanel')?.scrollIntoView({ block: 'start' });
+        }
+    }
+
+    renderUserDetail(user) {
+        const panel = document.getElementById('userDetailPanel');
+        if (!panel) return;
+        if (!user) {
+            panel.innerHTML = '<p class="admin-user-panel-empty">Выберите пользователя в таблице, чтобы увидеть его карточку и действия.</p>';
+            return;
+        }
+
+        const isCurrentUser = this.currentUser && user.id === this.currentUser.uid;
+        const status = user.approvalStatus || 'approved';
+        const name = user.displayName || 'Пользователь без имени';
+        const statusButtons = [];
+        if (!isCurrentUser) {
+            if (status === 'approved') {
+                statusButtons.push('<button class="btn-status-toggle btn-reject-sm" data-action="reject" type="button">Заблокировать</button>');
+                statusButtons.push('<button class="btn-status-toggle" data-action="pending" type="button">В ожидание</button>');
+            } else if (status === 'pending') {
+                statusButtons.push('<button class="btn-approve-sm" data-action="approve" type="button">Одобрить</button>');
+                statusButtons.push('<button class="btn-reject-sm" data-action="reject" type="button">Отклонить</button>');
+            } else if (status === 'rejected') {
+                statusButtons.push('<button class="btn-approve-sm" data-action="approve" type="button">Разблокировать</button>');
+                statusButtons.push('<button class="btn-status-toggle" data-action="pending" type="button">В ожидание</button>');
+            }
+        }
+        const profileUrl = typeof chrome !== 'undefined' && chrome.runtime?.getURL
+            ? chrome.runtime.getURL(`src/pages/profile/profile.html?userId=${encodeURIComponent(user.id)}`)
+            : `../profile/profile.html?userId=${encodeURIComponent(user.id)}`;
+        const stat = (value, label) => `
+            <div class="admin-user-stat">
+                <strong>${Number.isFinite(value) ? value.toLocaleString('ru-RU') : '—'}</strong>
+                <span>${label}</span>
+            </div>`;
+
+        panel.innerHTML = `
+            <div class="admin-user-head">
+                <img class="user-avatar user-avatar--large" src="${this.escapeHtml(user.photoURL || IconUtils.getCurrentThemeIconPath(48))}" alt="">
+                <div class="admin-user-head-text">
+                    <h3>${this.escapeHtml(name)}</h3>
+                    <span>${this.escapeHtml(user.email || 'Нет email')}</span>
+                </div>
+                ${this.renderUserStatusBadge(status)}
+            </div>
+            ${status === 'pending' ? '<p class="admin-user-notice">Заявка ждёт решения. Пока аккаунт не одобрен, его оценки и комментарии не видны другим.</p>' : ''}
+            <div class="admin-user-stats">
+                ${stat(user.ratingsCount, 'оценок')}
+                ${stat(user.collectionCount, 'коллекций')}
+            </div>
+            <dl class="admin-user-facts">
+                <div><dt>С нами с</dt><dd>${this.formatUserJoinDate(user)}</dd></div>
+                <div><dt>Роль</dt><dd>${user.isAdmin ? 'Администратор' : 'Участник'}${isCurrentUser ? ' · это вы' : ''}</dd></div>
+                <div><dt>UID</dt><dd><code class="admin-user-uid">${this.escapeHtml(user.id)}</code></dd></div>
+            </dl>
+            <div class="admin-user-actions">
+                ${statusButtons.join('')}
+                <a class="btn-status-toggle admin-user-profile-link" href="${this.escapeHtml(profileUrl)}">Открыть профиль</a>
+                <button class="btn-delete" type="button" ${isCurrentUser ? 'disabled title="Нельзя удалить собственный аккаунт"' : ''}>Удалить</button>
+            </div>
+        `;
+
+        panel.querySelectorAll('[data-action]').forEach((button) => {
+            button.addEventListener('click', () => this.handleUserApprovalAction(user.id, button.dataset.action, button));
+        });
+        const deleteBtn = panel.querySelector('.btn-delete');
+        if (deleteBtn && !isCurrentUser) {
+            deleteBtn.addEventListener('click', () => this.showDeleteConfirmation(user, deleteBtn));
+        }
+        const avatar = panel.querySelector('.user-avatar');
+        avatar?.addEventListener('error', () => { avatar.src = IconUtils.getCurrentThemeIconPath(48); });
     }
 
     async handleUserApprovalAction(userId, action, btn) {
@@ -568,6 +629,7 @@ class AdminPanelManager {
                 }
                 this.cacheService.saveUsersToCache(this.users);
                 this.applyUserFilters();
+                if (this.selectedUserId === userId) this.renderUserDetail(targetUser || null);
                 await this.loadApprovals();
                 const statusLabels = { approved: 'одобрен', rejected: 'заблокирован / отклонён', pending: 'переведён в ожидание' };
                 Utils.showToast(`Пользователь ${targetUser?.displayName || userId} ${statusLabels[targetStatus] || targetStatus}`, 'success');
@@ -591,15 +653,20 @@ class AdminPanelManager {
             const navBadge = document.getElementById('adminNavApprovalsCount');
             const headerBadge = document.getElementById('approvalsCount');
             if (navBadge) {
-                navBadge.textContent = count > 0 ? count : '—';
+                navBadge.textContent = count > 0 ? String(count) : '';
+                navBadge.dataset.tone = count > 0 ? 'warning' : '';
                 navBadge.classList.remove('admin-nav-count-warning');
             }
             if (headerBadge) {
                 headerBadge.textContent = this.formatRussianCount(count, 'заявка', 'заявки', 'заявок');
             }
+            const pendingTabCount = document.getElementById('userStatusCountPending');
+            if (pendingTabCount) pendingTabCount.textContent = count > 0 ? String(count) : '';
+            this.approvalsLoadFailed = false;
 
             this.renderApprovalsTable();
             this.updateBatchApproveButton();
+            this.renderOverview?.();
         } catch (error) {
             console.error('Error loading approvals:', error);
             this.pendingUsers = [];
@@ -611,7 +678,9 @@ class AdminPanelManager {
                 navBadge.classList.add('admin-nav-count-warning');
             }
             if (headerBadge) headerBadge.textContent = '—';
+            this.approvalsLoadFailed = true;
             this.renderApprovalsError();
+            this.renderOverview?.();
             Utils.showToast('Не удалось загрузить заявки. Повторите попытку.', 'error');
         }
     }
@@ -628,12 +697,15 @@ class AdminPanelManager {
         this.firestoreUsageRequest = this.adminService.getFirestoreUsage()
             .then((usage) => {
                 this.firestoreUsage = usage;
+                this.usageLoadFailed = false;
                 this.renderFirestoreUsage(usage);
                 return usage;
             })
             .catch((error) => {
                 console.error('Error loading Firestore usage:', error);
+                this.usageLoadFailed = true;
                 this.renderFirestoreUsageError();
+                this.renderOverview?.();
                 throw error;
             })
             .finally(() => {
@@ -683,9 +755,13 @@ class AdminPanelManager {
                 : 'Время неизвестно';
         }
         if (navStatus) {
-            navStatus.textContent = 'Готово';
+            const reads = usage?.reads;
+            const readsKnown = reads?.available === true && Number.isFinite(reads.percent);
+            navStatus.textContent = readsKnown ? `${Math.round(reads.percent)}%` : '';
+            navStatus.dataset.tone = readsKnown && (reads.status === 'warning' || reads.status === 'critical') ? 'warning' : '';
             navStatus.classList.remove('admin-nav-count-warning');
         }
+        this.renderOverview?.();
 
         this.renderFirestoreUsageMetric('storage', usage?.storage, {
             valueId: 'firestoreUsageStorageValue',
@@ -717,6 +793,40 @@ class AdminPanelManager {
             formatLimit: (value) => `из ${this.formatFirestoreCount(value)}`,
             unavailableNote: 'Метрика записей недоступна в Cloud Monitoring.'
         });
+        this.renderFirestoreHourly(usage?.reads);
+    }
+
+    // Reads per hour of the Pacific day, local times: shows when a spike happened.
+    renderFirestoreHourly(reads) {
+        const card = document.getElementById('firestoreUsageHourlyCard');
+        const list = document.getElementById('firestoreUsageHourly');
+        const meta = document.getElementById('firestoreUsageHourlyMeta');
+        const hours = Array.isArray(reads?.hourly) ? reads.hourly : [];
+        if (!card || !list) return;
+        card.hidden = hours.length === 0;
+        if (!hours.length) return;
+
+        const peak = Math.max(1, ...hours.map((hour) => hour.count));
+        const peakHour = hours.reduce((best, hour) => (hour.count > best.count ? hour : best), hours[0]);
+        const timeOf = (iso) => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        if (meta) meta.textContent = `Больше всего в ${timeOf(peakHour.startAt)}: ${this.formatFirestoreCount(peakHour.count)}`;
+
+        list.replaceChildren(...hours.map((hour) => {
+            const item = document.createElement('li');
+            item.className = 'firestore-hourly-bar';
+            const label = `${timeOf(hour.startAt)} — ${this.formatFirestoreCount(hour.count)}`;
+            item.title = label;
+            item.setAttribute('aria-label', label);
+            const fill = document.createElement('span');
+            fill.className = 'firestore-hourly-fill';
+            fill.style.height = `${Math.max(hour.count > 0 ? 3 : 0, Math.round((hour.count / peak) * 100))}%`;
+            const time = document.createElement('span');
+            time.className = 'firestore-hourly-time';
+            time.textContent = timeOf(hour.startAt).slice(0, 2);
+            time.setAttribute('aria-hidden', 'true');
+            item.append(fill, time);
+            return item;
+        }));
     }
 
     async loadProviderKeys(force = false) {
@@ -731,12 +841,16 @@ class AdminPanelManager {
         this.providerKeysRequest = this.adminService.listProviderKeys()
             .then((keys) => {
                 this.providerKeys = Array.isArray(keys) ? keys : [];
+                this.providerKeysFetched = true;
+                this.providerKeysLoadFailed = false;
                 this.renderProviderKeys(this.providerKeys);
                 return this.providerKeys;
             })
             .catch((error) => {
                 console.error('Error loading provider keys:', error?.code || 'unknown error');
+                this.providerKeysLoadFailed = true;
                 this.renderProviderKeysError(error);
+                this.renderOverview?.();
                 throw error;
             })
             .finally(() => {
@@ -882,9 +996,12 @@ class AdminPanelManager {
         this.clearProviderKeysError();
         this.renderProviderKeysQuotaSummary(keys);
         if (count) {
-            count.textContent = String(keys.length);
+            const troubled = this.getProviderKeyProblems?.(keys).length || 0;
+            count.textContent = troubled > 0 ? String(troubled) : String(keys.length);
+            count.dataset.tone = troubled > 0 ? 'warning' : '';
             count.classList.remove('admin-nav-count-warning');
         }
+        this.renderOverview?.();
 
         if (!keys.length) {
             list.innerHTML = '<div class="provider-keys-empty">Ключи ещё не добавлены. Добавьте первый ключ для подключения провайдера.</div>';
@@ -1686,7 +1803,7 @@ class AdminPanelManager {
     renderUsersError() {
         this.renderTableState(
             'usersTableBody',
-            8,
+            5,
             'Не удалось загрузить пользователей.',
             'Повторить',
             () => this.fetchUsersFromDb()
@@ -1744,6 +1861,9 @@ class AdminPanelManager {
                 return;
             }
             Utils.showToast(`Пользователь «${user.displayName || 'без имени'}» удалён`, 'success');
+            if (this.selectedUserId === user.id) this.selectUser(null);
+            // The cached page still lists the deleted account.
+            this.cacheService?.clearUsersCache();
             await this.loadUsers();
         } finally {
             this.setDeleteButtonBusy(triggerButton, false);
@@ -1783,9 +1903,7 @@ class AdminPanelManager {
                     this.clearAdminError();
                     this.cacheService?.clearUsersCache();
                     this.cacheService?.clearCache();
-                    await this.loadUsers();
-                    await this.loadMovies();
-                    await this.loadApprovals();
+                    this.reloadWorkspace();
                 } else {
                     this.showAccessError('Доступ запрещен. У текущего аккаунта нет прав администратора.');
                 }
@@ -1797,28 +1915,9 @@ class AdminPanelManager {
         const settingsPanes = document.querySelectorAll('.settings-pane');
 
         sidebarLinks.forEach(link => {
-            link.addEventListener('click', () => {
-                sidebarLinks.forEach(l => l.classList.remove('active'));
-                settingsPanes.forEach(p => p.classList.remove('active'));
-
-                link.classList.add('active');
-                const targetId = 'pane-' + link.dataset.target;
-                const targetPane = document.getElementById(targetId);
-                if (targetPane) {
-                    targetPane.classList.add('active');
-                }
-
-                if (link.dataset.target === 'usage') {
-                    this.loadFirestoreUsage().catch(() => {});
-                }
-                if (link.dataset.target === 'provider-keys') {
-                    this.loadProviderKeys().catch(() => {});
-                }
-                if (link.dataset.target === 'reaction-settings') {
-                    this.loadCommentReactionConfig().catch(() => {});
-                }
-            });
+            link.addEventListener('click', () => this.showSection(link.dataset.target));
         });
+        this.settingsPanes = settingsPanes;
 
         // User Search Filter (Debounced)
         const userSearchInput = document.getElementById('userSearchFilterInput');
@@ -1832,14 +1931,18 @@ class AdminPanelManager {
             });
         }
 
-        // User Status Filter Select
-        const userStatusSelect = document.getElementById('userStatusFilterSelect');
-        if (userStatusSelect) {
-            userStatusSelect.addEventListener('change', (e) => {
-                this.userStatusFilter = e.target.value;
+        // User status tabs
+        document.querySelectorAll('#userStatusTabs [data-user-status]').forEach((tab) => {
+            tab.addEventListener('click', () => {
+                this.userStatusFilter = tab.dataset.userStatus;
+                document.querySelectorAll('#userStatusTabs [data-user-status]').forEach((other) => {
+                    const isActive = other === tab;
+                    other.classList.toggle('is-active', isActive);
+                    other.setAttribute('aria-pressed', String(isActive));
+                });
                 this.applyUserFilters();
             });
-        }
+        });
 
         // Approvals Pane Listeners
         const refreshApprovalsBtn = document.getElementById('refreshApprovalsBtn');
@@ -2105,7 +2208,7 @@ class AdminPanelManager {
 
     // The page-level block for states that replace the panel (no access, failed start).
     // Action results go through the shared Utils.showToast.
-    showAccessError(message) {
+    showAccessError(message, { retry = false } = {}) {
         const errorDiv = document.getElementById('adminError');
         const errorText = document.getElementById('errorText');
         
@@ -2113,6 +2216,15 @@ class AdminPanelManager {
             errorText.textContent = message;
             errorDiv.style.display = 'block';
             errorDiv.setAttribute('aria-hidden', 'false');
+            errorDiv.querySelector('.admin-error-retry')?.remove();
+            if (retry) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'button-refresh admin-error-retry';
+                button.textContent = 'Повторить';
+                button.addEventListener('click', () => window.location.reload());
+                errorDiv.appendChild(button);
+            }
         }
         
         this.hideLoading();
@@ -2200,7 +2312,7 @@ class AdminPanelManager {
             console.timeEnd('[Admin Perf] loadMovies - render');
 
             // Show updated timestamp
-            const updateTime = new Date().toLocaleTimeString();
+            const updateTime = new Date().toLocaleTimeString('ru-RU');
             const ageDiv = document.getElementById('dataAge');
             if (ageDiv) ageDiv.textContent = `Обновлено: ${updateTime}`;
             
@@ -2367,9 +2479,7 @@ class AdminPanelManager {
             };
             ratingValue = latestRating.rating || '—';
             ratingComment = latestRating.comment || '—';
-            ratingDate = latestRating.createdAt?.toDate ? 
-                latestRating.createdAt.toDate().toLocaleDateString() : 
-                (latestRating.createdAt ? new Date(latestRating.createdAt).toLocaleDateString() : '—');
+            ratingDate = this.formatAdminDate(latestRating.createdAt);
         }
 
         const movieTitle = movie.name || 'Фильм без названия';
@@ -2646,7 +2756,8 @@ class AdminPanelManager {
         const btn = document.getElementById('bulkClearCacheBtn');
         if (btn) {
             btn.disabled = true;
-            btn.innerHTML = '<span class="icon">⏳</span> Очистка...';
+            btn.dataset.idleHtml = btn.innerHTML;
+            btn.textContent = 'Очистка…';
         }
 
         try {
@@ -2666,7 +2777,7 @@ class AdminPanelManager {
         } finally {
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = '<span class="icon">🗑️</span> Очистить кэш';
+                if (btn.dataset.idleHtml) btn.innerHTML = btn.dataset.idleHtml;
             }
         }
     }
@@ -2685,6 +2796,7 @@ class AdminPanelManager {
         const btn = document.getElementById('bulkUpdateInfoBtn');
         if (btn) {
             btn.disabled = true;
+            btn.dataset.idleHtml = btn.innerHTML;
         }
 
         try {
@@ -2693,7 +2805,7 @@ class AdminPanelManager {
                 this.currentUser.uid,
                 (current, total) => {
                     if (btn) {
-                        btn.innerHTML = `<span class="icon">🔄</span> ${current}/${total}`;
+                        btn.textContent = `Обновляем ${current} из ${total}`;
                     }
                 }
             );
@@ -2708,7 +2820,7 @@ class AdminPanelManager {
         } finally {
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = '<span class="icon">🔄</span> Обновить инфо';
+                if (btn.dataset.idleHtml) btn.innerHTML = btn.dataset.idleHtml;
             }
         }
     }
@@ -2841,12 +2953,20 @@ class AdminPanelManager {
         const pending = reports.filter(r => r.status === 'pending');
         const resolved = reports.filter(r => r.status === 'resolved');
         
-        if (countSpan) countSpan.textContent = `${reports.length} репортов`;
+        if (countSpan) countSpan.textContent = this.formatRussianCount(reports.length, 'репорт', 'репорта', 'репортов');
         if (pendingCountBadge) pendingCountBadge.textContent = pending.length;
         if (resolvedCountBadge) resolvedCountBadge.textContent = resolved.length;
-        
+        const navReports = document.getElementById('adminNavReportsCount');
+        if (navReports) {
+            navReports.textContent = pending.length > 0 ? String(pending.length) : '';
+            navReports.dataset.tone = pending.length > 0 ? 'danger' : '';
+        }
+        this.pendingReports = pending;
+        this.reportsLoaded = true;
+
         this.renderReportsList(pendingList, pending, true);
         this.renderReportsList(resolvedList, resolved, false);
+        this.renderOverview?.();
     }
 
     renderReportsList(container, reports, isPending) {
@@ -2861,7 +2981,7 @@ class AdminPanelManager {
             card.className = 'report-card';
             
             const dateStr = report.createdAt ? 
-                (typeof report.createdAt.toDate === 'function' ? report.createdAt.toDate().toLocaleString() : new Date(report.createdAt).toLocaleString()) 
+                this.formatAdminDate(report.createdAt, true)
                 : 'Недавно';
             
             let photoHtml = '';
@@ -2871,9 +2991,9 @@ class AdminPanelManager {
             
             let actionHtml = '';
             if (isPending) {
-                actionHtml = `<button class="btn-resolve" data-id="${report.id}">✔ Решено</button>`;
+                actionHtml = `<button class="btn-resolve" data-id="${report.id}">Решено</button>`;
             }
-            actionHtml += `<button class="btn-report-delete" data-id="${report.id}" data-photo="${report.photoPath || ''}">🗑 Удалить</button>`;
+            actionHtml += `<button class="btn-report-delete" data-id="${report.id}" data-photo="${report.photoPath || ''}">Удалить</button>`;
             
             card.innerHTML = `
                 <div class="report-header">
@@ -2902,7 +3022,7 @@ class AdminPanelManager {
                     console.error('Ошибка:', err);
                     (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Ошибка: ' + err.message }) : window.alert('Ошибка: ' + err.message));
                     e.target.disabled = false;
-                    e.target.textContent = '✔ Решено';
+                    e.target.textContent = 'Решено';
                 }
             });
         });
@@ -2926,7 +3046,7 @@ class AdminPanelManager {
                     console.error('Ошибка:', err);
                     (window.ConfirmDialog ? window.ConfirmDialog.alert({ message: 'Ошибка: ' + err.message }) : window.alert('Ошибка: ' + err.message));
                     e.target.disabled = false;
-                    e.target.textContent = '🗑 Удалить';
+                    e.target.textContent = 'Удалить';
                 }
             });
         });
@@ -3249,8 +3369,7 @@ class AdminPanelManager {
             });
         }
 
-        // Initial load
-        this.loadTmdbFallbacks();
+        // The queue loads with the overview or when «Проверка ID» opens (AdminWorkspace.js).
     }
 
     switchIdentitySubtab(targetSubtab) {
@@ -3516,8 +3635,14 @@ class AdminPanelManager {
             const totalTasks = counts.all + (pendingImdb?.length || 0);
             if (unmappedBadge) unmappedBadge.textContent = counts.all;
             if (imdbBadge) imdbBadge.textContent = pendingImdb?.length || 0;
-            if (totalCountBadge) totalCountBadge.textContent = `${totalTasks} задач`;
-            if (navTmdbCountBadge) navTmdbCountBadge.textContent = totalTasks > 0 ? totalTasks : '—';
+            if (totalCountBadge) totalCountBadge.textContent = `${totalTasks} ${this.pluralizeTask(totalTasks)}`;
+            if (navTmdbCountBadge) {
+                navTmdbCountBadge.textContent = totalTasks > 0 ? String(totalTasks) : '';
+                navTmdbCountBadge.dataset.tone = totalTasks > 0 ? 'warning' : '';
+            }
+            this.identityCounts = { ...counts, imdb: pendingImdb?.length || 0, total: totalTasks };
+            this.identityLoadFailed = false;
+            this.renderOverview?.();
 
             this.renderIdentityWorkspaceSummary(counts, this.pendingImdbItems);
             this.applyQueueFiltersAndRender();
@@ -3525,6 +3650,8 @@ class AdminPanelManager {
             this.renderImdbFallbacksList(this.pendingImdbItems);
         } catch (error) {
             console.error('Error loading TMDB fallbacks:', error);
+            this.identityLoadFailed = true;
+            this.renderOverview?.();
             if (unmappedList) unmappedList.innerHTML = `<div class="reports-empty" style="color: var(--status-error);">Ошибка: ${this.escapeHtml(error.message)}</div>`;
             if (manualList) manualList.innerHTML = `<div class="reports-empty" style="color: var(--status-error);">Ошибка: ${this.escapeHtml(error.message)}</div>`;
             if (imdbList) imdbList.innerHTML = `<div class="reports-empty" style="color: var(--status-error);">Ошибка: ${this.escapeHtml(error.message)}</div>`;
@@ -3576,323 +3703,316 @@ class AdminPanelManager {
         this.renderTmdbUnmappedList(filtered);
     }
 
+    // «Проверка ID»: the queue on the left, one title at a time on the right.
+    // A link is saved only after the Kinopoisk card was inspected and the admin confirmed it.
     renderTmdbUnmappedList(unmappedItems) {
         const container = document.getElementById('tmdbUnmappedList');
         if (!container) return;
-        container.innerHTML = '';
+        const items = Array.isArray(unmappedItems) ? unmappedItems : [];
+        this.identityQueueItems = items;
 
-        if (!unmappedItems || unmappedItems.length === 0) {
-            const filterLabel = this.activeQueueFilter === 'snoozed' ? 'отложенных' : 'несмаппленных';
-            container.innerHTML = `
-                <div class="tmdb-empty-state">
-                    <div class="tmdb-empty-icon">✨</div>
-                    <div class="tmdb-empty-title">В этой категории нет тайтлов</div>
-                    <div class="tmdb-empty-desc">Очередь ${filterLabel} элементов пуста. Все элементы либо привязаны, либо находятся в других секциях.</div>
-                </div>
-            `;
+        if (!items.length) {
+            const filterLabel = this.activeQueueFilter === 'snoozed' ? 'Отложенных тайтлов нет.' : 'В этой категории нечего проверять.';
+            container.innerHTML = `<div class="identity-queue-empty">${filterLabel}</div>`;
+            this.selectedIdentityKey = null;
+            this.renderIdentityTask(null);
             return;
         }
 
-        const currentYear = new Date().getFullYear();
+        const sectionNames = { films: 'Фильмы', series: 'Сериалы', cartoons: 'Мультфильмы', anime: 'Аниме', featured: 'Витрина Главной' };
+        container.replaceChildren(...items.map((item) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'identity-queue-item';
+            button.dataset.key = item.key;
+            const section = item.section || (item.mediaType === 'tv' ? 'series' : 'films');
+            const poster = item.posterUrl
+                ? `<img class="identity-queue-poster" src="${this.escapeHtml(item.posterUrl)}" alt="" loading="lazy">`
+                : '<span class="identity-queue-poster identity-queue-poster--empty" aria-hidden="true"></span>';
+            button.innerHTML = `
+                ${poster}
+                <span class="identity-queue-text">
+                    <span class="identity-queue-title">${this.escapeHtml(item.title || item.originalTitle || `TMDB ${item.tmdbId}`)}</span>
+                    <span class="identity-queue-meta">${item.year ? `${this.escapeHtml(String(item.year))} · ` : ''}${sectionNames[section] || this.escapeHtml(section)}</span>
+                </span>
+                ${item.priority === 'CRITICAL' ? '<span class="identity-queue-flag" title="Влияет на топ-12 Главной">Топ-12</span>' : ''}
+            `;
+            button.querySelector('img')?.addEventListener('error', (event) => {
+                event.currentTarget.replaceWith(Object.assign(document.createElement('span'), { className: 'identity-queue-poster identity-queue-poster--empty' }));
+            });
+            button.addEventListener('click', () => this.selectIdentityTask(item.key, { focus: true }));
+            return button;
+        }));
 
-        unmappedItems.forEach(item => {
-            const card = document.createElement('div');
-            card.className = 'tmdb-fallback-item';
-            card.dataset.key = item.key;
+        const stillListed = items.some((item) => item.key === this.selectedIdentityKey);
+        const refocus = this.identityRefocus === true;
+        this.identityRefocus = false;
+        this.selectIdentityTask(stillListed ? this.selectedIdentityKey : items[0].key, { focus: refocus });
+    }
 
-            const posterImg = item.posterUrl
-                ? `<img src="${item.posterUrl}" class="movie-poster" alt="Poster" loading="lazy">`
-                : `<div class="movie-poster" style="display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--text-tertiary, #64748b);">НЕТ</div>`;
+    selectIdentityTask(key, { focus = false } = {}) {
+        const items = this.identityQueueItems || [];
+        const item = items.find((candidate) => candidate.key === key) || null;
+        this.selectedIdentityKey = item ? item.key : null;
+        document.querySelectorAll('#tmdbUnmappedList .identity-queue-item').forEach((button) => {
+            const isActive = button.dataset.key === this.selectedIdentityKey;
+            button.classList.toggle('is-active', isActive);
+            if (isActive) button.setAttribute('aria-current', 'true');
+            else button.removeAttribute('aria-current');
+        });
+        this.renderIdentityTask(item);
+        if (item && focus) {
+            document.getElementById('identityTaskKpInput')?.focus({ preventScroll: true });
+            document.querySelector(`#tmdbUnmappedList .identity-queue-item[data-key="${CSS.escape(item.key)}"]`)?.scrollIntoView({ block: 'nearest' });
+        }
+    }
 
-            // Priority badge
-            let priorityBadge;
-            if (item.priority === 'CRITICAL') {
-                priorityBadge = `<span class="tmdb-priority-badge tmdb-priority-critical">🔥 Critical</span>`;
-            } else if (item.priority === 'HIGH') {
-                priorityBadge = `<span class="tmdb-priority-badge tmdb-priority-high">⚡ High</span>`;
-            } else if (item.priority === 'MEDIUM') {
-                priorityBadge = `<span class="tmdb-priority-badge tmdb-priority-medium">Medium</span>`;
-            } else {
-                priorityBadge = `<span class="tmdb-priority-badge tmdb-priority-low">Low</span>`;
-            }
+    advanceIdentityTask() {
+        const items = this.identityQueueItems || [];
+        const index = items.findIndex((item) => item.key === this.selectedIdentityKey);
+        const next = items[index + 1] || items[0];
+        // The queue reloads right after a decision; keep the keyboard in the next task.
+        this.identityRefocus = true;
+        if (next && next.key !== this.selectedIdentityKey) this.selectIdentityTask(next.key, { focus: true });
+    }
 
-            // Section tag
-            const sectionNames = { 'films': 'Фильмы', 'series': 'Сериалы', 'cartoons': 'Мультфильмы', 'anime': 'Аниме' };
-            const secKey = item.section || (item.mediaType === 'tv' ? 'series' : 'films');
-            const secTag = `<span class="tmdb-tag-pill tmdb-tag-${secKey}">${sectionNames[secKey] || secKey}</span>`;
+    renderIdentityTask(item) {
+        const panel = document.getElementById('tmdbTaskPanel');
+        if (!panel) return;
+        if (!item) {
+            panel.innerHTML = '<p class="identity-task-empty">Очередь пуста. Новые тайтлы появятся, когда Главная встретит фильм без связи с Кинопоиском.</p>';
+            return;
+        }
 
-            // Rank tags (Product Rank + TMDB Source Rank)
-            let rankTag = '';
-            if (Number.isInteger(item.productRank) && item.productRank > 0) {
-                const isTop12 = item.productRank <= 12;
-                rankTag += `<span class="tmdb-tag-pill tmdb-tag-product-rank" style="font-weight: 600; ${isTop12 ? 'background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);' : ''}" title="Позиция в продуктовой витрине ${sectionNames[secKey] || secKey}">Product #${item.productRank}</span> `;
-            }
-            if (Number.isInteger(item.tmdbRank) && item.tmdbRank > 0) {
-                rankTag += `<span class="tmdb-tag-pill tmdb-tag-section" title="Позиция в ответе TMDB API">TMDB #${item.tmdbRank}</span>`;
-            }
+        const items = this.identityQueueItems || [];
+        const position = items.findIndex((candidate) => candidate.key === item.key) + 1;
+        const sectionNames = { films: 'Фильмы', series: 'Сериалы', cartoons: 'Мультфильмы', anime: 'Аниме', featured: 'Витрина Главной' };
+        const priorityNames = { CRITICAL: 'Топ-12 Главной', HIGH: 'Высокий приоритет', MEDIUM: 'Средний приоритет' };
+        const section = item.section || (item.mediaType === 'tv' ? 'series' : 'films');
+        const tags = [];
+        if (priorityNames[item.priority]) tags.push(`<span class="identity-tag" data-tone="${item.priority === 'CRITICAL' ? 'warning' : 'neutral'}">${priorityNames[item.priority]}</span>`);
+        tags.push(`<span class="identity-tag">${sectionNames[section] || this.escapeHtml(section)}</span>`);
+        if (Number.isInteger(item.productRank) && item.productRank > 0) tags.push(`<span class="identity-tag" title="Позиция в витрине Главной">Витрина #${item.productRank}</span>`);
+        if (Number.isInteger(item.tmdbRank) && item.tmdbRank > 0) tags.push(`<span class="identity-tag" title="Позиция в ответе TMDB">TMDB #${item.tmdbRank}</span>`);
+        if (Number(item.popularity) > 50 || Number(item.voteCount) > 100) tags.push('<span class="identity-tag">Популярный</span>');
+        if (item.timesSeen >= 2) tags.push(`<span class="identity-tag">Встречался ${item.timesSeen} раз</span>`);
 
-            // Display tags: Hot, Frequent, Fresh
-            let displayTags = '';
-            if ((Number(item.popularity) > 50) || (Number(item.voteCount) > 100)) {
-                displayTags += `<span class="tmdb-tag-pill tmdb-tag-hot">🔥 Hot</span> `;
-            }
-            if (item.timesSeen && item.timesSeen >= 2) {
-                displayTags += `<span class="tmdb-tag-pill tmdb-tag-frequent">🔁 ${item.timesSeen} раз</span> `;
-            }
-            if (item.year && item.year >= currentYear) {
-                displayTags += `<span class="tmdb-tag-pill tmdb-tag-fresh">🆕 ${item.year}</span> `;
-            }
+        const title = item.title || item.originalTitle || `TMDB ${item.tmdbId}`;
+        const tmdbUrl = `https://www.themoviedb.org/${item.mediaType === 'tv' ? 'tv' : 'movie'}/${encodeURIComponent(item.tmdbId)}`;
+        const kpSearchUrl = `https://www.kinopoisk.ru/index.php?kp_query=${encodeURIComponent(item.title || item.originalTitle || '')}`;
+        const poster = item.posterUrl
+            ? `<img class="identity-task-poster" src="${this.escapeHtml(item.posterUrl)}" alt="">`
+            : '<div class="identity-task-poster identity-task-poster--empty" aria-hidden="true">Нет постера</div>';
+        const subtitle = [
+            item.originalTitle && item.originalTitle !== item.title ? this.escapeHtml(item.originalTitle) : '',
+            item.year ? this.escapeHtml(String(item.year)) : '',
+            `TMDB ${this.escapeHtml(item.mediaType)}:${this.escapeHtml(String(item.tmdbId))}`
+        ].filter(Boolean).join(' · ');
 
-            // Impact banner for CRITICAL
-            const impactBanner = (item.priority === 'CRITICAL')
-                ? `<div class="tmdb-impact-banner">⚡ Влияет на Home Top-12 (${sectionNames[secKey] || secKey}${item.productRank ? ` #${item.productRank}` : (item.tmdbRank ? ` #${item.tmdbRank}` : '')})</div>`
-                : '';
-
-            // Action URLs
-            const tmdbUrl = `https://www.themoviedb.org/${item.mediaType === 'tv' ? 'tv' : 'movie'}/${item.tmdbId}`;
-            const kpSearchQuery = encodeURIComponent(item.title || item.originalTitle || '');
-            const kpSearchUrl = `https://www.kinopoisk.ru/index.php?kp_query=${kpSearchQuery}`;
-
-            const previewId = `kpPreview_${item.key.replace(/[^a-zA-Z0-9]/g, '_')}`;
-
-            card.innerHTML = `
-                <div style="display: flex; flex-direction: column; width: 100%; gap: 8px;">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
-                        <div class="tmdb-fallback-movie" style="flex: 1; min-width: 0;">
-                            ${posterImg}
-                            <div style="min-width: 0; flex: 1;">
-                                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px;">
-                                    ${priorityBadge}
-                                    ${secTag}
-                                    ${rankTag}
-                                    ${displayTags}
-                                </div>
-                                <div style="font-weight: 600; color: var(--theme-text-primary, #f8fafc); font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${this.escapeHtml(item.title || '')}">
-                                    ${this.escapeHtml(item.title || item.originalTitle || `TMDB #${item.tmdbId}`)}
-                                </div>
-                                ${item.originalTitle && item.originalTitle !== item.title ? `
-                                    <div style="font-size: 12px; color: var(--theme-text-secondary, #94a3b8); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                        ${this.escapeHtml(item.originalTitle)}
-                                    </div>
-                                ` : ''}
-                                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--theme-text-secondary, #94a3b8); margin-top: 6px; flex-wrap: wrap;">
-                                    ${item.year ? `<span style="font-weight: 500;">${item.year}</span> <span>•</span>` : ''}
-                                    <span>TMDB ID: <code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; color: #cbd5e1;">${item.mediaType}:${item.tmdbId}</code></span>
-                                    <span>•</span>
-                                    <a href="${tmdbUrl}" target="_blank" class="tmdb-link-btn" title="Открыть карточку на TMDB">🔗 TMDB ↗</a>
-                                    <a href="${kpSearchUrl}" target="_blank" class="tmdb-link-btn" title="Искать тайтл на Кинопоиске">🔍 Поиск КП ↗</a>
-                                </div>
-                                ${impactBanner ? `<div style="margin-top: 6px;">${impactBanner}</div>` : ''}
-                            </div>
-                        </div>
-
-                        <!-- Manual Binding Action Controls -->
-                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0;">
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <input type="text" class="admin-input tmdb-unmapped-kp-input" placeholder="KP ID или ссылка" style="width: 160px; height: 38px;" data-key="${item.key}">
-                                <button class="btn-verify-kp btn-verify-action" type="button" data-key="${item.key}" data-media-type="${item.mediaType}" data-tmdb-id="${item.tmdbId}" data-year="${item.year || ''}">
-                                    Проверить
-                                </button>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <button class="btn-snooze-kp btn-snooze-action" type="button" title="Отложить тайтл на 7 дней (страница на КП ещё не создана)" data-key="${item.key}" data-title="${this.escapeHtml(item.title || '')}">
-                                    Нет страницы на КП
-                                </button>
-                            </div>
-                        </div>
+        panel.innerHTML = `
+            <div class="identity-task-head">
+                ${poster}
+                <div class="identity-task-info">
+                    <div class="identity-task-tags">${tags.join('')}</div>
+                    <h4 class="identity-task-title">${this.escapeHtml(title)}</h4>
+                    <p class="identity-task-sub">${subtitle}</p>
+                    <div class="identity-task-links">
+                        <a href="${tmdbUrl}" target="_blank" rel="noopener noreferrer">Карточка TMDB ↗</a>
+                        <a href="${kpSearchUrl}" target="_blank" rel="noopener noreferrer">Искать на Кинопоиске ↗</a>
                     </div>
+                </div>
+            </div>
+            <form class="identity-task-form" novalidate>
+                <label class="identity-task-label" for="identityTaskKpInput">Kinopoisk ID или ссылка</label>
+                <div class="identity-task-row">
+                    <input type="text" id="identityTaskKpInput" class="admin-input tmdb-unmapped-kp-input" autocomplete="off" spellcheck="false" placeholder="например, 1143242">
+                    <button class="btn-verify-kp btn-verify-action" type="submit">Проверить</button>
+                    <button class="identity-task-find" type="button">Подобрать</button>
+                </div>
+                <p class="identity-task-hint">Enter проверяет карточку, затем «Подтвердить» сохраняет связь. «Подобрать» ищет на Кинопоиске по названию и тратит запрос из квоты.</p>
+            </form>
+            <div class="identity-candidates" hidden></div>
+            <div class="tmdb-preview-container identity-task-preview" hidden></div>
+            <div class="identity-task-footer">
+                <button class="btn-snooze-kp btn-snooze-action" type="button" title="Отложить тайтл на 7 дней: страницы на Кинопоиске ещё нет">Нет страницы на КП</button>
+                <button class="identity-task-next" type="button"${items.length < 2 ? ' disabled' : ''}>Следующий ›</button>
+                <span class="identity-task-progress">${position} из ${items.length}</span>
+            </div>
+        `;
 
-                    <!-- Kinopoisk Verification Preview Box -->
-                    <div id="${previewId}" class="tmdb-preview-container" style="display: none;"></div>
+        panel.querySelector('.identity-task-poster')?.addEventListener('error', (event) => {
+            event.currentTarget.replaceWith(Object.assign(document.createElement('div'), {
+                className: 'identity-task-poster identity-task-poster--empty',
+                textContent: 'Нет постера'
+            }));
+        });
+
+        const form = panel.querySelector('.identity-task-form');
+        const input = panel.querySelector('#identityTaskKpInput');
+        const verifyBtn = panel.querySelector('.btn-verify-action');
+        const preview = panel.querySelector('.identity-task-preview');
+
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            this.inspectIdentityCandidate(item, input.value, { verifyBtn, preview });
+        });
+        panel.querySelector('.identity-task-find').addEventListener('click', (event) => {
+            this.findIdentityCandidates(item, event.currentTarget, panel.querySelector('.identity-candidates'), (kpId) => {
+                input.value = String(kpId);
+                this.inspectIdentityCandidate(item, input.value, { verifyBtn, preview });
+            });
+        });
+        panel.querySelector('.identity-task-next').addEventListener('click', () => this.advanceIdentityTask());
+        panel.querySelector('.btn-snooze-action').addEventListener('click', async (event) => {
+            const btn = event.currentTarget;
+            try {
+                btn.disabled = true;
+                await this.idMappingService.snoozeUnmappedQueueItem(item.key, 7, 'no-kp-page');
+                Utils.showToast(`«${title}» отложен на 7 дней: страницы на Кинопоиске ещё нет`, 'success');
+                this.advanceIdentityTask();
+                await this.loadTmdbFallbacks();
+            } catch (err) {
+                console.error('Error snoozing unmapped item:', err);
+                Utils.showToast(`Не удалось отложить тайтл: ${err.message}`, 'error');
+                btn.disabled = false;
+            }
+        });
+    }
+
+    async findIdentityCandidates(item, button, box, onPick) {
+        const query = (item.title || item.originalTitle || '').trim();
+        if (!query || !box) return;
+        if (!this.kinopoiskService) this.kinopoiskService = new KinopoiskService();
+        button.disabled = true;
+        box.hidden = false;
+        box.innerHTML = '<p class="identity-candidates-state">Ищем на Кинопоиске…</p>';
+        try {
+            const data = await this.kinopoiskService.searchMovies(query, 1, 6);
+            const docs = (data?.docs || [])
+                .map((movie) => ({
+                    kpId: Number(movie.kinopoiskId || movie.id),
+                    name: movie.name || movie.alternativeName || movie.enName || 'Без названия',
+                    original: movie.alternativeName || movie.enName || '',
+                    year: Number(movie.year) || null,
+                    poster: movie.posterUrl || movie.poster?.previewUrl || movie.poster?.url || ''
+                }))
+                .filter((movie) => Number.isSafeInteger(movie.kpId) && movie.kpId > 0)
+                .slice(0, 5);
+            if (!docs.length) {
+                box.innerHTML = '<p class="identity-candidates-state">Ничего не нашлось. Найдите тайтл по ссылке «Искать на Кинопоиске» и вставьте его ID.</p>';
+                return;
+            }
+            const tmdbYear = Number(item.year) || null;
+            const original = (item.originalTitle || '').trim().toLowerCase();
+            box.replaceChildren(...docs.map((movie) => {
+                const yearMatch = tmdbYear && movie.year ? Math.abs(tmdbYear - movie.year) <= 1 : null;
+                const titleMatch = original && movie.original ? movie.original.trim().toLowerCase() === original : null;
+                const checks = [];
+                if (yearMatch !== null) checks.push(`<span class="identity-tag" data-tone="${yearMatch ? 'success' : 'danger'}">${yearMatch ? 'год совпадает' : 'другой год'}</span>`);
+                if (titleMatch !== null) checks.push(`<span class="identity-tag" data-tone="${titleMatch ? 'success' : 'neutral'}">${titleMatch ? 'оригинальное название совпадает' : 'другое оригинальное название'}</span>`);
+                const candidate = document.createElement('button');
+                candidate.type = 'button';
+                candidate.className = 'identity-candidate';
+                candidate.innerHTML = `
+                    ${movie.poster ? `<img class="identity-candidate-poster" src="${this.escapeHtml(movie.poster)}" alt="" loading="lazy">` : '<span class="identity-candidate-poster" aria-hidden="true"></span>'}
+                    <span class="identity-candidate-text">
+                        <span class="identity-candidate-title">${this.escapeHtml(movie.name)}${movie.year ? ` <span class="identity-candidate-year">${movie.year}</span>` : ''}</span>
+                        <span class="identity-candidate-meta">KP ${movie.kpId}${movie.original ? ` · ${this.escapeHtml(movie.original)}` : ''}</span>
+                        <span class="identity-task-tags">${checks.join('')}</span>
+                    </span>
+                    <span class="identity-candidate-pick">Проверить</span>
+                `;
+                candidate.addEventListener('click', () => onPick(movie.kpId));
+                return candidate;
+            }));
+        } catch (error) {
+            console.warn('[Admin] Kinopoisk candidate search failed:', error);
+            box.innerHTML = '<p class="identity-candidates-state">Поиск Кинопоиска не ответил. Попробуйте позже или вставьте ID вручную.</p>';
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    async inspectIdentityCandidate(item, rawValue, { verifyBtn, preview }) {
+        const kpId = this.extractNumericId(rawValue);
+        if (!kpId) {
+            Utils.showToast('Введите числовой Kinopoisk ID или ссылку на Кинопоиск', 'warning');
+            return;
+        }
+        const mediaType = item.mediaType;
+        const tmdbYear = Number(item.year) || null;
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = 'Проверяем…';
+        preview.hidden = false;
+        preview.innerHTML = '<p class="identity-candidates-state">Запрашиваем карточку Кинопоиска…</p>';
+
+        try {
+            if (!this.kinopoiskService) this.kinopoiskService = new KinopoiskService();
+            const kpMovie = await this.kinopoiskService.getMovieById(kpId);
+            const resolvedKpId = Number(kpMovie?.kinopoiskId || kpMovie?.id);
+            if (!kpMovie || !Number.isInteger(resolvedKpId) || resolvedKpId <= 0) {
+                throw new Error('Фильм или сериал с таким ID не найден на Кинопоиске');
+            }
+            const kpType = kpMovie.type || (mediaType === 'tv' ? 'tv-series' : 'movie');
+            const kpYear = Number(kpMovie.year) || null;
+            const isCompatible = this.idMappingService.isCompatibleType(mediaType, kpType, kpMovie);
+            const yearDiff = tmdbYear && kpYear ? Math.abs(tmdbYear - kpYear) : 0;
+            const kpTitle = kpMovie.name || kpMovie.alternativeName || `КП ${resolvedKpId}`;
+            const kpPoster = kpMovie.posterUrl || (typeof kpMovie.poster === 'string' ? kpMovie.poster : kpMovie.poster?.url) || '';
+            const genres = Array.isArray(kpMovie.genres)
+                ? kpMovie.genres.map((genre) => (typeof genre === 'string' ? genre : genre?.name)).filter(Boolean).slice(0, 3).join(', ')
+                : '';
+            const checks = [
+                `<span class="identity-tag" data-tone="${isCompatible ? 'success' : 'danger'}">${isCompatible ? 'тип совпадает' : `другой тип: TMDB ${this.escapeHtml(mediaType)}, КП ${this.escapeHtml(kpType)}`}</span>`
+            ];
+            if (tmdbYear && kpYear) {
+                checks.push(`<span class="identity-tag" data-tone="${yearDiff <= 1 ? 'success' : yearDiff > 3 ? 'danger' : 'warning'}">${yearDiff === 0 ? 'год совпадает' : `год: TMDB ${tmdbYear}, КП ${kpYear}`}</span>`);
+            }
+
+            preview.innerHTML = `
+                <div class="identity-verdict">
+                    ${kpPoster ? `<img class="identity-candidate-poster" src="${this.escapeHtml(kpPoster)}" alt="">` : '<span class="identity-candidate-poster" aria-hidden="true"></span>'}
+                    <div class="identity-candidate-text">
+                        <span class="identity-candidate-title">${this.escapeHtml(kpTitle)}${kpYear ? ` <span class="identity-candidate-year">${kpYear}</span>` : ''}</span>
+                        <span class="identity-candidate-meta">KP ${resolvedKpId}${kpMovie.alternativeName && kpMovie.alternativeName !== kpMovie.name ? ` · ${this.escapeHtml(kpMovie.alternativeName)}` : ''}${genres ? ` · ${this.escapeHtml(genres)}` : ''}</span>
+                        <span class="identity-task-tags">${checks.join('')}</span>
+                        <a class="identity-verdict-link" href="https://www.kinopoisk.ru/film/${resolvedKpId}/" target="_blank" rel="noopener noreferrer">Открыть на Кинопоиске ↗</a>
+                    </div>
+                    <button class="btn-confirm-map btn-confirm-action" type="button">Подтвердить связь</button>
                 </div>
             `;
-
-            container.appendChild(card);
-        });
-
-        // Event listeners for "Проверить" (Kinopoisk ID inspection)
-        container.querySelectorAll('.btn-verify-action').forEach(btn => {
-            const card = btn.closest('.tmdb-fallback-item');
-            const input = card?.querySelector('.tmdb-unmapped-kp-input');
-            if (input) {
-                input.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        btn.click();
-                    }
-                });
-            }
-
-            btn.addEventListener('click', async () => {
-                const key = btn.dataset.key;
-                const mediaType = btn.dataset.mediaType;
-                const tmdbId = btn.dataset.tmdbId;
-                const tmdbYear = btn.dataset.year ? parseInt(btn.dataset.year, 10) : null;
-
-                const curCard = container.querySelector(`.tmdb-fallback-item[data-key="${key}"]`);
-                if (!curCard) return;
-
-                const curInput = curCard.querySelector('.tmdb-unmapped-kp-input');
-                const kpId = this.extractNumericId(curInput?.value);
-                const previewBox = curCard.querySelector('.tmdb-preview-container');
-
-                if (!kpId) {
-                    Utils.showToast('Пожалуйста, введите корректный числовой Kinopoisk ID или ссылку', 'warning');
-                    return;
-                }
-
-                btn.disabled = true;
-                btn.textContent = 'Проверка...';
-                if (previewBox) {
-                    previewBox.style.display = 'block';
-                    previewBox.innerHTML = '<div style="font-size: 12px; color: var(--theme-text-secondary); padding: 8px 12px;">Запрос данных с Кинопоиска...</div>';
-                }
-
-                try {
-                    if (!this.kinopoiskService) this.kinopoiskService = new KinopoiskService();
-                    const kpMovie = await this.kinopoiskService.getMovieById(kpId);
-
-                    const resolvedKpId = Number(kpMovie?.kinopoiskId || kpMovie?.id);
-                    if (!kpMovie || !Number.isInteger(resolvedKpId) || resolvedKpId <= 0) {
-                        throw new Error('Фильм/сериал с таким ID не найден на Кинопоиске');
-                    }
-
-                    const kpType = kpMovie.type || (mediaType === 'tv' ? 'tv-series' : 'movie');
-                    const kpYear = Number(kpMovie.year) || null;
-
-                    // Check type compatibility
-                    const isCompatible = this.idMappingService.isCompatibleType(mediaType, kpType, kpMovie);
-                    const yearDiff = (tmdbYear && kpYear) ? Math.abs(tmdbYear - kpYear) : 0;
-
-                    let compatHtml = isCompatible
-                        ? `<span class="tmdb-compat-ok">🟢 Тип совместим (${mediaType} ↔ ${kpType || 'фильм'})</span>`
-                        : `<span class="tmdb-compat-warn">⚠️ Внимание: Несоответствие типов (TMDB: ${mediaType}, КП: ${kpType || 'сериал'})</span>`;
-
-                    let yearWarnHtml = (yearDiff > 3)
-                        ? `<div class="tmdb-year-warn">⚠️ Разница годов выпуска: TMDB (${tmdbYear}) vs КП (${kpYear})</div>`
-                        : '';
-
-                    const kpPoster = kpMovie.posterUrl || (typeof kpMovie.poster === 'string' ? kpMovie.poster : kpMovie.poster?.url) || '';
-                    const kpPosterHtml = kpPoster
-                        ? `<img src="${kpPoster}" class="tmdb-preview-poster" alt="KP Poster">`
-                        : `<div class="tmdb-preview-poster" style="display:flex;align-items:center;justify-content:center;font-size:9px;color:#64748b;">НЕТ</div>`;
-
-                    const genresStr = Array.isArray(kpMovie.genres)
-                        ? kpMovie.genres.map(g => (typeof g === 'string' ? g : g?.name)).filter(Boolean).slice(0, 3).join(', ')
-                        : '';
-
-                    if (previewBox) {
-                        previewBox.innerHTML = `
-                            <div class="tmdb-preview-card">
-                                <div style="display: flex; gap: 12px; align-items: center; width: 100%;">
-                                    ${kpPosterHtml}
-                                    <div style="flex: 1; min-width: 0;">
-                                        <div style="font-size: 14px; font-weight: 600; color: #f8fafc;">
-                                            ${this.escapeHtml(kpMovie.name || kpMovie.alternativeName || `КП #${resolvedKpId}`)}
-                                            ${kpYear ? `<span style="color: #94a3b8; font-weight: normal;">(${kpYear})</span>` : ''}
-                                        </div>
-                                        ${kpMovie.alternativeName && kpMovie.alternativeName !== kpMovie.name ? `
-                                            <div style="font-size: 11px; color: #94a3b8; margin-top: 1px;">${this.escapeHtml(kpMovie.alternativeName)}</div>
-                                        ` : ''}
-                                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 11px; flex-wrap: wrap;">
-                                            ${compatHtml}
-                                            ${genresStr ? `<span style="color: #cbd5e1;">• ${this.escapeHtml(genresStr)}</span>` : ''}
-                                            <a href="https://www.kinopoisk.ru/film/${resolvedKpId}/" target="_blank" style="color: #818cf8; text-decoration: none; font-weight: 500;">Открыть на КП ↗</a>
-                                        </div>
-                                        ${yearWarnHtml}
-                                    </div>
-                                </div>
-                                <div class="tmdb-confirm-center-wrap">
-                                    <button class="btn-confirm-map btn-confirm-action" type="button" 
-                                            data-key="${key}" 
-                                            data-media-type="${mediaType}" 
-                                            data-tmdb-id="${tmdbId}" 
-                                            data-kp-id="${resolvedKpId}" 
-                                            data-kp-type="${kpType}" 
-                                            data-title="${this.escapeHtml(kpMovie.name || kpMovie.alternativeName || '')}" 
-                                            data-year="${kpYear ? String(kpYear) : ''}">
-                                        <svg data-icon="CHECK" style="margin-right: 6px;" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.6L8 14.6L16 5.4"/></svg>
-                                        Подтвердить привязку
-                                    </button>
-                                </div>
-                            </div>
-                        `;
-
-                        const imgEl = previewBox.querySelector('.tmdb-preview-poster');
-                        if (imgEl && imgEl.tagName === 'IMG') {
-                            imgEl.addEventListener('error', () => {
-                                imgEl.style.display = 'none';
-                            });
-                        }
-
-                        // Attach event listener to centered confirm button
-                        const confirmBtn = previewBox.querySelector('.btn-confirm-action');
-                        if (confirmBtn) {
-                            confirmBtn.addEventListener('click', async () => {
-                                const cMediaType = confirmBtn.dataset.mediaType;
-                                const cTmdbId = confirmBtn.dataset.tmdbId;
-                                const cKpId = confirmBtn.dataset.kpId;
-                                const cTitle = confirmBtn.dataset.title;
-                                const cYear = confirmBtn.dataset.year ? parseInt(confirmBtn.dataset.year, 10) : null;
-                                const cKpType = confirmBtn.dataset.kpType;
-
-                                if (!cKpId) {
-                                    Utils.showToast('Сначала нажмите "Проверить" для верификации тайтла на Кинопоиске', 'warning');
-                                    return;
-                                }
-
-                                try {
-                                    confirmBtn.disabled = true;
-                                    confirmBtn.textContent = 'Сохранение...';
-                                    await this.idMappingService.setManualMapping(cMediaType, cTmdbId, cKpId, {
-                                        title: cTitle,
-                                        year: cYear,
-                                        kpType: cKpType
-                                    });
-
-                                    Utils.showToast(`Привязка сохранена: "${cTitle || cTmdbId}" → КП: ${cKpId}`, 'success');
-                                    await this.loadTmdbFallbacks();
-                                } catch (err) {
-                                    console.error('Error confirming manual mapping:', err);
-                                    Utils.showToast(`Ошибка: ${err.message}`, 'error');
-                                    confirmBtn.disabled = false;
-                                    confirmBtn.innerHTML = `<svg data-icon="CHECK" style="margin-right: 6px;" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.6L8 14.6L16 5.4"/></svg> Подтвердить привязку`;
-                                }
-                            });
-                        }
-                    }
-
-                    btn.textContent = 'Проверено ✓';
-                    btn.disabled = false;
-                } catch (err) {
-                    console.error('Error verifying KP ID:', err);
-                    if (previewBox) {
-                        previewBox.innerHTML = `<div style="font-size: 12px; color: var(--status-error); padding: 8px 12px;">Ошибка проверки: ${this.escapeHtml(err.message)}</div>`;
-                    }
-                    btn.textContent = 'Проверить';
-                    btn.disabled = false;
-                }
+            preview.querySelector('img')?.addEventListener('error', (event) => {
+                event.currentTarget.replaceWith(Object.assign(document.createElement('span'), { className: 'identity-candidate-poster' }));
             });
-        });
 
-        // Event listeners for "Нет страницы на КП" (Snooze candidate for 7 days)
-        container.querySelectorAll('.btn-snooze-action').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const key = btn.dataset.key;
-                const title = btn.dataset.title || key;
-
+            const confirmBtn = preview.querySelector('.btn-confirm-action');
+            confirmBtn.addEventListener('click', async () => {
                 try {
-                    btn.disabled = true;
-                    await this.idMappingService.snoozeUnmappedQueueItem(key, 7, 'no-kp-page');
-                    Utils.showToast(`Тайтл "${title}" отложен на 7 дней (страница на КП ещё отсутствует)`, 'success');
+                    confirmBtn.disabled = true;
+                    confirmBtn.textContent = 'Сохраняем…';
+                    await this.idMappingService.setManualMapping(mediaType, item.tmdbId, resolvedKpId, {
+                        title: kpMovie.name || kpMovie.alternativeName || '',
+                        year: kpYear,
+                        kpType
+                    });
+                    Utils.showToast(`Связь сохранена: «${item.title || item.tmdbId}» → КП ${resolvedKpId}`, 'success');
+                    this.advanceIdentityTask();
                     await this.loadTmdbFallbacks();
                 } catch (err) {
-                    console.error('Error snoozing unmapped item:', err);
-                    Utils.showToast(`Ошибка: ${err.message}`, 'error');
-                    btn.disabled = false;
+                    console.error('Error confirming manual mapping:', err);
+                    Utils.showToast(`Не удалось сохранить связь: ${err.message}`, 'error');
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = 'Подтвердить связь';
                 }
             });
-        });
+            confirmBtn.focus();
+        } catch (err) {
+            console.error('Error verifying KP ID:', err);
+            preview.innerHTML = `<p class="identity-candidates-state" data-tone="danger">Проверка не удалась: ${this.escapeHtml(err.message)}</p>`;
+        } finally {
+            verifyBtn.disabled = false;
+            verifyBtn.textContent = 'Проверить';
+        }
     }
 
     renderManualMappingsList(manualMappings) {
@@ -3903,8 +4023,7 @@ class AdminPanelManager {
         if (!manualMappings || manualMappings.length === 0) {
             container.innerHTML = `
                 <div class="tmdb-empty-state">
-                    <div class="tmdb-empty-icon">📋</div>
-                    <div class="tmdb-empty-title">Нет пользовательских привязок</div>
+                                        <div class="tmdb-empty-title">Нет пользовательских привязок</div>
                     <div class="tmdb-empty-desc">Здесь будут отображаться созданные вручную связки TMDB → Кинопоиск.</div>
                 </div>
             `;
@@ -3931,18 +4050,18 @@ class AdminPanelManager {
 
         manualMappings.forEach(item => {
             const tr = document.createElement('tr');
-            const dateStr = item.resolvedAt ? new Date(item.resolvedAt).toLocaleDateString() : '—';
+            const dateStr = this.formatAdminDate(item.resolvedAt);
             const tagClass = item.mediaType === 'movie' ? 'tmdb-tag-movie' : 'tmdb-tag-tv';
 
             tr.innerHTML = `
-                <td style="font-weight: 500; color: var(--theme-text-primary, #f8fafc);">
+                <td style="font-weight: 500; color: var(--theme-text-primary);">
                     ${this.escapeHtml(item.title || `TMDB #${item.tmdbId}`)}
-                    ${item.year ? `<span style="color: var(--theme-text-secondary, #94a3b8); font-size: 12px; margin-left: 4px;">(${item.year})</span>` : ''}
+                    ${item.year ? `<span style="color: var(--theme-text-secondary); font-size: 12px; margin-left: 4px;">(${item.year})</span>` : ''}
                 </td>
                 <td style="text-align: center;"><span class="tmdb-tag-pill ${tagClass}">${item.mediaType}</span></td>
-                <td style="text-align: center;"><code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; color: #cbd5e1;">${item.tmdbId}</code></td>
-                <td style="text-align: center;"><a href="https://www.kinopoisk.ru/film/${item.kpId}/" target="_blank" style="color: #818cf8; font-weight: 600; text-decoration: none;">${item.kpId} ↗</a></td>
-                <td style="text-align: center; color: var(--theme-text-secondary, #94a3b8); font-size: 12px;">${dateStr}</td>
+                <td style="text-align: center;"><code style="background: var(--theme-bg-tertiary); padding: 2px 6px; border-radius: var(--radius-sm); color: var(--theme-text-primary);">${item.tmdbId}</code></td>
+                <td style="text-align: center;"><a href="https://www.kinopoisk.ru/film/${item.kpId}/" target="_blank" rel="noopener noreferrer" style="color: var(--theme-text-primary); font-weight: 600;">${item.kpId} ↗</a></td>
+                <td style="text-align: center; color: var(--theme-text-secondary); font-size: 12px;">${dateStr}</td>
                 <td style="text-align: right;">
                     <button class="btn-delete-mapping btn-delete-manual-mapping" data-media-type="${item.mediaType}" data-tmdb-id="${item.tmdbId}" type="button">
                         Отвязать
@@ -3981,8 +4100,7 @@ class AdminPanelManager {
         if (!pendingItems || pendingItems.length === 0) {
             container.innerHTML = `
                 <div class="tmdb-empty-state">
-                    <div class="tmdb-empty-icon">🎬</div>
-                    <div class="tmdb-empty-title">Все фильмы имеют IMDb ID</div>
+                                        <div class="tmdb-empty-title">Все фильмы имеют IMDb ID</div>
                     <div class="tmdb-empty-desc">В данный момент нет фильмов Кинопоиска, требующих ручного ввода IMDb ID.</div>
                 </div>
             `;
@@ -3994,19 +4112,19 @@ class AdminPanelManager {
             card.className = 'tmdb-fallback-item';
 
             const posterImg = item.posterUrl
-                ? `<img src="${item.posterUrl}" class="movie-poster" alt="Poster">`
-                : `<div class="movie-poster" style="display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--text-tertiary, #64748b);">НЕТ</div>`;
+                ? `<img src="${this.escapeHtml(item.posterUrl)}" class="movie-poster" alt="">`
+                : `<div class="movie-poster" style="display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--theme-text-muted);">НЕТ</div>`;
 
             card.innerHTML = `
                 <div class="tmdb-fallback-movie">
                     ${posterImg}
                     <div style="min-width: 0; flex: 1;">
-                        <div style="font-weight: 600; color: var(--theme-text-primary, #f8fafc); font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        <div style="font-weight: 600; color: var(--theme-text-primary); font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                             ${this.escapeHtml(item.name || item.alternativeName || 'Фильм Кинопоиска')}
                         </div>
-                        <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--theme-text-secondary, #94a3b8); margin-top: 4px;">
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--theme-text-secondary); margin-top: 4px;">
                             ${item.year ? `<span style="font-weight: 500;">${item.year}</span> <span>•</span>` : ''}
-                            <span>Kinopoisk ID: <code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; color: #cbd5e1;">${item.kinopoiskId}</code></span>
+                            <span>Kinopoisk ID: <code style="background: var(--theme-bg-tertiary); padding: 2px 6px; border-radius: var(--radius-sm); color: var(--theme-text-primary);">${item.kinopoiskId}</code></span>
                         </div>
                     </div>
                 </div>
@@ -4049,6 +4167,27 @@ class AdminPanelManager {
                 }
             });
         });
+    }
+
+    withTimeout(promise, ms) {
+        let timer = null;
+        const timeout = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('ADMIN_CHECK_TIMEOUT')), ms);
+        });
+        return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+    }
+
+    // Firestore Timestamp, its cached {seconds} form, a number or a string; '—' when unknown.
+    formatAdminDate(value, withTime = false) {
+        let date = null;
+        if (value?.toDate) date = value.toDate();
+        else if (Number.isFinite(value?.seconds)) date = new Date(value.seconds * 1000);
+        else if (Number.isFinite(value?._seconds)) date = new Date(value._seconds * 1000);
+        else if (value) date = new Date(value);
+        if (!date || Number.isNaN(date.getTime())) return '—';
+        return withTime
+            ? date.toLocaleString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+            : date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
     escapeHtml(text) {

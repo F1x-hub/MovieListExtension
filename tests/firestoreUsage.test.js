@@ -4,6 +4,8 @@ const {
   getFirestoreUsage,
   getPacificDayStart,
   getUsageStatus,
+  hourlyDeltaTimeSeries,
+  labelDeltaTimeSeries,
   resetUsageCache,
 } = require("../functions/firestoreUsage");
 
@@ -126,7 +128,21 @@ function testPacificDayAndStatuses() {
   assert.strictEqual(getUsageStatus(90), "critical");
 }
 
+function testHourlyAndLabels() {
+  const start = new Date("2026-08-25T07:00:00.000Z");
+  const now = new Date("2026-08-25T09:30:00.000Z");
+  const series = [
+    { metric: { labels: { type: "QUERY" } }, points: [metricPoint("2026-08-25T07:01:00.000Z", 5), metricPoint("2026-08-25T08:00:00.000Z", 7), metricPoint("2026-08-25T09:10:00.000Z", 40)] },
+    { metric: { labels: { type: "LOOKUP" } }, points: [metricPoint("2026-08-25T08:30:00.000Z", 3)] },
+  ];
+  const hourly = hourlyDeltaTimeSeries(series, start, now);
+  assert.deepStrictEqual(hourly.map((bucket) => bucket.count), [12, 3, 40], "a point ending on the hour belongs to the hour before it");
+  assert.strictEqual(hourly[0].startAt, "2026-08-25T07:00:00.000Z");
+  assert.deepStrictEqual(labelDeltaTimeSeries(series), [{ labels: "type=QUERY", count: 52 }, { labels: "type=LOOKUP", count: 3 }]);
+}
+
 (async () => {
+  testHourlyAndLabels();
   await testUsageAggregation();
   await testUnavailableMetricDoesNotHideHealthyMetrics();
   testPacificDayAndStatuses();

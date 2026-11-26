@@ -713,6 +713,55 @@ class FirebaseManager {
     }
 
     /**
+     * Server-side count of a collection, optionally filtered by one string field equality.
+     * The bundled compat SDK has no `count()`, so this uses the Firestore REST aggregation
+     * endpoint with the user's ID token: the same security rules apply, it costs one read per
+     * thousand matching entries and downloads no document. Resolves to null when unavailable.
+     * @param {string} collectionId
+     * @param {{field: string, value: string}} [where]
+     * @returns {Promise<number|null>}
+     */
+    async countDocuments(collectionId, where = null) {
+        try {
+            if (!this.db) return null;
+            let query = this.db.collection(collectionId);
+            if (where) query = query.where(where.field, '==', where.value);
+            if (typeof query.count === 'function') {
+                const snapshot = await query.count().get();
+                return snapshot.data().count;
+            }
+
+            const user = this.getCurrentUser?.() || this.auth?.currentUser;
+            const projectId = typeof firebase !== 'undefined' ? firebase.app?.().options?.projectId : null;
+            if (!user?.getIdToken || !projectId) return null;
+
+            const structuredQuery = { from: [{ collectionId }] };
+            if (where) {
+                structuredQuery.where = {
+                    fieldFilter: { field: { fieldPath: where.field }, op: 'EQUAL', value: { stringValue: String(where.value) } }
+                };
+            }
+            const idToken = await user.getIdToken();
+            const response = await fetch(
+                `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:runAggregationQuery`,
+                {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ structuredAggregationQuery: { structuredQuery, aggregations: [{ alias: 'total', count: {} }] } })
+                }
+            );
+            if (!response.ok) return null;
+            const rows = await response.json();
+            const value = Array.isArray(rows) ? rows.find((row) => row?.result)?.result?.aggregateFields?.total?.integerValue : null;
+            const total = Number(value);
+            return Number.isFinite(total) ? total : null;
+        } catch (error) {
+            console.warn(`[FirebaseManager] Could not count ${collectionId}:`, error?.message || error);
+            return null;
+        }
+    }
+
+    /**
      * Removes profile-page and popup profile data so it does not outlive the session.
      */
     async clearProfileCaches() {

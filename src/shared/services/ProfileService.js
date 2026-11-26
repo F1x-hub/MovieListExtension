@@ -16,6 +16,11 @@ class ProfileService {
     }
 
     static RATINGS_SNAPSHOT_TTL_MS = 60 * 1000;
+    static RATINGS_STORE_PREFIX = 'profile_cache_ratings_';
+    static RATINGS_STORE_LIMIT = 6;
+    // Profile and Achievements show hundreds of rated films; their cards come from this
+    // browser's copy for this long before Firestore is asked again.
+    static MOVIE_LOCAL_MAX_AGE_MS = 12 * 60 * 60 * 1000;
     static MOVIE_FETCH_CONCURRENCY = 3;
 
     /**
@@ -30,20 +35,138 @@ class ProfileService {
             return cached.promise;
         }
 
-        const promise = this.db.collection('ratings')
-            .where('userId', '==', userId)
-            .get()
-            .then(snapshot => {
-                const ratings = [];
-                snapshot.forEach(doc => ratings.push({ id: doc.id, ...doc.data() }));
-                return ratings;
-            });
+        const promise = this.readUserRatings(userId);
         const entry = { promise, timestamp: Date.now() };
         this.userRatingsCache.set(userId, entry);
         promise.catch(() => {
             if (this.userRatingsCache.get(userId) === entry) this.userRatingsCache.delete(userId);
         });
         return promise;
+    }
+
+    /**
+     * Reading every rating of a user on each Home, Profile and Achievements visit cost
+     * hundreds of Firestore reads. A copy is kept in chrome.storage.local (prefix
+     * `profile_cache_`, so sign-out removes it). A later visit asks only for ratings whose
+     * `updatedAt` or `contentUpdatedAt` (a review text edit) is at or after the newest one
+     * seen, plus one server-side count; a count that does not match the merged copy
+     * (a deletion) means a full read, as before.
+     */
+    async readUserRatings(userId) {
+        const stored = await this.readStoredRatings(userId);
+        if (stored) {
+            try {
+                const synced = await this.syncStoredRatings(userId, stored);
+                if (synced) return synced;
+            } catch (error) {
+                console.warn('[ProfileService] Rating sync failed; reading all ratings:', error?.code || error?.message || error);
+            }
+        }
+        const snapshot = await this.db.collection('ratings').where('userId', '==', userId).get();
+        const ratings = [];
+        snapshot.forEach(doc => ratings.push({ id: doc.id, ...doc.data() }));
+        await this.saveStoredRatings(userId, ratings);
+        return ratings;
+    }
+
+    async syncStoredRatings(userId, stored) {
+        if (typeof this.firebaseManager?.countDocuments !== 'function') return null;
+        const since = firebase.firestore.Timestamp.fromMillis(stored.syncedAt);
+        const base = this.db.collection('ratings').where('userId', '==', userId);
+        const [changed, edited, total] = await Promise.all([
+            base.where('updatedAt', '>=', since).get(),
+            base.where('contentUpdatedAt', '>=', since).get(),
+            this.firebaseManager.countDocuments('ratings', { field: 'userId', value: userId })
+        ]);
+        if (!Number.isFinite(total)) return null;
+
+        const byId = new Map(stored.ratings.map(rating => [rating.id, rating]));
+        let changes = 0;
+        for (const snapshot of [changed, edited]) {
+            snapshot.forEach(doc => {
+                byId.set(doc.id, { id: doc.id, ...doc.data() });
+                changes += 1;
+            });
+        }
+        if (byId.size !== total) return null;
+        const ratings = [...byId.values()];
+        if (changes > 0) await this.saveStoredRatings(userId, ratings);
+        return ratings;
+    }
+
+    static ratingsStoreKey(userId) {
+        return `${ProfileService.RATINGS_STORE_PREFIX}${userId}`;
+    }
+
+    static timestampMillis(value) {
+        if (!value) return 0;
+        if (typeof value.toMillis === 'function') return value.toMillis();
+        if (Number.isFinite(value.seconds)) return value.seconds * 1000 + Math.floor((value.nanoseconds || 0) / 1e6);
+        const parsed = value instanceof Date ? value.getTime() : Date.parse(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    // Firestore Timestamps survive chrome.storage as {__ts: [seconds, nanoseconds]}.
+    static packRating(rating) {
+        const packed = {};
+        for (const [key, value] of Object.entries(rating)) {
+            packed[key] = value && typeof value.toMillis === 'function' && Number.isFinite(value.seconds)
+                ? { __ts: [value.seconds, value.nanoseconds || 0] }
+                : value;
+        }
+        return packed;
+    }
+
+    static unpackRating(rating) {
+        const unpacked = {};
+        for (const [key, value] of Object.entries(rating)) {
+            unpacked[key] = value && Array.isArray(value.__ts) && typeof firebase !== 'undefined'
+                ? new firebase.firestore.Timestamp(value.__ts[0], value.__ts[1])
+                : value;
+        }
+        return unpacked;
+    }
+
+    async readStoredRatings(userId) {
+        const storage = typeof chrome !== 'undefined' ? chrome.storage?.local : null;
+        if (!storage || !userId) return null;
+        try {
+            const key = ProfileService.ratingsStoreKey(userId);
+            const entry = (await storage.get([key]))[key];
+            if (!entry || entry.v !== 1 || !Array.isArray(entry.ratings) || !Number.isFinite(entry.syncedAt) || entry.syncedAt <= 0) return null;
+            return { syncedAt: entry.syncedAt, ratings: entry.ratings.map(ProfileService.unpackRating) };
+        } catch (error) {
+            console.warn('[ProfileService] Could not read stored ratings:', error);
+            return null;
+        }
+    }
+
+    async saveStoredRatings(userId, ratings) {
+        const storage = typeof chrome !== 'undefined' ? chrome.storage?.local : null;
+        if (!storage || !userId) return;
+        const syncedAt = ratings.reduce((latest, rating) => Math.max(
+            latest,
+            ProfileService.timestampMillis(rating.updatedAt),
+            ProfileService.timestampMillis(rating.contentUpdatedAt),
+            ProfileService.timestampMillis(rating.createdAt)
+        ), 0);
+        try {
+            const key = ProfileService.ratingsStoreKey(userId);
+            if (syncedAt <= 0) {
+                await storage.remove(key);
+                return;
+            }
+            await storage.set({ [key]: { v: 1, syncedAt, savedAt: Date.now(), ratings: ratings.map(ProfileService.packRating) } });
+            // Keep the copies of a few profiles only.
+            const all = await storage.get(null);
+            const entries = Object.entries(all)
+                .filter(([name]) => name.startsWith(ProfileService.RATINGS_STORE_PREFIX))
+                .sort((left, right) => (right[1]?.savedAt || 0) - (left[1]?.savedAt || 0));
+            const extra = entries.slice(ProfileService.RATINGS_STORE_LIMIT).map(([name]) => name);
+            if (extra.length) await storage.remove(extra);
+        } catch (error) {
+            console.warn('[ProfileService] Could not store ratings:', error);
+        }
     }
 
     /** Drops the shared ratings read, e.g. before an explicit profile reload. */
@@ -135,7 +258,7 @@ class ProfileService {
             // Films the page has already read cost no second read.
             const unknownIds = movieIds.filter(movieId => !knownMovies?.[movieId]);
             const cachedMovies = unknownIds.length > 0
-                ? await this.movieCacheService.getBatchCachedMovies(unknownIds)
+                ? await this.movieCacheService.getBatchCachedMovies(unknownIds, { localMaxAgeMs: ProfileService.MOVIE_LOCAL_MAX_AGE_MS })
                 : {};
             movieIds.forEach(movieId => { if (knownMovies?.[movieId]) cachedMovies[movieId] = knownMovies[movieId]; });
 

@@ -18,7 +18,11 @@ assert.ok(adminHtml.includes('class="sidebar-nav" aria-label="Разделы а�
 assert.ok(adminHtml.includes('id="adminSectionNav" style="display: none;"'), 'Admin nav must stay hidden before authorization');
 assert.ok(adminHtml.includes('id="adminError" role="alert" aria-live="assertive"'), 'Admin errors must be announced');
 assert.ok(adminHtml.includes('for="userSearchFilterInput"'), 'User search label must be associated');
-assert.ok(adminHtml.includes('for="userStatusFilterSelect"'), 'User status label must be associated');
+assert.ok(adminHtml.includes('id="userStatusTabs" role="group" aria-label="Статус аккаунта"'), 'User status tabs need an accessible group name');
+assert.ok(adminHtml.includes('data-user-status="pending" aria-pressed="false"'), 'User status tabs must expose their pressed state');
+assert.ok(adminHtml.includes('id="userDetailPanel" aria-label="Карточка пользователя"'), 'User card needs an accessible name');
+assert.ok(adminHtml.includes('id="adminSearchInput"') && adminHtml.includes('role="combobox"'), 'Admin search must be a labelled combobox');
+assert.ok(adminHtml.includes('data-target="overview" type="button" aria-current="page"'), 'The overview must be the default section');
 assert.ok(adminHtml.includes('id="user-page-size-select" class="page-size-select" aria-label="Строк на странице"'), 'Page size select needs an accessible name');
 assert.ok(adminHtml.includes('tabindex="0" role="region" aria-label="Таблица пользователей"'), 'Users table scroll region must be keyboard reachable');
 assert.ok(adminHtml.includes('id="usersCount">0 пользователей'), 'Users counter must start localized');
@@ -26,9 +30,20 @@ assert.ok(adminHtml.includes('id="usersCount">0 пользователей'), 'U
 assert.ok(adminJs.includes("confirmLabel: 'Удалить пользователя'"), 'User delete action must be localized');
 
 assert.ok(!adminJs.includes("addEventListener('mousedown'"), 'Admin controls must use click, not mousedown');
-const setupIndex = adminJs.indexOf('this.setupEventListeners();');
-const firstLoadIndex = adminJs.indexOf('await this.loadUsers();');
-assert.ok(setupIndex !== -1 && firstLoadIndex !== -1 && setupIndex < firstLoadIndex, 'Admin controls must bind before data loads');
+const initStart = adminJs.indexOf('async init()');
+const initBody = adminJs.slice(initStart, adminJs.indexOf('async waitForFirebase()', initStart));
+const setupIndex = initBody.indexOf('this.setupEventListeners();');
+const workspaceIndex = initBody.indexOf('this.initWorkspace();');
+assert.ok(setupIndex !== -1 && workspaceIndex !== -1 && setupIndex < workspaceIndex, 'Admin controls must bind before data loads');
+assert.ok(!/await this\.load(Users|Movies|Approvals)\(\)/.test(initBody), 'Opening the panel must not wait for every section in a row');
+const workspaceJs = fs.readFileSync(path.join(root, 'src/pages/admin/AdminWorkspace.js'), 'utf8');
+assert.ok(workspaceJs.includes('ensureSectionLoaded'), 'Sections must load when first shown');
+assert.ok(workspaceJs.includes('history.replaceState') && workspaceJs.includes("addEventListener('popstate'"), 'The open section must live in the URL hash');
+assert.ok(!workspaceJs.includes("addEventListener('mousedown'"), 'Admin workspace controls must use click, not mousedown');
+const adminServiceJs = fs.readFileSync(path.join(root, 'src/shared/services/AdminService.js'), 'utf8');
+const usersPageBody = adminServiceJs.slice(adminServiceJs.indexOf('async getUsersPage('), adminServiceJs.indexOf('async getUserActivityCounts('));
+assert.ok(!usersPageBody.includes("collection('ratings')"), 'The users page must not count ratings before it renders');
+assert.ok(!adminServiceJs.includes(".where('userId', '==', doc.id).get()"), 'Counting must never download every rating of a user');
 assert.ok(adminJs.includes('this.isAdmin = false;'), 'Admin access state must default to denied');
 assert.ok(adminJs.includes('setAdminAccessState(isAdmin)'), 'Admin shell visibility must follow authorization');
 assert.ok(adminJs.includes('this.setAdminAccessState(this.isAdmin);'), 'Loading completion must not reopen denied content');

@@ -581,11 +581,24 @@ checklist; `npm run test:visual-design` enforces much of it.
   are compared only over titles that have both scores. The title search filters `getRecentRatings` by
   `onlyMovieIds` from `findRatings`; the page passes `knownMovies`, so searching reads nothing.
   Local profile caches hold rendered fields only (no e-mail or admin flags), are bounded and are
-  cleared on sign-out. Uploads use versioned names, and the old object is deleted only after the
+  cleared on sign-out (every `profile_cache_*` key is removed). `ProfileService.loadUserRatings` keeps a
+  user's ratings in `profile_cache_ratings_<uid>` and later reads only `updatedAt` or `contentUpdatedAt`
+  (a review edit) at or after the newest seen, both indexed with `userId`, plus a server-side count;
+  any mismatch means the full read. Every write to a rating must set one of those two fields.
+  Profile and Achievements pass `localMaxAgeMs` to `getBatchCachedMovies`, which then serves compact
+  `slim_movie_<id>` copies (no credits, facts, frames; only actors and directors in `persons`) for 12 h;
+  a page that needs a dropped field must not use that option. Uploads use versioned names, and the old object is deleted only after the
   document points to the new one. A GIF becomes an animated WebP in the browser
   (`src/shared/utils/animatedWebp.js`, no encoder library) only when that is smaller.
 - Admin: hidden until the Firestore admin check passes; user-facing copy is Russian; TMDB→KP
-  mapping is inspect first, then confirm.
+  mapping is inspect first, then confirm («Подобрать» only fills the ID to inspect). `AdminWorkspace.js`
+  extends `AdminPanelManager` and owns routing (`#section` in the URL), first-show loading
+  (`ensureSectionLoaded`) and «Обзор»; `init()` must not await section data. The overview also
+  loads approvals, the ID queue, keys, Firestore usage and `getCommunityCounts`, because they feed
+  the menu counters. User counters come from `getUserActivityCounts` (aggregate `count()` only,
+  after the rows render); never count by downloading documents. The bundled compat SDK has no `count()`: `AdminService.countDocuments` falls back to the REST `runAggregationQuery` with the admin's ID token. Overview redraws are queued as a microtask, not `requestAnimationFrame`, which stalls in a background tab. `firestoreUsage` returns `reads.hourly` (Pacific day, by hour) and `reads.byLabel`; use them before guessing who spent the read quota. The «Эфир» card mirrors
+  `#liveNowCard` from `admin-live.js` and reads nothing itself. `body.admin-page-body` uses
+  `overflow-x: clip` so the sticky sidebar works.
 - Settings: `settings.js` loads render-blocking from `<head>` and applies the saved language from
   `localStorage['movieExtensionLanguage']` before the first paint. Without a saved language the UI
   follows the browser's locale when it exists, otherwise English.
@@ -593,7 +606,9 @@ checklist; `npm run test:visual-design` enforces much of it.
   `randomMarathons/current`, with admin actions in transactions; the function's `normalizePoster`
   matches the page's `PosterUrl` (`tests/randomMarathonFunction.test.cjs`).
 - Marathon history (`shared/utils/marathonHistory.js`) is counted on the client: items of every round
-  stay in `randomMarathons/current/items`, while the round document is overwritten. «watched» on an
+  stay in `randomMarathons/current/items`, while the round document is overwritten. Finished rounds are
+  immutable (the function refuses older rounds), so `loadMarathonItems` keeps them in
+  `profile_cache_marathon_items` and reads `roundId >=` the latest seen, in full once a day. «watched» on an
   item is the admin's mark for the company; that a person watched a film is their own rating from
   `selectedAt` to a week after `resolvedAt`. A film's score averages that round's bringers and those
   raters; one rated only by its own bringer says nothing about the company (`ratedByOthers`). Never show `userName` stored with a rating there: it can be the account's real name.
