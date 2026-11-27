@@ -41,6 +41,9 @@ class TMDBService {
     // Actors kept per title. TMDB lists every credited actor, often well over a
     // hundred; 30 used to cut off people whose page lists the title.
     static MAX_CAST = 150;
+    // The studio page's orders, and the votes a title needs to enter the rating order.
+    static COMPANY_SORTS = ['popular', 'newest', 'oldest', 'rating', 'title'];
+    static COMPANY_RATING_MIN_VOTES = 50;
 
     constructor() {
         this.baseUrl = tmdbConfig.BASE_URL;
@@ -792,6 +795,103 @@ class TMDBService {
                 ? Math.max(1, Math.ceil(totalResults / pageSize))
                 : Math.max(...responses.map(result => Number(result.data?.total_pages) || 1)),
             totalResults
+        };
+    }
+
+    /**
+     * One studio for the studio page: name, logo, country, headquarters, site and the
+     * parent company. Logos are kept as TMDB draws them; the page puts them on a light well.
+     * @param {number|string} companyId - TMDB company ID
+     * @param {{ signal?: AbortSignal|null }} [options]
+     * @returns {Promise<{tmdbId: number, name: string, logoUrl: string|null, originCountry: string, headquarters: string, homepage: string, description: string, parent: {tmdbId: number, name: string, logoUrl: string|null}|null}>}
+     */
+    async getCompanyDetails(companyId, { signal = null } = {}) {
+        const id = Number(companyId);
+        if (!Number.isSafeInteger(id) || id <= 0) throw new Error('TMDB company ID must be a positive integer');
+        const params = new URLSearchParams({ language: this.defaultLanguage });
+        const response = await this._fetchWithRotation(`${this.baseUrl}/company/${id}?${params}`, { method: 'GET', signal });
+        if (!response.ok) {
+            const error = new Error(`TMDB company request failed: HTTP ${response.status}`);
+            error.status = response.status;
+            throw error;
+        }
+        const data = await response.json();
+        const parent = data?.parent_company;
+        const homepage = typeof data?.homepage === 'string' && /^https?:\/\//i.test(data.homepage.trim()) ? data.homepage.trim() : '';
+        return {
+            tmdbId: Number(data?.id) || id,
+            name: String(data?.name || '').trim(),
+            logoUrl: this.buildImageUrl(data?.logo_path, 'w300') || null,
+            originCountry: String(data?.origin_country || '').trim().toUpperCase(),
+            headquarters: String(data?.headquarters || '').trim(),
+            homepage,
+            description: String(data?.description || '').trim(),
+            parent: parent && Number(parent.id) > 0 && String(parent.name || '').trim()
+                ? { tmdbId: Number(parent.id), name: String(parent.name).trim(), logoUrl: this.buildImageUrl(parent.logo_path, 'w185') || null }
+                : null
+        };
+    }
+
+    /**
+     * One page of a studio's films or series (`/discover` with `with_companies`), 20 a page.
+     * The rating order counts only titles with enough votes, so two votes cannot lead it;
+     * the oldest-first order leaves out titles without a date, which TMDB would put first.
+     * The title order is TMDB's: by the original title, whatever the language asked for.
+     * @param {Object} options
+     * @param {number|string} options.companyId
+     * @param {'movie'|'tv'} [options.mediaType='movie']
+     * @param {'popular'|'newest'|'oldest'|'rating'|'title'} [options.sort='popular']
+     * @param {number} [options.page=1]
+     * @param {AbortSignal|null} [options.signal]
+     * @returns {Promise<{items: Array<Object>, page: number, totalPages: number, totalResults: number}>}
+     */
+    async getCompanyTitlesPage(options = {}) {
+        const companyId = Number(options.companyId);
+        if (!Number.isSafeInteger(companyId) || companyId <= 0) throw new Error('TMDB company ID must be a positive integer');
+        const kind = options.mediaType === 'tv' ? 'tv' : 'movie';
+        const sort = TMDBService.COMPANY_SORTS.includes(options.sort) ? options.sort : 'popular';
+        const page = Math.min(500, Math.max(1, Number.parseInt(options.page, 10) || 1));
+        const dateField = kind === 'tv' ? 'first_air_date' : 'primary_release_date';
+        const sortBy = {
+            popular: 'popularity.desc',
+            newest: `${dateField}.desc`,
+            oldest: `${dateField}.asc`,
+            rating: 'vote_average.desc',
+            title: kind === 'tv' ? 'name.asc' : 'title.asc'
+        }[sort];
+        const params = new URLSearchParams({
+            language: this.defaultLanguage,
+            page: String(page),
+            sort_by: sortBy,
+            include_adult: 'false',
+            with_companies: String(companyId),
+            without_keywords: '198385,256466,155477,445,325693,159551'
+        });
+        if (sort === 'rating') params.set('vote_count.gte', String(TMDBService.COMPANY_RATING_MIN_VOTES));
+        if (sort === 'oldest') params.set(`${dateField}.gte`, '1870-01-01');
+
+        const response = await this._fetchWithRotation(`${this.baseUrl}/discover/${kind}?${params}`, { method: 'GET', signal: options.signal || null });
+        if (!response.ok) {
+            const error = new Error(`TMDB company titles request failed: HTTP ${response.status}`);
+            error.status = response.status;
+            throw error;
+        }
+        const data = await response.json();
+        const type = kind === 'tv' ? 'tv-series' : 'movie';
+        const items = (Array.isArray(data?.results) ? data.results : [])
+            .filter(item => item && item.id && item.adult !== true)
+            .map(item => ({
+                ...this.normalizeTmdbItem(kind === 'tv' ? { first_air_date: null, ...item } : item, type),
+                mediaType: kind,
+                type,
+                isTmdbOnly: true,
+                source: 'studio-tmdb'
+            }));
+        return {
+            items,
+            page: Number(data?.page) || page,
+            totalPages: Math.min(500, Math.max(1, Number(data?.total_pages) || 1)),
+            totalResults: Math.max(0, Number(data?.total_results) || 0)
         };
     }
 

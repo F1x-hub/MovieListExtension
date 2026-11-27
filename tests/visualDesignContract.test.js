@@ -31,6 +31,7 @@ const migrationGuardFiles = {
     // The shared rating dialog (RatingDialog.js); its rules moved here from movie-details.css.
     ratingDialog: 'src/shared/styles/rating-dialog.css',
     personDetails: 'src/pages/person-details/person-details.css',
+    studio: 'src/pages/studio/studio.css',
     live: 'src/pages/live/live.css',
     liveYoutubePlayer: 'src/pages/live/youtube-player.css',
     hdrezkaProbe: 'src/pages/hdrezka-probe/hdrezka-probe.css',

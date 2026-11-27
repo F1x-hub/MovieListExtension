@@ -2600,13 +2600,48 @@
     background: rgba(244, 244, 245, 0.95);
 }
 
+.production-company-pill[hidden] {
+    display: none;
+}
+
+/* A studio with a TMDB ID opens its studio page. */
+.production-company-pill--link {
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.production-company-pill--link:hover .production-company-name {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.production-company-pill--link:focus-visible,
+.production-company-more:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 2px;
+}
+
+/* «+N» shows the studios past the first six in place, «Свернуть» hides them. */
 .production-company-more {
-    font-size: var(--font-size-2xs);
+    font: inherit;
+    font-size: var(--font-size-xs);
     color: var(--theme-text-muted);
     font-weight: 500;
-    padding: 2px 6px;
+    padding: 3px 8px;
+    border: 1px solid var(--theme-border);
     border-radius: var(--radius-sm);
     background: rgba(255, 255, 255, 0.03);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.production-company-more:hover {
+    color: var(--theme-text-primary);
+    border-color: var(--theme-border-hover);
+}
+
+.light-theme .production-company-more {
+    background: rgba(9, 9, 11, 0.03);
 }
 
 /* Critic Ratings */

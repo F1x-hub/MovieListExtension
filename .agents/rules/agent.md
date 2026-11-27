@@ -587,6 +587,28 @@ checklist; `npm run test:visual-design` enforces much of it.
 - Awards (`AwardsParsingService`, `AwardsList`): a category link counts only inside its own
   ceremony, and the ceremony page (about 2 MB) loads only when its card scrolls into view.
 
+### Studio
+
+- `src/pages/studio/` opens one TMDB company (`studio.html?id=<company>`, `&media=tv` for the
+  series tab). The «Студии» row of Movie Details links there only for studios with a
+  `tmdbId` (`MetaRenderer.renderProductionCompanies`); «+N» is a button that shows the hidden
+  ones in place (`toggleProductionCompanies`, `data-action="toggle-production-companies"`).
+- Data: `TMDBService.getCompanyDetails` and `getCompanyTitlesPage` (`/discover` with
+  `with_companies`, 20 a page, no storage cache). The rating order needs
+  `COMPANY_RATING_MIN_VOTES` votes; the oldest-first order drops undated titles; the title
+  order is TMDB's, by original title (checked live on 2026-11-27: Russian titles come out of
+  order), so it is labelled «По оригинальному названию». The first
+  popular pages of both media give the counts, so the requested tab gives way to one with
+  titles, and the switch shows only when both have some. Sort key `studioTitlesSortV1`.
+- Cards stay TMDB-only like the catalogue (`HomeRenderer`, `MovieRatingsEnrichmentService`).
+  The user's scores follow the `data-movie-id` the enrichment writes: one batched
+  `getUserRatingsForMovies` per new set of IDs, drawn with `MovieCard.setUserRating`, which
+  keeps the score in `data-user-rating` so redrawn provider badges keep it. A rated title the
+  enrichment has not identified yet shows no score.
+- Country names come from `src/shared/data/countries.js` by a dynamic `import()` («США»);
+  Intl's names are only the fallback. Test: `tests/studioPage.test.mjs`, rig
+  `tests/e2e/specs/studio.spec.cjs` (the fake TMDB has studio 777).
+
 ### Popup, Profile, Admin, Settings and the rest
 
 - Popup: a 400×520 action frame plus a side-panel variant. The feed's observer root is

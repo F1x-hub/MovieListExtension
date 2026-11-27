@@ -731,6 +731,8 @@ class MovieDetailsManager {
                 this.deleteUserRating(ratingId);
             } else if (action === 'read-rating-review' && ratingId) {
                 this.openReviewReaderByRatingId(ratingId);
+            } else if (action === 'toggle-production-companies') {
+                this.toggleProductionCompanies(actionBtn);
             } else if (action === 'episode-rating-choice') {
                 e.preventDefault();
                 e.stopPropagation();
@@ -3407,7 +3409,9 @@ class MovieDetailsManager {
         const statusLabel = this.translateStatus(movie.status);
         const statusBadgeClass = this.getStatusBadgeClass(movie.status);
 
-        const productionCompaniesHtml = this.renderProductionCompanies(movie.productionCompanies);
+        const productionCompaniesHtml = this.renderProductionCompanies(movie.productionCompanies, {
+            isSeries: Boolean(movie.isSeries || ['tv-series', 'mini-series', 'animated-series', 'tv'].includes(movie.type))
+        });
         const criticRatingsHtml = this.renderCriticRatings(movie.criticRatings);
 
         const facts = Array.isArray(movie.facts)

@@ -90,11 +90,32 @@ function tvDetails(item) {
     };
 }
 
+// One invented studio for the studio page: its films are the Films row, its series the Series row.
+const STUDIO = { id: 777, name: 'Северная киностудия', headquarters: 'Мурманск', origin_country: 'RU', homepage: 'https://studio.example', logo_path: null, description: '', parent_company: null };
+
+/** A studio's titles in the order the page asked for, as TMDB sorts them. */
+function studioTitles(items, sortBy) {
+    const sorted = [...items];
+    const date = item => item.release_date || item.first_air_date || '';
+    const title = item => item.title || item.name || '';
+    if (sortBy === 'vote_average.desc') sorted.sort((a, b) => b.vote_average - a.vote_average);
+    else if (/date\.desc$/.test(sortBy)) sorted.sort((a, b) => date(b).localeCompare(date(a)));
+    else if (/date\.asc$/.test(sortBy)) sorted.sort((a, b) => date(a).localeCompare(date(b)));
+    else if (/^(title|name)\.asc$/.test(sortBy)) sorted.sort((a, b) => title(a).localeCompare(title(b), 'ru'));
+    return sorted;
+}
+
 /** Answers one TMDB URL. Anything not listed is an empty result, as for an obscure title. */
 function respond(tmdbUrl) {
     const url = new URL(tmdbUrl);
     const path = url.pathname.replace(/^\/3/, '');
     const pageNumber = url.searchParams.get('page') || 1;
+    if (path === `/company/${STUDIO.id}`) return STUDIO;
+    if (/^\/discover\/(movie|tv)$/.test(path) && url.searchParams.has('with_companies')) {
+        if (url.searchParams.get('with_companies') !== String(STUDIO.id)) return page([], pageNumber);
+        const items = path.endsWith('/tv') ? SECTIONS.series : SECTIONS.films;
+        return page(studioTitles(items, url.searchParams.get('sort_by')), pageNumber);
+    }
     if (path === '/trending/movie/week') return page(SECTIONS.featured, pageNumber);
     if (path === '/movie/now_playing') return page(SECTIONS.films, pageNumber);
     if (path === '/trending/tv/week') return page(SECTIONS.series, pageNumber);
@@ -166,4 +187,4 @@ function kinopoiskIdFor(tmdbId) {
     return 5000000 + Number(tmdbId);
 }
 
-module.exports = { SECTIONS, respond, posterSvg, kinopoiskMappings, kinopoiskIdFor };
+module.exports = { SECTIONS, STUDIO, respond, posterSvg, kinopoiskMappings, kinopoiskIdFor };

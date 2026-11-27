@@ -272,25 +272,74 @@ class MovieDetailsMetaRendererMethods {
         return 'default';
     }
 
-    renderProductionCompanies(companies) {
+    /**
+     * The «Студии» row. A studio with a TMDB ID links to its studio page (series open on
+     * the series tab); one without (a title known only from Kinopoisk) stays a plain label.
+     * Past the first six, «+N» shows the rest in place (`toggleProductionCompanies`).
+     * @param {Array<{tmdbId?: number, name: string, logoUrl?: string, originCountry?: string}>} companies
+     * @param {{ isSeries?: boolean }} [options]
+     */
+    renderProductionCompanies(companies, { isSeries = false } = {}) {
         if (!Array.isArray(companies) || companies.length === 0) return '';
         const valid = companies.filter(c => c && c.name && typeof c.name === 'string' && c.name.trim().length > 0);
         if (valid.length === 0) return '';
 
-        const visible = valid.slice(0, 6);
-        const remaining = valid.length - 6;
+        const limit = 6;
+        const remaining = valid.length - limit;
+        const label = (key, fallback, params = {}) => {
+            const value = typeof i18n !== 'undefined' ? i18n.get(`studio.${key}`) : null;
+            let text = value && value !== `studio.${key}` ? value : fallback;
+            Object.entries(params).forEach(([name, replacement]) => { text = text.replaceAll(`{${name}}`, String(replacement)); });
+            return text;
+        };
+
+        const pill = (c, index) => {
+            const name = this.escapeHtml(c.name);
+            const title = `${name}${c.originCountry ? ` (${this.escapeHtml(c.originCountry)})` : ''}`;
+            const extraAttrs = index >= limit ? ' hidden data-extra="true"' : '';
+            const inner = `
+                        ${c.logoUrl ? `<img src="${this.escapeHtml(c.logoUrl)}" alt="" class="production-company-logo" data-fallback="company-logo" loading="lazy" decoding="async">` : ''}
+                        <span class="production-company-name">${name}</span>`;
+            const tmdbId = Number(c.tmdbId);
+            if (Number.isSafeInteger(tmdbId) && tmdbId > 0) {
+                const href = `../studio/studio.html?id=${tmdbId}${isSeries ? '&amp;media=tv' : ''}`;
+                return `
+                    <a class="production-company-pill production-company-pill--link" href="${href}" title="${this.escapeHtml(label('row_open', '{name}: открыть страницу студии', { name: c.name }))}"${extraAttrs}>${inner}
+                    </a>`;
+            }
+            return `
+                    <span class="production-company-pill" title="${title}"${extraAttrs}>${inner}
+                    </span>`;
+        };
 
         return `
-            <div class="production-companies-list">
-                ${visible.map(c => `
-                    <span class="production-company-pill" title="${this.escapeHtml(c.name)}${c.originCountry ? ` (${this.escapeHtml(c.originCountry)})` : ''}">
-                        ${c.logoUrl ? `<img src="${this.escapeHtml(c.logoUrl)}" alt="${this.escapeHtml(c.name)}" class="production-company-logo" data-fallback="company-logo" loading="lazy" decoding="async">` : ''}
-                        <span class="production-company-name">${this.escapeHtml(c.name)}</span>
-                    </span>
-                `).join('')}
-                ${remaining > 0 ? `<span class="production-company-more">+${remaining}</span>` : ''}
+            <div class="production-companies-list" data-companies-expanded="false">
+                ${valid.map(pill).join('')}
+                ${remaining > 0 ? `<button type="button" class="production-company-more" data-action="toggle-production-companies" data-more-count="${remaining}" aria-expanded="false" aria-label="${this.escapeHtml(label('row_more', 'Показать ещё студии: {count}', { count: remaining }))}">+${remaining}</button>` : ''}
             </div>
         `;
+    }
+
+    /** «+N» shows the studios past the first six in place; pressed again, it hides them. */
+    toggleProductionCompanies(button) {
+        const list = button?.closest?.('.production-companies-list');
+        if (!list) return;
+        const expanded = list.dataset.companiesExpanded !== 'true';
+        list.dataset.companiesExpanded = String(expanded);
+        list.querySelectorAll('[data-extra="true"]').forEach(pill => { pill.hidden = !expanded; });
+        const count = Number(button.dataset.moreCount) || 0;
+        const text = key => {
+            const value = typeof i18n !== 'undefined' ? i18n.get(`studio.${key}`) : null;
+            return value && value !== `studio.${key}` ? value : null;
+        };
+        button.setAttribute('aria-expanded', String(expanded));
+        if (expanded) {
+            button.textContent = text('row_collapse') || 'Свернуть';
+            button.removeAttribute('aria-label');
+        } else {
+            button.textContent = `+${count}`;
+            button.setAttribute('aria-label', (text('row_more') || 'Показать ещё студии: {count}').replaceAll('{count}', String(count)));
+        }
     }
 
     renderCriticRatings(criticRatings) {

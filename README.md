@@ -32,7 +32,8 @@ lists, provider-aware playback, and Firebase synchronization in one interface.
 - Manage Rated, Watching, Watchlist, Favorites, bookmarks, and custom collections.
 - Open rich movie and person pages with credits, seasons, episodes, trailers,
   collections, ratings, related titles, and awards and nominations from every
-  ceremony Kinopoisk lists.
+  ceremony Kinopoisk lists; a studio in a film's credits opens its own page with
+  the films and series it made.
 - Resume series playback, track watched episodes, switch providers, and select a
   season or episode without losing the active playback context.
 - Use the optional local MediaPlayer torrent source picker for films and series without exposing
@@ -479,6 +480,7 @@ keeps npm-compatible three-component semver metadata.
 - The extension is called «Сеанс», «Screening» in English: in Chrome's extension list and toolbar (by Chrome's language, through _locales) and in page titles, the popup, the sign-in window, the live channel and the admin panel (by the extension's language). The README is renamed too. MovieList Hub and MovieListSetup.exe keep their names, since that is how the Windows program is installed.
 - Player: the colours of the playing picture spread softly behind the player window, like YouTube's ambient mode, on every source. Videos of the film page are drawn directly, provider frames send a small copy of their picture, and a picture that cannot be read (a protected stream, a player nested deeper) is taken from a capture of the tab, which needs Chrome's access to all sites: the player menu then says «Нужен доступ» under «Подсветка», and choosing «Вкл» asks Chrome for it once. The window and its controls stay grey; the light goes out when the player is minimised, hidden or full screen, and the choice is kept on this computer only.
 - Profile: «Статистика» has a «Страны» section between «Что смотрю» and the favourite actors: a world map shaded by how many rated films and series came from each country, the countries listed like the genres, and the same films panel a genre opens (your scores by value, «Другие в расширении», orders, posters and «Страна в каталоге»). The map is drawn from Natural Earth outlines shipped with the extension, with no map service; countries too small for it are small squares, and the USSR or Yugoslavia are listed under the map instead of being handed to a present country. Country names from Kinopoisk and TMDB are now read as one country however they are spelled («США» and «United States of America», «Германия» and «Германия (ФРГ)»), so «Путешественник» counts each country once: its number can go down, while earned levels stay.
+- Studio page: the studios in a film's or series' «Студии» row are links to a page of their own with the logo, country, headquarters, parent company and site, and the studio's films and series from TMDB with a films/series switch, five orders (popularity, newest, oldest, rating from 50 votes, original title) and «Показать ещё». A series opens on the series tab. Posters carry the user's own score once the card knows its Kinopoisk ID. «+N» after the first six studios now shows the rest in place instead of only counting them.
 
 ### Fixes
 

@@ -2,7 +2,7 @@ export const locales = {
     en: {
         app: {
             name: 'Screening',
-            titles: { achievements: 'Achievements — Screening', bookmarks: 'Bookmarks — Screening', search: 'Search — Screening', movie: 'Film — Screening', person: 'Person — Screening', profile: 'Profile — Screening' }
+            titles: { achievements: 'Achievements — Screening', bookmarks: 'Bookmarks — Screening', search: 'Search — Screening', movie: 'Film — Screening', person: 'Person — Screening', studio: 'Studio — Screening', profile: 'Profile — Screening' }
         },
         player: {
             diagnostics_no_data: 'No data', diagnostics_ms: 'ms', diagnostics_qoe_sessions: 'Measured sessions',
@@ -3089,6 +3089,47 @@ export const locales = {
         character_names: {
             original_title: "Original: {name}"
         },
+        studio: {
+            page_title: "Studio",
+            loading: "Loading the studio...",
+            kind: "Studio",
+            logo_alt: "{name} logo",
+            fact_headquarters: "Headquarters",
+            fact_parent: "Parent company",
+            fact_site: "Website",
+            fact_catalog: "In the catalogue",
+            and: "and",
+            count_movies: { one: "{count} film", other: "{count} films" },
+            count_tv: { one: "{count} series", other: "{count} series" },
+            titles_heading: "The studio's films and series",
+            media_label: "What to show",
+            media_movie: "Films",
+            media_tv: "Series",
+            sort_label: "Sort",
+            sort_popular: "Most popular",
+            sort_newest: "Newest first",
+            sort_oldest: "Oldest first",
+            sort_rating: "Highest rated",
+            sort_title: "Original title (A–Z)",
+            rating_note: "Only titles with at least {count} TMDB votes are ranked by rating.",
+            show_more: "Show {count} more",
+            loading_more: "Loading...",
+            retry: "Retry",
+            back: "Back",
+            list_error: "TMDB did not return this list. Try again.",
+            empty_list: "Nothing here yet.",
+            empty_rating: "No title of this studio has enough votes to be ranked.",
+            empty_studio: "TMDB lists no films or series for this studio.",
+            error_title: "The studio could not be opened",
+            error_text: "TMDB did not answer. Try again a little later.",
+            error_invalid_title: "Wrong studio link",
+            error_invalid_text: "The link has no studio number. Open the studio from a film page.",
+            error_not_found_title: "Studio not found",
+            error_not_found_text: "TMDB has no studio with this number.",
+            row_open: "{name}: open the studio page",
+            row_more: "Show {count} more studios",
+            row_collapse: "Show less"
+        },
         awards: {
             win: "Win",
             nomination: "Nomination",
@@ -3103,7 +3144,7 @@ export const locales = {
     ru: {
         app: {
             name: 'Сеанс',
-            titles: { achievements: 'Достижения — Сеанс', bookmarks: 'Закладки — Сеанс', search: 'Поиск — Сеанс', movie: 'Фильм — Сеанс', person: 'Персона — Сеанс', profile: 'Профиль — Сеанс' }
+            titles: { achievements: 'Достижения — Сеанс', bookmarks: 'Закладки — Сеанс', search: 'Поиск — Сеанс', movie: 'Фильм — Сеанс', person: 'Персона — Сеанс', studio: 'Студия — Сеанс', profile: 'Профиль — Сеанс' }
         },
         player: {
             diagnostics_no_data: 'Нет данных', diagnostics_ms: 'мс', diagnostics_qoe_sessions: 'Сессий с измерением',
@@ -6295,6 +6336,47 @@ export const locales = {
         },
         character_names: {
             original_title: "Оригинал: {name}"
+        },
+        studio: {
+            page_title: "Студия",
+            loading: "Загружаем студию...",
+            kind: "Студия",
+            logo_alt: "Логотип {name}",
+            fact_headquarters: "Штаб-квартира",
+            fact_parent: "Материнская компания",
+            fact_site: "Сайт",
+            fact_catalog: "В каталоге",
+            and: "и",
+            count_movies: { one: "{count} фильм", few: "{count} фильма", many: "{count} фильмов", other: "{count} фильма" },
+            count_tv: { one: "{count} сериал", few: "{count} сериала", many: "{count} сериалов", other: "{count} сериала" },
+            titles_heading: "Фильмы и сериалы студии",
+            media_label: "Что показать",
+            media_movie: "Фильмы",
+            media_tv: "Сериалы",
+            sort_label: "Сортировка",
+            sort_popular: "По популярности",
+            sort_newest: "Сначала новые",
+            sort_oldest: "Сначала старые",
+            sort_rating: "По оценке",
+            sort_title: "По оригинальному названию",
+            rating_note: "По оценке сортируются только тайтлы, у которых на TMDB не меньше {count} голосов.",
+            show_more: "Показать ещё {count}",
+            loading_more: "Загружаем...",
+            retry: "Повторить",
+            back: "Назад",
+            list_error: "TMDB не вернул этот список. Попробуйте ещё раз.",
+            empty_list: "Здесь пока ничего нет.",
+            empty_rating: "Ни у одного тайтла студии нет столько голосов, чтобы сортировать по оценке.",
+            empty_studio: "На TMDB у этой студии нет ни фильмов, ни сериалов.",
+            error_title: "Студию не удалось открыть",
+            error_text: "TMDB не ответил. Попробуйте ещё раз чуть позже.",
+            error_invalid_title: "Неверная ссылка на студию",
+            error_invalid_text: "В ссылке нет номера студии. Откройте студию со страницы фильма.",
+            error_not_found_title: "Студия не найдена",
+            error_not_found_text: "На TMDB нет студии с таким номером.",
+            row_open: "{name}: открыть страницу студии",
+            row_more: "Показать ещё студии: {count}",
+            row_collapse: "Свернуть"
         },
         awards: {
             win: "Победа",

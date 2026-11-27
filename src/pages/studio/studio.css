@@ -1,0 +1,320 @@
+/* Studio page: a studio and the films and series it made.
+   The hero follows the person page; the grid holds the shared compact movie cards. */
+.studio-page-container {
+    max-width: 1280px;
+    margin: 80px auto 64px;
+    padding: 0 24px;
+    min-height: calc(100vh - 180px);
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.studio-page-container [hidden] {
+    display: none !important;
+}
+
+.studio-content {
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+}
+
+.studio-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* ==========================================
+   HERO
+   ========================================== */
+.studio-hero {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 32px;
+    align-items: start;
+    padding: 24px;
+    background: var(--ui-color-surface-card);
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--radius-xl);
+}
+
+/* TMDB studio marks are drawn for light backgrounds: the same light plate as the
+   studio row of a film page, in both themes. */
+.studio-hero__logo-well {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    aspect-ratio: 3 / 2;
+    box-sizing: border-box;
+    padding: 20px;
+    border-radius: var(--radius-lg);
+    background: rgba(244, 244, 245, 0.95);
+    overflow: hidden;
+}
+
+.studio-hero__logo-well--text {
+    background: var(--ui-color-surface-muted);
+}
+
+.studio-hero__logo {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.studio-hero__logo-text {
+    color: var(--ui-color-content);
+    font-size: var(--font-size-xl);
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.studio-hero__info {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+    padding-top: 4px;
+}
+
+.studio-hero__names {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.studio-hero__name {
+    margin: 0;
+    color: var(--ui-color-content);
+    font-size: var(--font-size-3xl);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+}
+
+.studio-hero__kind {
+    margin: 0;
+    color: var(--ui-color-content-muted);
+    font-size: var(--font-size-md);
+    line-height: 1.5;
+}
+
+.studio-hero__facts {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 8px 24px;
+    margin: 0;
+    font-size: var(--font-size-md);
+    line-height: 1.45;
+}
+
+.studio-hero__facts dt {
+    color: var(--ui-color-content-subtle);
+}
+
+.studio-hero__facts dd {
+    margin: 0;
+    color: var(--ui-color-content);
+    overflow-wrap: anywhere;
+}
+
+.studio-hero__link {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: var(--ui-color-border-hover);
+    text-underline-offset: 2px;
+}
+
+.studio-hero__link:hover {
+    text-decoration-color: currentColor;
+}
+
+.studio-hero__link:focus-visible {
+    outline: 2px solid var(--ui-color-interactive);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+.studio-hero__description {
+    margin: 0;
+    max-width: 72ch;
+    color: var(--ui-color-content-muted);
+    font-size: var(--font-size-md);
+    line-height: 1.55;
+}
+
+/* ==========================================
+   TITLES
+   ========================================== */
+.studio-titles {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.studio-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--ui-color-border);
+}
+
+.studio-media {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.studio-media__choice {
+    min-width: 72px;
+}
+
+.studio-media__count {
+    color: var(--ui-color-content-subtle);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+
+.studio-sort {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    margin-left: auto;
+}
+
+.studio-sort__label {
+    flex: 0 0 auto;
+    color: var(--ui-color-content-subtle);
+    font-size: var(--font-size-sm);
+}
+
+.studio-sort .sort-control {
+    width: 220px;
+}
+
+.studio-note,
+.studio-status {
+    margin: 0;
+    color: var(--ui-color-content-subtle);
+    font-size: var(--font-size-sm);
+}
+
+.studio-status:empty {
+    display: none;
+}
+
+.studio-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 16px;
+}
+
+.studio-grid .movie-card-component {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    flex-shrink: 1;
+}
+
+.studio-skeleton {
+    aspect-ratio: 2 / 3;
+    border-radius: var(--radius-lg);
+    background: var(--ui-color-surface-muted);
+}
+
+.studio-empty {
+    margin: 0;
+    padding: 32px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--radius-lg);
+    background: var(--ui-color-surface-card);
+    color: var(--ui-color-content-subtle);
+    font-size: var(--font-size-md);
+    text-align: center;
+}
+
+.studio-more {
+    align-self: center;
+}
+
+/* ==========================================
+   ERROR
+   ========================================== */
+.studio-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 64px 24px;
+    text-align: center;
+}
+
+.studio-error__title {
+    margin: 0;
+    color: var(--ui-color-content);
+    font-size: var(--font-size-xl);
+    font-weight: 600;
+}
+
+.studio-error__text {
+    margin: 0;
+    max-width: 48ch;
+    color: var(--ui-color-content-muted);
+    font-size: var(--font-size-md);
+}
+
+.studio-error__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+@media (width < 640px) {
+    .studio-page-container {
+        margin-top: 72px;
+        padding: 0 16px;
+    }
+
+    .studio-hero {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 20px;
+        padding: 16px;
+    }
+
+    .studio-hero__logo-well {
+        width: 160px;
+    }
+
+    .studio-sort {
+        width: 100%;
+        margin-left: 0;
+    }
+
+    .studio-sort .sort-control,
+    .studio-sort select {
+        flex: 1 1 auto;
+        width: 100%;
+    }
+
+    .studio-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    }
+}

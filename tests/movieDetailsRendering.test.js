@@ -665,7 +665,9 @@ assert(htmlWithCompanies.includes('Warner Bros. Pictures'), 'Must render company
 assert(htmlWithCompanies.includes('Syncopy'), 'Must render company without logo');
 assert(htmlWithCompanies.includes('data-fallback="company-logo"'), 'Company logo must use data-fallback="company-logo"');
 assert(!htmlWithCompanies.includes('onerror='), 'Must NOT have inline onerror on company logos');
-assert(htmlWithCompanies.includes('class="production-company-more">+2</span>'), 'Must display +2 overflow badge for >6 companies');
+assert(/<button type="button" class="production-company-more" data-action="toggle-production-companies" data-more-count="2" aria-expanded="false"[^>]*>\+2<\/button>/.test(htmlWithCompanies), 'Must display a +2 button for >6 companies');
+assert.equal((htmlWithCompanies.match(/data-extra="true"/g) || []).length, 2, 'Studios past the first six are rendered hidden, ready to show in place');
+assert(htmlWithCompanies.includes('href="../studio/studio.html?id=1"'), 'A studio with a TMDB ID links to its studio page');
 
 const movieWithNoCompanies = {
     kinopoiskId: 3004,

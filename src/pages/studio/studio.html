@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="app.titles.studio">Студия — Сеанс</title>
+    <link rel="stylesheet" href="../../shared/styles/common.css">
+    <script defer src="../../shared/components/NumberStepper.js"></script>
+    <link rel="stylesheet" href="../../shared/styles/theme.css">
+    <link rel="stylesheet" href="../../shared/styles/components.css">
+    <link rel="stylesheet" href="../../shared/styles/navigation.css">
+    <link rel="stylesheet" href="../../shared/styles/movie-card.css">
+    <link rel="stylesheet" href="../../shared/styles/poster-fixes.css">
+    <link rel="stylesheet" href="../../shared/styles/report-widget.css">
+    <link rel="stylesheet" href="../../shared/styles/filter-controls.css">
+    <link rel="stylesheet" href="studio.css">
+    <script src="../../shared/services/ThemeService.js"></script>
+    <script src="../../shared/services/SeasonalThemeService.js"></script>
+    <link rel="icon" type="image/png" sizes="16x16" href="../../shared/assets/icons/app/favicon16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="../../shared/assets/icons/app/favicon32.png">
+</head>
+<body>
+    <main class="studio-page-container" id="studioMain">
+        <div class="loading-state app-loader app-loader--page" id="studioLoading" role="status" aria-live="polite">
+            <div class="app-loader__indicator" aria-hidden="true"></div>
+            <h3 class="loading-title app-loader__label" data-i18n="studio.loading">Загружаем студию...</h3>
+        </div>
+
+        <div class="studio-error" id="studioError" role="alert" hidden>
+            <h2 class="studio-error__title" id="studioErrorTitle" data-i18n="studio.error_title">Студию не удалось открыть</h2>
+            <p class="studio-error__text" id="studioErrorText" data-i18n="studio.error_text">TMDB не ответил. Попробуйте ещё раз чуть позже.</p>
+            <div class="studio-error__actions">
+                <button type="button" class="btn btn-secondary" id="studioErrorBack" data-i18n="studio.back">Назад</button>
+                <button type="button" class="btn btn-primary" id="studioErrorRetry" data-i18n="studio.retry">Повторить</button>
+            </div>
+        </div>
+
+        <div class="studio-content" id="studioContent" hidden>
+            <section class="studio-hero" aria-labelledby="studioName">
+                <div class="studio-hero__logo-well" id="studioLogoWell">
+                    <img class="studio-hero__logo" id="studioLogo" alt="" decoding="async" hidden>
+                    <span class="studio-hero__logo-text" id="studioLogoText" aria-hidden="true"></span>
+                </div>
+                <div class="studio-hero__info">
+                    <div class="studio-hero__names">
+                        <h1 class="studio-hero__name" id="studioName"></h1>
+                        <p class="studio-hero__kind" id="studioKind"></p>
+                    </div>
+                    <dl class="studio-hero__facts" id="studioFacts"></dl>
+                    <p class="studio-hero__description" id="studioDescription" hidden></p>
+                </div>
+            </section>
+
+            <section class="studio-titles" aria-labelledby="studioTitlesHeading">
+                <h2 class="studio-visually-hidden" id="studioTitlesHeading" data-i18n="studio.titles_heading">Фильмы и сериалы студии</h2>
+                <div class="studio-toolbar">
+                    <div class="studio-media filter-choices" role="group" id="studioMedia" aria-label="Что показать" data-i18n="[aria-label]studio.media_label">
+                        <button type="button" class="filter-choice studio-media__choice" data-media="movie" aria-pressed="false">
+                            <span data-i18n="studio.media_movie">Фильмы</span>
+                            <span class="studio-media__count" data-count-for="movie"></span>
+                        </button>
+                        <button type="button" class="filter-choice studio-media__choice" data-media="tv" aria-pressed="false">
+                            <span data-i18n="studio.media_tv">Сериалы</span>
+                            <span class="studio-media__count" data-count-for="tv"></span>
+                        </button>
+                    </div>
+                    <label class="studio-sort" for="studioSort">
+                        <span class="studio-sort__label" data-i18n="studio.sort_label">Сортировка</span>
+                        <select id="studioSort">
+                            <option value="popular" data-i18n="studio.sort_popular">По популярности</option>
+                            <option value="newest" data-i18n="studio.sort_newest">Сначала новые</option>
+                            <option value="oldest" data-i18n="studio.sort_oldest">Сначала старые</option>
+                            <option value="rating" data-i18n="studio.sort_rating">По оценке</option>
+                            <option value="title" data-i18n="studio.sort_title">По оригинальному названию</option>
+                        </select>
+                    </label>
+                </div>
+                <p class="studio-note" id="studioNote" hidden></p>
+                <div class="studio-grid" id="studioGrid" aria-busy="false"></div>
+                <p class="studio-empty" id="studioEmpty" hidden></p>
+                <p class="studio-status" id="studioStatus" role="status" aria-live="polite"></p>
+                <button type="button" class="btn btn-secondary studio-more" id="studioMore" hidden></button>
+            </section>
+        </div>
+    </main>
+
+    <script defer src="../../../libs/firebase-app-compat.js"></script>
+    <script defer src="../../../libs/firebase-auth-compat.js"></script>
+    <script defer src="../../../libs/firebase-firestore-compat.js"></script>
+    <script defer src="../../shared/firestore.js"></script>
+    <script defer src="../../shared/services/UserService.js"></script>
+    <script defer src="../../shared/services/QuotaTrackerService.js"></script>
+    <script defer src="../../shared/config/kinopoisk.config.js"></script>
+    <script defer src="../../shared/config/rating.config.js"></script>
+    <script defer src="../../shared/services/ExternalRatingSync.js"></script>
+    <script defer src="../../shared/services/RatingService.js"></script>
+    <script defer src="../../shared/utils/MediaClassifier.js"></script>
+    <script defer src="../../shared/services/TMDBService.js"></script>
+    <script defer src="../../shared/services/KinopoiskGraphqlService.js"></script>
+    <script defer src="../../shared/services/KinopoiskService.js"></script>
+    <script defer src="../../shared/services/KinopoiskPersonHtmlService.js"></script>
+    <script defer src="../../shared/services/KinopoiskRatingParsingService.js"></script>
+    <script defer src="../../shared/services/ImdbParsingService.js"></script>
+    <script defer src="../../shared/services/MovieRatingsEnrichmentService.js"></script>
+    <script defer src="../../shared/errors/AppError.js"></script>
+    <script defer src="../../shared/errors/ErrorRegistry.js"></script>
+    <script defer src="../../shared/errors/modules/ProviderErrorModules.js"></script>
+    <script defer src="../../shared/errors/ErrorNormalizer.js"></script>
+    <script defer src="../../shared/errors/ErrorPresentation.js"></script>
+    <script defer src="../../shared/errors/ErrorDialog.js"></script>
+    <script defer src="../../shared/utils/Utils.js"></script>
+    <script defer src="../../shared/utils/IconUtils.js"></script>
+    <script defer src="../../shared/utils/Icons.js"></script>
+    <script defer src="../../shared/components/BackToTop.js"></script>
+    <script defer src="../../shared/components/ConfirmDialog.js"></script>
+    <script defer src="../../shared/components/Navigation.js"></script>
+    <script defer src="../../shared/components/MovieCard.js"></script>
+    <script defer src="../home/HomeMovieNavigationService.js"></script>
+    <script defer src="../home/HomeRenderer.js"></script>
+    <script type="module" src="../../shared/i18n/I18n.js"></script>
+    <script defer src="../../shared/components/SortControl.js"></script>
+    <script defer src="studio.js"></script>
+    <script defer src="../../shared/components/ReportWidget.js"></script>
+</body>
+</html>

@@ -189,12 +189,41 @@ class MovieCard {
         return `
             ${providerBadge('КП', kp, 'mc-badge-kp', 'Кинопоиска', showSkeleton || kpPending, kpUnavailable || showUnavailable)}
             ${providerBadge('IMDb', imdb, 'mc-badge-imdb', 'IMDb', showSkeleton || imdbPending, imdbUnavailable || showUnavailable)}
-            ${user > 0 ? `
+            ${this.renderUserRatingBadge(user)}
+        `;
+    }
+
+    /** The signed-in user's own score, beside the provider badges; nothing for no score. */
+    static renderUserRatingBadge(value) {
+        const user = this.normalizeRating(value);
+        if (user <= 0) return '';
+        return `
                 <span class="mc-badge mc-badge-user" title="${window.i18n?.get('movie_card.my_rating') || 'Моя оценка'}: ${this.formatRating(user)}">
                     <span class="mc-badge-star"><svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span> ${this.formatRating(user)}
                 </span>
-            ` : ''}
-        `;
+            `;
+    }
+
+    /**
+     * Puts the user's score on a card that is already drawn (a card that learns its
+     * Kinopoisk ID later). The score stays in `data-user-rating`, so the provider badges
+     * redrawn by `updateCompactRatings` keep it.
+     * @param {HTMLElement} card
+     * @param {number} value - 0 removes the badge
+     * @returns {boolean} whether the card has a badge row to show it in
+     */
+    static setUserRating(card, value) {
+        if (!card?.dataset) return false;
+        const user = this.normalizeRating(value);
+        if (user > 0) card.dataset.userRating = String(user);
+        else delete card.dataset.userRating;
+        const overlay = card.querySelector?.('.mc-badges-overlay');
+        if (!overlay) return false;
+        const current = overlay.querySelector('.mc-badge-user');
+        if (current && user > 0 && current.textContent.trim().endsWith(String(this.formatRating(user)))) return true;
+        current?.remove();
+        if (user > 0) overlay.insertAdjacentHTML('beforeend', this.renderUserRatingBadge(user));
+        return true;
     }
 
     static updateCompactRatings(card, ratings = {}) {
