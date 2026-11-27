@@ -307,6 +307,29 @@ arrows comes back. `scrollbar-width: none` (a row that shows no bar, such as tab
 declarations in `content-scripts/player-cleaner.js`, because our stylesheets do not
 load there; `npm run test:visual-design` keeps the copy identical.
 
+### Cursors
+
+The extension draws its own cursors in the standard shapes people know: an arrow, a
+pointing hand over anything clickable, and a text bar. Each is a thin skeleton under a
+thick round stroke, so no edge is sharp, at 28px (Chrome hides cursors over 32px near its
+own interface). The hotspot is the arrow's tip, the fingertip and the bar's middle.
+High-contrast modes (`forced-colors`, `prefers-contrast: more`) get the system cursors
+back. Settings → General → «Курсор» turns them off and sets the variant, size (24–32px)
+and roundness; `src/shared/services/CursorService.js` draws the images from those choices
+and overrides the variables in one `<style>`, live on every open page. The default set in
+`cursors.css` must equal the service's defaults (`tests/cursorService.test.cjs`); a new
+variant is one more entry in the service's `VARIANTS` and one more card in Settings.
+The default images live only in
+`src/shared/styles/cursors.css`, as `--cursor-default`, `--cursor-pointer` and
+`--cursor-text`; pages get them through `common.css`, and a page without `common.css`
+links the file. Elsewhere write `cursor: var(--cursor-pointer, pointer)` (or the
+`default`/`text` pair), never the bare keyword; the keyword stays the fallback where
+the file is not loaded, such as inside provider frames. Each theme has its own ink:
+light arrow with a dark edge in `.dark-theme`, the reverse in `.light-theme`; player
+surfaces keep the dark-theme ink in both themes. Other system cursors (grab,
+not-allowed, wait, resize, zoom) stay as they are. `npm run test:visual-design` checks
+the rule.
+
 ### Type scale
 
 Font sizes come from one scale in `common.css`; write the token, not a size.

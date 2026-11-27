@@ -345,7 +345,7 @@ body.player-modal-open {
     background: transparent;
     border: 1px solid var(--theme-border);
     border-radius: var(--radius-md, 8px);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .watch-room-member__role-action:hover:not(:disabled) {
@@ -424,7 +424,7 @@ body.player-modal-open {
     background: transparent;
     border: 1px solid var(--ui-color-border);
     border-radius: var(--ui-control-radius, 8px);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .watch-room-invite-popover__button:hover:not(:disabled) {
@@ -466,7 +466,7 @@ body.player-modal-open {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--theme-border);
     border-radius: var(--radius-md, 8px);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: color 160ms ease, background-color 160ms ease,
         border-color 160ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
@@ -756,7 +756,7 @@ body.player-modal-open {
     font-size: var(--font-size-sm, 13px);
     font-weight: 500;
     text-overflow: ellipsis;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: border-color 160ms ease;
 }
 
@@ -846,7 +846,7 @@ body.player-modal-open {
     border-radius: var(--radius-md, 8px);
     font-size: var(--font-size-sm, 13px);
     font-weight: 500;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: color 160ms ease, background-color 160ms ease,
         border-color 160ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
     font-family: var(--font-family);
@@ -1028,7 +1028,7 @@ body.player-modal-open {
     border-radius: var(--radius-md, 8px);
     background-color: color-mix(in srgb, var(--theme-text-primary) 88%, transparent);
     border: none;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1334,7 +1334,7 @@ body.player-modal-open {
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
     border-radius: var(--radius-md, 8px);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1), border-color 180ms ease, box-shadow 180ms ease;
     user-select: none;
     animation: restoreDockIn 220ms cubic-bezier(0.23, 1, 0.32, 1) both;
@@ -1364,7 +1364,7 @@ body.player-modal-open {
     background: none;
     border: 0;
     border-radius: var(--radius-md, 8px);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .restore-player-btn__main:focus-visible,
@@ -1450,7 +1450,7 @@ body.player-modal-open {
     align-items: center;
     justify-content: center;
     font-size: var(--font-size-md, 14px);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color 160ms ease, color 160ms ease;
     margin-left: 4px;
     padding: 0;
@@ -1584,7 +1584,7 @@ body.player-modal-open {
     font-weight: 600;
     padding: 6px 14px;
     border-radius: var(--radius-md, 8px);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .player-autonext-prompt__btn-cancel {
@@ -1593,7 +1593,7 @@ body.player-modal-open {
     font-weight: 500;
     padding: 6px 12px;
     border-radius: var(--radius-md, 8px);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 @media (max-width: 480px) {
@@ -1688,7 +1688,7 @@ body.player-modal-open {
     border: none;
     border-radius: var(--radius-md, 8px);
     color: var(--theme-text-secondary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: color 140ms ease, background 140ms ease;
 }
 
@@ -1743,7 +1743,7 @@ body.player-modal-open {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: var(--theme-text-secondary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
 }
 
@@ -1791,7 +1791,7 @@ body.player-modal-open {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: var(--theme-text-primary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
@@ -1923,7 +1923,7 @@ body.player-modal-open {
     font-family: var(--font-family);
     font-size: var(--font-size-xs, 12px);
     font-weight: 600;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
 }
 
@@ -1950,7 +1950,7 @@ body.player-modal-open {
     height: 40px; min-height: 40px; padding: 0 14px; border: 1px solid var(--ui-color-border);
     border-radius: var(--radius-md, 8px); color: var(--ui-color-content); background: var(--ui-color-surface);
     font-family: var(--font-family, sans-serif); font-size: var(--font-size-md, 14px); font-weight: 600; line-height: 20px;
-    letter-spacing: normal; text-decoration: none; white-space: nowrap; cursor: pointer;
+    letter-spacing: normal; text-decoration: none; white-space: nowrap; cursor: var(--cursor-pointer, pointer);
 }
 .source-toolbar .watch-entry-button[hidden], .watch-source-popover[hidden] { display: none; }
 .source-toolbar .watch-entry-button:hover:not(:disabled),
@@ -1987,7 +1987,7 @@ body.player-modal-open {
 .player-diagnostics-status { min-height: 1.5em; color: var(--ui-color-content-muted); }
 .player-diagnostics-summary { display: grid; gap: 10px; margin: 16px 0; }
 .player-diagnostics-summary p { margin: 0; overflow-wrap: anywhere; }
-.player-diagnostics-dialog summary { cursor: pointer; padding: 8px 0; }
+.player-diagnostics-dialog summary { cursor: var(--cursor-pointer, pointer); padding: 8px 0; }
 .player-shortcut-help { position: absolute; z-index: 40; inset: 20% 10% auto; padding: 16px; border-radius: var(--radius-lg, 12px); background: rgba(0, 0, 0, .9); color: #fff; line-height: 1.6; }
 @media (max-width: 480px) {
     .watch-entry-group { flex-wrap: wrap; }

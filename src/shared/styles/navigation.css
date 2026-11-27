@@ -175,7 +175,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
     color: var(--theme-text-secondary);
     font-size: var(--font-size-sm);
@@ -243,7 +243,7 @@
     border: none;
     border-radius: var(--radius-md);
     color: var(--theme-text-secondary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: var(--transition);
     font-size: var(--font-size-md);
 }
@@ -310,7 +310,7 @@
     border: none;
     border-radius: var(--radius-md);
     color: var(--theme-text-secondary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: var(--transition);
     font-size: var(--font-size-md);
 }
@@ -355,7 +355,7 @@
     background: none;
     border: none;
     color: var(--theme-text-secondary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     padding: 6px 10px;
     border-radius: var(--radius-md);
     transition: var(--transition);
@@ -487,7 +487,7 @@
     padding: 10px 16px;
     color: var(--theme-text-secondary);
     text-decoration: none;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
     font-size: var(--font-size-sm);
     font-weight: 500;
@@ -540,7 +540,7 @@ button.nav-dropdown-item {
     height: 32px;
     border-radius: calc(var(--radius-md) - 3px);
     color: var(--theme-text-secondary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -549,7 +549,7 @@ button.nav-dropdown-item {
     inset: 0;
     margin: 0;
     opacity: 0;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .nav-theme__option:hover {
@@ -597,7 +597,7 @@ button.nav-dropdown-item {
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
     font-weight: 500;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: var(--transition);
     font-family: var(--font-family);
 }
@@ -631,7 +631,7 @@ button.nav-dropdown-item {
     border: none;
     color: var(--theme-text-primary);
     font-size: var(--font-size-xl);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     padding: 6px;
     border-radius: var(--radius-md);
     transition: var(--transition);
@@ -740,7 +740,7 @@ button.nav-dropdown-item {
     border-radius: var(--radius-md);
     color: var(--theme-text-secondary);
     font-size: var(--font-size-2xs);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: var(--transition);
     padding: 0;
 }
@@ -775,7 +775,7 @@ button.nav-dropdown-item {
 .nav-radio-slider {
     width: 50px;
     height: 3px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     accent-color: #ffffff;
     vertical-align: middle;
 }
@@ -902,7 +902,7 @@ button.nav-dropdown-item {
     color: var(--ui-color-content-muted);
     font-size: var(--font-size-xl);
     line-height: 1;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .reaction-inbox__close:hover {
@@ -932,7 +932,7 @@ button.nav-dropdown-item {
     font: inherit;
     font-size: var(--font-size-sm);
     text-align: left;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .reaction-inbox__item:hover:not(:disabled) {
@@ -941,7 +941,7 @@ button.nav-dropdown-item {
 }
 
 .reaction-inbox__item:disabled {
-    cursor: default;
+    cursor: var(--cursor-default, default);
 }
 
 .reaction-inbox__close:focus-visible,
@@ -1099,7 +1099,7 @@ button.nav-dropdown-item {
     color: var(--ui-color-content-muted);
     font-size: var(--font-size-xl);
     line-height: 1;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .battleship-notice__close:hover {

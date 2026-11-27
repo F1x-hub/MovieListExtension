@@ -266,7 +266,7 @@
     border-radius: var(--radius-md, 8px);
     background: var(--ui-color-surface);
     color: var(--ui-color-content);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast, 120ms) var(--motion-ease-standard, ease),
         border-color var(--motion-duration-fast, 120ms) var(--motion-ease-standard, ease);
 }

@@ -138,7 +138,7 @@
     background: var(--theme-accent, #fbbf24);
     border: 1px solid var(--theme-accent, #fbbf24);
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     font: 700 0.78rem var(--font-family);
     transition: transform var(--motion-duration-fast) var(--motion-ease-out), background-color var(--motion-duration-fast) var(--motion-ease-out);
 }
@@ -202,7 +202,7 @@
     background: transparent;
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.12));
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     font: 600 0.74rem var(--font-family);
     transition: transform var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out);
 }

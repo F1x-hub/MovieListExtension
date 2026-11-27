@@ -697,7 +697,9 @@ checklist; `npm run test:visual-design` enforces much of it.
   `overflow-x: clip` so the sticky sidebar works.
 - Settings: `settings.js` loads render-blocking from `<head>` and applies the saved language from
   `localStorage['movieExtensionLanguage']` before the first paint. Without a saved language the UI
-  follows the browser's locale when it exists, otherwise English.
+  follows the browser's locale when it exists, otherwise English. Theme and «Курсор» apply at
+  once on every open page and are outside Save/Reset: `ThemeService` and `CursorService`
+  (`localStorage['movieExtensionCursor']`, absent for the defaults) own them.
 - Random: the personal pool is device-local (`RandomPoolService`). The marathon round is Firestore
   `randomMarathons/current`, with admin actions in transactions; the function's `normalizePoster`
   matches the page's `PosterUrl` (`tests/randomMarathonFunction.test.cjs`).

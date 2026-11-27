@@ -3,6 +3,7 @@
 @import url('./back-to-top.css');
 @import url('./tokens.css');
 @import url('./scrollbars.css');
+@import url('./cursors.css');
 @import url('./seasonal.css');
 @import url('./seasonal-newyear.css');
 
@@ -13,11 +14,11 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; disp
 .number-stepper { position: relative; display: inline-flex; width: 100%; min-width: 0; max-width: 100%; vertical-align: middle; }
 .number-stepper > input[type="number"] { box-sizing: border-box; width: 100%; min-width: 0; padding-inline-end: 34px !important; }
 .number-stepper__buttons { position: absolute; inset-inline-end: 5px; inset-block: 4px; display: grid; grid-template-rows: repeat(2, minmax(0, 1fr)); width: 20px; }
-.number-stepper__button { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 20px; height: 100%; min-height: 0; min-width: 0; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ui-color-content-muted); cursor: pointer; }
+.number-stepper__button { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 20px; height: 100%; min-height: 0; min-width: 0; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ui-color-content-muted); cursor: var(--cursor-pointer, pointer); }
 .number-stepper__button::before { content: ''; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(2px) rotate(225deg); }
 .number-stepper__button--down::before { transform: translateY(-2px) rotate(45deg); }
 .number-stepper__button:hover:not(:disabled) { background: var(--ui-color-surface-muted); color: var(--ui-color-content); }
-.number-stepper__button:disabled { color: var(--ui-color-content-subtle); opacity: 0.4; cursor: default; }
+.number-stepper__button:disabled { color: var(--ui-color-content-subtle); opacity: 0.4; cursor: var(--cursor-default, default); }
 .number-stepper__button:focus-visible { outline: 2px solid var(--ui-color-interactive); outline-offset: 1px; }
 select { -webkit-appearance: none; appearance: none; }
 /* Keep the complete indicator geometry through page/theme background shorthands. */
@@ -31,7 +32,7 @@ select:not([multiple]):not([size]) {
 summary { list-style: none; }
 summary::-webkit-details-marker { display: none; }
 summary::marker { content: ''; }
-.disclosure-summary { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.disclosure-summary { display: flex; align-items: center; gap: 12px; cursor: var(--cursor-pointer, pointer); }
 .disclosure-summary::after { content: ''; flex: 0 0 7px; width: 7px; height: 7px; margin-inline-start: auto; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); }
 details[open] > .disclosure-summary::after { transform: translateY(2px) rotate(225deg); }
 

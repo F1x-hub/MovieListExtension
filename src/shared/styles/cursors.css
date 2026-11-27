@@ -1,0 +1,70 @@
+/*
+ * The only cursor images of the extension: a soft arrow, a soft pointing hand over
+ * anything clickable and a soft text bar, all drawn as a thin skeleton under a thick
+ * round stroke, so no edge is sharp. 28px, inside Chrome's 32px limit. Pages get them
+ * through common.css; the few pages without common.css link this file. Elsewhere write
+ * `cursor: var(--cursor-pointer, pointer)` (or --cursor-default, --cursor-text) instead
+ * of the bare keyword, so the keyword stays the fallback where this file is not loaded.
+ * Other system cursors (grab, not-allowed, wait, resize, zoom) stay as they are.
+ * `npm run test:visual-design` checks both rules.
+ *
+ * The light ink (#f4f4f5 on a #09090b edge) is the dark theme's; the light theme uses the
+ * reverse. Player surfaces stay dark in both themes and keep the light ink, the same way
+ * they set --scrollbar-ink. Hotspots: the arrow's tip, the fingertip, the bar's middle.
+ * High-contrast modes get the system cursors back, sized and coloured by the system.
+ */
+:root,
+.dark-theme {
+    --cursor-default: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><path d='M5.2 4.6L5.2 16.4L8.2 13.8L10.4 18.4L11.5 17.9L9.5 13.3L13.6 13.3Z' fill='%2309090b' stroke='%2309090b' stroke-width='7' stroke-linejoin='round'/><path d='M5.2 4.6L5.2 16.4L8.2 13.8L10.4 18.4L11.5 17.9L9.5 13.3L13.6 13.3Z' fill='%23f4f4f5' stroke='%23f4f4f5' stroke-width='4.4' stroke-linejoin='round'/></svg>") 6 5, default;
+    --cursor-pointer: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><g fill='%2309090b' stroke='%2309090b' stroke-linecap='round' stroke-linejoin='round'><path d='M10.2 4.4V13' stroke-width='5.94' fill='none'/><path d='M13.3 10.6V13M16 11.2V13.4M18.4 12.4V14' stroke-width='5.74' fill='none'/><path d='M10.4 15.4L6.6 12.8' stroke-width='5.64' fill='none'/><rect x='9.4' y='12.4' width='10' height='7' rx='3.7' stroke-width='2.6'/></g><g fill='%23f4f4f5' stroke='%23f4f4f5' stroke-linecap='round' stroke-linejoin='round'><path d='M10.2 4.4V13' stroke-width='3.34' fill='none'/><path d='M13.3 10.6V13M16 11.2V13.4M18.4 12.4V14' stroke-width='3.14' fill='none'/><path d='M10.4 15.4L6.6 12.8' stroke-width='3.04' fill='none'/><rect x='9.4' y='12.4' width='10' height='7' rx='3.7' stroke-width='0'/></g><path d='M11.8 12.6V14M14.6 12.9V14.4M17.2 13.4V14.8' stroke='%2309090b' stroke-width='0.9' stroke-linecap='round' opacity='0.55'/></svg>") 12 4, pointer;
+    --cursor-text: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><path d='M9.4 4.2H14.6M12 4.2V19.8M9.4 19.8H14.6' fill='none' stroke='%2309090b' stroke-width='4.75' stroke-linecap='round' stroke-linejoin='round'/><path d='M9.4 4.2H14.6M12 4.2V19.8M9.4 19.8H14.6' fill='none' stroke='%23f4f4f5' stroke-width='2.15' stroke-linecap='round'/></svg>") 14 14, text;
+}
+
+.light-theme {
+    --cursor-default: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><path d='M5.2 4.6L5.2 16.4L8.2 13.8L10.4 18.4L11.5 17.9L9.5 13.3L13.6 13.3Z' fill='%23ffffff' stroke='%23ffffff' stroke-width='7' stroke-linejoin='round'/><path d='M5.2 4.6L5.2 16.4L8.2 13.8L10.4 18.4L11.5 17.9L9.5 13.3L13.6 13.3Z' fill='%2318181b' stroke='%2318181b' stroke-width='4.4' stroke-linejoin='round'/></svg>") 6 5, default;
+    --cursor-pointer: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><g fill='%23ffffff' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round'><path d='M10.2 4.4V13' stroke-width='5.94' fill='none'/><path d='M13.3 10.6V13M16 11.2V13.4M18.4 12.4V14' stroke-width='5.74' fill='none'/><path d='M10.4 15.4L6.6 12.8' stroke-width='5.64' fill='none'/><rect x='9.4' y='12.4' width='10' height='7' rx='3.7' stroke-width='2.6'/></g><g fill='%2318181b' stroke='%2318181b' stroke-linecap='round' stroke-linejoin='round'><path d='M10.2 4.4V13' stroke-width='3.34' fill='none'/><path d='M13.3 10.6V13M16 11.2V13.4M18.4 12.4V14' stroke-width='3.14' fill='none'/><path d='M10.4 15.4L6.6 12.8' stroke-width='3.04' fill='none'/><rect x='9.4' y='12.4' width='10' height='7' rx='3.7' stroke-width='0'/></g><path d='M11.8 12.6V14M14.6 12.9V14.4M17.2 13.4V14.8' stroke='%23ffffff' stroke-width='0.9' stroke-linecap='round' opacity='0.55'/></svg>") 12 4, pointer;
+    --cursor-text: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><path d='M9.4 4.2H14.6M12 4.2V19.8M9.4 19.8H14.6' fill='none' stroke='%23ffffff' stroke-width='4.75' stroke-linecap='round' stroke-linejoin='round'/><path d='M9.4 4.2H14.6M12 4.2V19.8M9.4 19.8H14.6' fill='none' stroke='%2318181b' stroke-width='2.15' stroke-linecap='round'/></svg>") 14 14, text;
+}
+
+/*
+ * Player surfaces are dark in both themes (player.css sets --scrollbar-ink for them too).
+ * `cursor` inherits as a resolved image, not as var(), so they set it again themselves.
+ */
+.player-surface__content,
+.video-wrapper,
+.player-clean,
+.native-player-wrapper {
+    --cursor-default: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><path d='M5.2 4.6L5.2 16.4L8.2 13.8L10.4 18.4L11.5 17.9L9.5 13.3L13.6 13.3Z' fill='%2309090b' stroke='%2309090b' stroke-width='7' stroke-linejoin='round'/><path d='M5.2 4.6L5.2 16.4L8.2 13.8L10.4 18.4L11.5 17.9L9.5 13.3L13.6 13.3Z' fill='%23f4f4f5' stroke='%23f4f4f5' stroke-width='4.4' stroke-linejoin='round'/></svg>") 6 5, default;
+    --cursor-pointer: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><g fill='%2309090b' stroke='%2309090b' stroke-linecap='round' stroke-linejoin='round'><path d='M10.2 4.4V13' stroke-width='5.94' fill='none'/><path d='M13.3 10.6V13M16 11.2V13.4M18.4 12.4V14' stroke-width='5.74' fill='none'/><path d='M10.4 15.4L6.6 12.8' stroke-width='5.64' fill='none'/><rect x='9.4' y='12.4' width='10' height='7' rx='3.7' stroke-width='2.6'/></g><g fill='%23f4f4f5' stroke='%23f4f4f5' stroke-linecap='round' stroke-linejoin='round'><path d='M10.2 4.4V13' stroke-width='3.34' fill='none'/><path d='M13.3 10.6V13M16 11.2V13.4M18.4 12.4V14' stroke-width='3.14' fill='none'/><path d='M10.4 15.4L6.6 12.8' stroke-width='3.04' fill='none'/><rect x='9.4' y='12.4' width='10' height='7' rx='3.7' stroke-width='0'/></g><path d='M11.8 12.6V14M14.6 12.9V14.4M17.2 13.4V14.8' stroke='%2309090b' stroke-width='0.9' stroke-linecap='round' opacity='0.55'/></svg>") 12 4, pointer;
+    --cursor-text: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24'><path d='M9.4 4.2H14.6M12 4.2V19.8M9.4 19.8H14.6' fill='none' stroke='%2309090b' stroke-width='4.75' stroke-linecap='round' stroke-linejoin='round'/><path d='M9.4 4.2H14.6M12 4.2V19.8M9.4 19.8H14.6' fill='none' stroke='%23f4f4f5' stroke-width='2.15' stroke-linecap='round'/></svg>") 14 14, text;
+}
+
+@media (forced-colors: active), (prefers-contrast: more) {
+    :root,
+    .dark-theme,
+    .light-theme,
+    .player-surface__content,
+    .video-wrapper,
+    .player-clean,
+    .native-player-wrapper {
+        --cursor-default: default;
+        --cursor-pointer: pointer;
+        --cursor-text: text;
+    }
+}
+
+html,
+:where(.player-surface__content, .video-wrapper, .player-clean, .native-player-wrapper) {
+    cursor: var(--cursor-default);
+}
+
+/* Zero specificity: a page rule that sets its own cursor still wins. */
+:where(a[href], summary) {
+    cursor: var(--cursor-pointer);
+}
+
+:where(textarea, [contenteditable]:not([contenteditable='false']),
+input:not([type='button'], [type='submit'], [type='reset'], [type='checkbox'], [type='radio'],
+    [type='range'], [type='color'], [type='file'], [type='image'])) {
+    cursor: var(--cursor-text);
+}

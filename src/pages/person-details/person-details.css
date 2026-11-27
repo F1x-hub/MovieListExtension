@@ -264,7 +264,7 @@
     text-decoration: underline;
     text-decoration-color: var(--ui-color-border-hover);
     text-underline-offset: 3px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: text-decoration-color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -443,7 +443,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     z-index: 20;
     transition: background-color var(--motion-duration-base) var(--motion-ease-out), border-color var(--motion-duration-base) var(--motion-ease-out), transform var(--motion-duration-base) var(--motion-ease-out), opacity var(--motion-duration-base) var(--motion-ease-out);
 }

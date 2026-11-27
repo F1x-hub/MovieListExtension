@@ -91,7 +91,7 @@
     font-family: var(--font-family);
     font-size: var(--font-size-md);
     font-weight: 500;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     text-align: left;
     transition: transform var(--motion-duration-base) var(--ease-spring), background var(--motion-duration-base) var(--motion-ease-out), color var(--motion-duration-base) var(--motion-ease-out), border-color var(--motion-duration-base) var(--motion-ease-out);
     position: relative;
@@ -346,7 +346,7 @@
     color: var(--theme-text-primary);
     font-size: var(--font-size-sm);
     line-height: 1.5;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .component-auto-update input {
@@ -359,7 +359,7 @@
 
 .component-auto-update:has(input:disabled) {
     opacity: 0.6;
-    cursor: default;
+    cursor: var(--cursor-default, default);
 }
 
 .component-updates-section .btn:focus-visible,
@@ -370,7 +370,7 @@
 
 .component-updates-section .btn:disabled {
     opacity: 0.55;
-    cursor: default;
+    cursor: var(--cursor-default, default);
 }
 
 .component-update-card[data-state="failed"] {
@@ -403,7 +403,7 @@
 
 .mode-card {
     position: relative;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .mode-card input[type="radio"] {
@@ -582,7 +582,7 @@
     border: 1px solid var(--theme-border);
     border-radius: var(--radius-md);
     padding: 12px 18px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -673,7 +673,7 @@
     padding: 12px 18px;
     display: flex;
     align-items: center;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     border: 0;
     background: transparent;
     color: var(--theme-text-primary);
@@ -929,7 +929,7 @@
 
 .subtitle-appearance-control input[type="color"] {
     padding: 4px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .subtitle-appearance-control select:focus-visible,
@@ -947,6 +947,156 @@
 .subtitle-appearance-reset {
     width: 100%;
     min-height: 40px;
+}
+
+/* Cursor (CursorService draws the images; the page itself already wears the chosen set). */
+.cursor-settings__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.cursor-settings__head .section-description {
+    margin-bottom: 16px;
+}
+
+.cursor-settings__head .toggle-switch {
+    flex-shrink: 0;
+    margin-top: 4px;
+}
+
+.cursor-settings__body {
+    display: grid;
+    gap: 16px;
+}
+
+.cursor-variant-options {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.cursor-variant-options .mode-content {
+    padding: 12px;
+}
+
+.cursor-variant-options .mode-info h4 {
+    margin-top: 8px;
+}
+
+.cursor-variant-options .mode-info p {
+    font-size: var(--font-size-sm);
+}
+
+/* The variant card shows the dark theme's ink on the dark ground, in both themes. */
+.cursor-variant-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    height: 72px;
+    margin-bottom: 4px;
+    background: #09090b;
+}
+
+.cursor-settings__editor {
+    display: grid;
+    grid-template-columns: minmax(190px, 0.9fr) minmax(0, 1.1fr);
+    gap: 16px;
+    padding: 16px;
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-lg);
+}
+
+.cursor-settings__preview {
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    overflow: hidden;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-md);
+}
+
+/* Each scene keeps its own theme's ground, like the theme cards. */
+.cursor-settings__scene {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    min-height: 64px;
+    padding: 8px 12px;
+}
+
+.cursor-settings__scene--dark {
+    background: #09090b;
+}
+
+.cursor-settings__scene--light {
+    background: #f4f4f5;
+}
+
+.cursor-settings__preview img,
+.cursor-variant-preview img {
+    display: block;
+    width: var(--cursor-preview-size, 42px);
+    height: var(--cursor-preview-size, 42px);
+}
+
+.cursor-settings__controls {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.cursor-settings__control {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+.cursor-settings__control label {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--theme-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.cursor-settings__control output {
+    flex: 0 0 auto;
+    color: var(--theme-text-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+}
+
+.cursor-settings__control input[type="range"] {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    accent-color: var(--theme-text-primary);
+}
+
+.cursor-settings__control input:focus-visible,
+.cursor-settings__reset:focus-visible {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 2px;
+}
+
+.cursor-settings__reset {
+    width: 100%;
+    min-height: 40px;
+}
+
+@media (max-width: 640px) {
+    .cursor-settings__editor {
+        grid-template-columns: 1fr;
+    }
 }
 
 .mediaplayer-retention-row {
@@ -1033,7 +1183,7 @@
 
 .mediaplayer-storage .btn:disabled {
     opacity: 0.55;
-    cursor: default;
+    cursor: var(--cursor-default, default);
 }
 
 .setting-select-wrap {
@@ -1493,7 +1643,7 @@
 
 .toggle-slider {
     position: absolute;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     top: 0; left: 0; right: 0; bottom: 0;
     background-color: var(--theme-border-hover);
     border-radius: var(--radius-md);
@@ -1538,7 +1688,7 @@
 
 .radio-source-card {
     flex: 1;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     position: relative;
 }
 

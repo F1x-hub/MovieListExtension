@@ -973,7 +973,7 @@ class Navigation {
                     console.warn('Radio mute toggle error:', e);
                 }
             });
-            volumeIcon.style.cursor = 'pointer';
+            volumeIcon.style.cursor = 'var(--cursor-pointer, pointer)';
         }
     }
 
@@ -1043,7 +1043,7 @@ class Navigation {
                         border: none;
                         color: #94a3b8;
                         font-size: 24px;
-                        cursor: pointer;
+                        cursor: var(--cursor-pointer, pointer);
                         padding: 0;
                         width: 32px;
                         height: 32px;
@@ -1069,13 +1069,13 @@ class Navigation {
                                     padding: 12px;
                                     border-radius: 8px;
                                     background: ${isInCollection ? '#1e3a5f' : '#0f172a'};
-                                    cursor: pointer;
+                                    cursor: var(--cursor-pointer, pointer);
                                     transition: background 0.2s;
                                 ">
                                     <input type="checkbox" 
                                            ${isInCollection ? 'checked' : ''} 
                                            data-collection-id="${collection.id}"
-                                           style="width: 18px; height: 18px; cursor: pointer;">
+                                           style="width: 18px; height: 18px; cursor: var(--cursor-pointer, pointer);">
                                     <span style="font-size: 20px; display: flex; align-items: center; justify-content: center;">${iconHtml}</span>
                                     <span style="flex: 1; font-weight: 500;">${this.escapeHtml(collection.name)}</span>
                                     <span style="color: #94a3b8; font-size: 12px;">(${collection.movieIds?.length || 0})</span>
@@ -1091,7 +1091,7 @@ class Navigation {
                         border: none;
                         padding: 10px 16px;
                         border-radius: 8px;
-                        cursor: pointer;
+                        cursor: var(--cursor-pointer, pointer);
                         font-weight: 500;
                     ">Close</button>
                 </div>

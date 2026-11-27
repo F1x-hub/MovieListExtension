@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="settings.css">
     <link rel="stylesheet" href="../../shared/styles/report-widget.css">
     <script src="/src/shared/services/ThemeService.js"></script>
+    <script src="/src/shared/services/CursorService.js"></script>
     <script src="/src/shared/services/SeasonalThemeService.js"></script>
     <script type="module" blocking="render" src="settings.js"></script>
     <link rel="icon" type="image/png" sizes="16x16" href="../../shared/assets/icons/app/favicon16.png">
@@ -121,6 +122,57 @@
                                         </div>
                                     </div>
                                 </label>
+                            </div>
+                        </div>
+
+                        <div class="settings-section cursor-settings" aria-labelledby="cursorSectionTitle">
+                            <div class="cursor-settings__head">
+                                <div class="setting-info">
+                                    <h3 class="section-title" id="cursorSectionTitle" data-i18n="settings.cursor.title">Курсор</h3>
+                                    <p class="section-description" id="cursorSectionDescription" data-i18n="settings.cursor.description">Свой курсор на страницах расширения. Меняется сразу, на всех открытых вкладках.</p>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" role="switch" id="cursorEnabledToggle" aria-labelledby="cursorSectionTitle" aria-describedby="cursorSectionDescription" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="cursor-settings__body" id="cursorSettingsBody">
+                                <h4 class="sr-only" id="cursorVariantTitle" data-i18n="settings.cursor.variant">Вариант курсора</h4>
+                                <div class="mode-options cursor-variant-options" role="radiogroup" aria-labelledby="cursorVariantTitle">
+                                    <label class="mode-card">
+                                        <input type="radio" name="cursorVariant" value="soft" checked>
+                                        <div class="mode-content">
+                                            <div class="mode-preview cursor-variant-preview" data-cursor-variant-preview="soft" aria-hidden="true"></div>
+                                            <div class="mode-info">
+                                                <h4 data-i18n="settings.cursor.soft.title">Мягкий</h4>
+                                                <p data-i18n="settings.cursor.soft.description">Стрелка, рука и палочка без острых углов.</p>
+                                            </div>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div class="cursor-settings__editor">
+                                    <div class="cursor-settings__preview" aria-hidden="true">
+                                        <div class="cursor-settings__scene cursor-settings__scene--dark" data-cursor-preview="dark"></div>
+                                        <div class="cursor-settings__scene cursor-settings__scene--light" data-cursor-preview="light"></div>
+                                    </div>
+
+                                    <fieldset class="cursor-settings__controls">
+                                        <legend class="sr-only" data-i18n="settings.cursor.controls_legend">Параметры курсора</legend>
+                                        <div class="cursor-settings__control">
+                                            <label for="cursorSize"><span data-i18n="settings.cursor.size">Размер</span> <output id="cursorSizeOutput" for="cursorSize" aria-live="polite">28 px</output></label>
+                                            <input id="cursorSize" type="range" min="24" max="32" step="2" value="28">
+                                        </div>
+                                        <div class="cursor-settings__control">
+                                            <label for="cursorSoftness"><span data-i18n="settings.cursor.softness">Скругление</span> <output id="cursorSoftnessOutput" for="cursorSoftness" aria-live="polite">55%</output></label>
+                                            <input id="cursorSoftness" type="range" min="1" max="3.2" step="0.1" value="2.2">
+                                        </div>
+                                        <div class="cursor-settings__actions">
+                                            <button id="cursorResetBtn" class="btn btn-secondary cursor-settings__reset" type="button" data-i18n="settings.cursor.reset_button">Вернуть как было</button>
+                                        </div>
+                                    </fieldset>
+                                </div>
                             </div>
                         </div>
 

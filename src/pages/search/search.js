@@ -1035,7 +1035,7 @@ class SearchManager {
             const cardElement = MovieCard.create(cardData, cardOptions);
             
             // Make entire card clickable
-            cardElement.style.cursor = 'pointer';
+            cardElement.style.cursor = 'var(--cursor-pointer, pointer)';
             cardElement.setAttribute('data-action', 'view-details');
             cardElement.setAttribute('data-movie-id', movie.kinopoiskId);
             cardElement.dataset.personalState = this.currentUser ? 'pending' : 'not-required';

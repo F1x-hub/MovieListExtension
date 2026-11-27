@@ -26,6 +26,7 @@ const migrationGuardFiles = {
     random: 'src/pages/random/random.css',
     popup: 'src/shared/styles/popup.css',
     scrollbars: 'src/shared/styles/scrollbars.css',
+    cursors: 'src/shared/styles/cursors.css',
     reportWidget: 'src/shared/styles/report-widget.css',
     movieDetails: 'src/pages/movie-details/movie-details.css',
     // The shared rating dialog (RatingDialog.js); its rules moved here from movie-details.css.
@@ -358,6 +359,26 @@ for (const file of cssFilesInSource.filter(item => item !== SCROLLBAR_FILE)) {
 assert.match(read(files.common), /@import url\('\.\/scrollbars\.css'\);/);
 for (const page of ['src/pages/live/youtube-player.html', 'src/pages/update/update_instructions.html']) {
     assert.match(read(page), /styles\/scrollbars\.css/, `${page} has no common.css and links the scrollbar itself`);
+}
+// One set of cursor images (src/shared/styles/cursors.css). Everywhere else the plain
+// cursors go through its variables, with the keyword kept as the fallback.
+const CURSOR_FILE = 'src/shared/styles/cursors.css';
+const cursorSources = [...cssFilesInSource, ...fs.readdirSync('src', { recursive: true })
+    .map(item => `src/${String(item).replace(/\\/g, '/')}`)
+    .filter(item => /\.(?:js|html)$/.test(item))];
+for (const file of cursorSources.filter(item => item !== CURSOR_FILE)) {
+    const source = read(file).replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.doesNotMatch(source, /cursor\s*:\s*(?:pointer|default|text)\b|\.style\.cursor\s*=\s*['"](?:pointer|default|text)['"]/,
+        `${file} sets a system cursor; write var(--cursor-pointer, pointer) and the like (${CURSOR_FILE})`);
+}
+for (const name of ['default', 'pointer', 'text']) {
+    assert.match(read(CURSOR_FILE), new RegExp(`--cursor-${name}: url\\("data:image/svg\\+xml,[^"]+"\\) \\d+ \\d+, ${name};`));
+}
+assert.match(read(CURSOR_FILE), /@media \(forced-colors: active\), \(prefers-contrast: more\) \{[^@]*--cursor-default: default;[^@]*--cursor-pointer: pointer;[^@]*--cursor-text: text;/,
+    'high-contrast modes get the system cursors back');
+assert.match(read(files.common), /@import url\('\.\/cursors\.css'\);/);
+for (const page of ['src/pages/live/youtube-player.html', 'src/pages/update/update_instructions.html']) {
+    assert.match(read(page), /styles\/cursors\.css/, `${page} has no common.css and links the cursors itself`);
 }
 const scrollbarRules = source => [...source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/((?:[^{}]*::-webkit-scrollbar[^{}]*))\{([^{}]*)\}/g)]
     .map(([, selector, body]) => `${selector.replace(/\.native-player-wrapper\s+/g, '')}{${body}}`.replace(/\s+/g, ''));

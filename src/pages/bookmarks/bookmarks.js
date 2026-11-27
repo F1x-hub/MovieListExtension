@@ -654,7 +654,7 @@ class BookmarksPageManager {
                         border: none;
                         color: var(--text-secondary);
                         font-size: 24px;
-                        cursor: pointer;
+                        cursor: var(--cursor-pointer, pointer);
                         padding: 0;
                         width: 32px;
                         height: 32px;
@@ -698,7 +698,7 @@ class BookmarksPageManager {
                             border: 1px solid var(--theme-border);
                             padding: 10px 16px;
                             border-radius: 8px;
-                            cursor: pointer;
+                            cursor: var(--cursor-pointer, pointer);
                             font-weight: 500;
                         ">Cancel</button>
                         <button type="submit" id="saveCollectionBtn" style="
@@ -707,7 +707,7 @@ class BookmarksPageManager {
                             border: none;
                             padding: 10px 16px;
                             border-radius: 8px;
-                            cursor: pointer;
+                            cursor: var(--cursor-pointer, pointer);
                             font-weight: 600;
                         ">${isEdit ? 'Save Changes' : 'Create'}</button>
                     </div>
@@ -755,7 +755,7 @@ class BookmarksPageManager {
                             border: 2px solid ${isSelected(icon) ? 'var(--filter-include-border)' : 'var(--theme-border)'};
                             background: ${isSelected(icon) ? 'var(--filter-include-bg)' : 'transparent'};
                             border-radius: 8px;
-                            cursor: pointer;
+                            cursor: var(--cursor-pointer, pointer);
                             transition: all 0.2s;
                             color: var(--text-primary);
                             display: flex;
@@ -1231,7 +1231,7 @@ class BookmarksPageManager {
             cards.appendChild(card);
 
             // Make the entire card clickable
-            card.style.cursor = 'pointer';
+            card.style.cursor = 'var(--cursor-pointer, pointer)';
             card.setAttribute('data-action', 'view-details');
             card.setAttribute('data-movie-id', cardData.movieId);
         });

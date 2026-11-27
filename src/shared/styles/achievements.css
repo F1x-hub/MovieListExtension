@@ -61,7 +61,7 @@
     color: var(--theme-text-primary);
     font-size: var(--font-size-base);
     line-height: 1;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .ach-frame-picker__nav[hidden] {
@@ -71,7 +71,7 @@
 
 .ach-frame-picker__nav:disabled {
     opacity: 0.3;
-    cursor: default;
+    cursor: var(--cursor-default, default);
 }
 
 .ach-frame-picker__nav:focus-visible {
@@ -98,7 +98,7 @@
     margin-top: 8px;
     color: var(--theme-text-secondary);
     font-size: var(--font-size-sm);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .ach-frame-toggle[hidden] {
@@ -110,7 +110,7 @@
     height: 16px;
     margin: 0;
     accent-color: var(--ui-color-content);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .ach-stat__frame svg {
@@ -170,7 +170,7 @@
     color: var(--theme-text-muted);
     font: inherit;
     font-size: var(--font-size-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .ach-filter:hover {
@@ -241,7 +241,7 @@
     color: var(--theme-text-primary);
     font: inherit;
     text-align: left;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-base) var(--ease-out, ease-out), border-color var(--motion-duration-base) var(--motion-ease-out);
 }
 
@@ -364,7 +364,7 @@
     background: transparent;
     color: var(--theme-text-muted);
     font-size: var(--font-size-lg);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .ach-dialog__tags {
@@ -390,12 +390,12 @@
     background: var(--theme-bg-tertiary);
     color: var(--theme-text-primary);
     font-size: var(--font-size-xl);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .ach-dialog__nav:disabled {
     opacity: 0.35;
-    cursor: default;
+    cursor: var(--cursor-default, default);
 }
 
 .ach-dialog__nav[hidden] {

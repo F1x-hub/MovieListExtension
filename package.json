@@ -41,7 +41,7 @@
     "test:e2e:player:headed": "node tests/e2e/run.cjs --player --headed",
     "test:live:player": "node tests/live/player-live.cjs",
     "live:bridge": "node tests/live/chrome-bridge.cjs start",
-    "test:visual-design": "node tests/visualDesignContract.test.js && node tests/iconSet.test.cjs",
+    "test:visual-design": "node tests/visualDesignContract.test.js && node tests/iconSet.test.cjs && node tests/cursorService.test.cjs",
     "test:seasonal-theme": "node tests/seasonalTheme.test.cjs",
     "test:new-year-browser": "node tests/newYearSeasonBrowser.cjs",
     "test:actor-age": "node tests/actorAge.test.cjs",

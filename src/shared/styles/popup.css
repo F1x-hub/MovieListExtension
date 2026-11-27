@@ -140,7 +140,7 @@
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--ui-color-content-muted);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -234,7 +234,7 @@
     font: inherit;
     font-size: var(--font-size-sm);
     text-align: left;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .popup-page .avatar-dropdown .dropdown-item:hover {
@@ -442,7 +442,7 @@
     font-size: var(--font-size-xs);
     text-decoration: underline;
     text-underline-offset: 3px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .popup-page .forgot-password-link:hover {
@@ -469,7 +469,7 @@
     border-radius: 0 var(--radius-md) var(--radius-md) 0;
     background: transparent;
     color: var(--ui-color-content-muted);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .popup-page .toggle-password:hover {
@@ -501,7 +501,7 @@
 .popup-page .auth-form .static-input-field {
     background: var(--ui-color-surface-muted);
     color: var(--ui-color-content-muted);
-    cursor: default;
+    cursor: var(--cursor-default, default);
 }
 
 .popup-page .btn-text-link {
@@ -513,7 +513,7 @@
     font: inherit;
     text-decoration: underline;
     text-underline-offset: 3px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .popup-page .auth-switch {
@@ -646,7 +646,7 @@
     font: inherit;
     font-size: var(--font-size-sm);
     line-height: 18px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .popup-page .filter-chip:hover {
@@ -749,7 +749,7 @@
     border-inline-start: 2px solid transparent;
     color: var(--ui-color-content);
     text-decoration: none;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .popup-page .search-result-item:last-child {
@@ -1012,7 +1012,7 @@
     font-size: var(--font-size-xs);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .popup-page .rating-score-badge:hover {
@@ -1307,7 +1307,7 @@
     font: inherit;
     font-size: var(--font-size-xs);
     font-weight: 600;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .popup-page .btn-update:hover:not(:disabled) {
@@ -1332,7 +1332,7 @@
     border-radius: var(--radius-md);
     background: transparent;
     color: var(--ui-color-content-muted);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .popup-page .btn-dismiss:hover {

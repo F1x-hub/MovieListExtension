@@ -2298,7 +2298,7 @@ class RatingsPageManager {
         });
 
         // Make entire card clickable
-        card.style.cursor = 'pointer';
+        card.style.cursor = 'var(--cursor-pointer, pointer)';
         card.setAttribute('data-action', 'view-details');
         card.setAttribute('data-movie-id', movieData.kinopoiskId || movieData.movieId || (movieData.movie && movieData.movie.kinopoiskId));
 

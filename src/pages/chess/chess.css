@@ -92,7 +92,7 @@
     background: var(--chess-surface);
     border: 1px solid var(--ui-color-border);
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: color var(--motion-duration-fast) var(--motion-ease-out),
         border-color var(--motion-duration-fast) var(--motion-ease-out),
         background-color var(--motion-duration-fast) var(--motion-ease-out);
@@ -207,7 +207,7 @@
     background: var(--chess-overlay);
     border: 1px solid var(--ui-color-border);
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out),
         border-color var(--motion-duration-fast) var(--motion-ease-out);
 }
@@ -286,7 +286,7 @@
     background: var(--chess-overlay);
     border: 1px solid var(--ui-color-border);
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: color var(--motion-duration-fast) var(--motion-ease-out),
         background-color var(--motion-duration-fast) var(--motion-ease-out),
         border-color var(--motion-duration-fast) var(--motion-ease-out);
@@ -369,7 +369,7 @@
     background: var(--chess-overlay);
     border: 1px solid var(--ui-color-border);
     border-radius: var(--radius-lg);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out),
         border-color var(--motion-duration-fast) var(--motion-ease-out);
 }
@@ -596,7 +596,7 @@
 }
 
 .chess-canvas.is-pointing {
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .chess-canvas.is-orbiting,
@@ -631,7 +631,7 @@
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: color var(--motion-duration-fast) var(--motion-ease-out),
         background-color var(--motion-duration-fast) var(--motion-ease-out);
 }
@@ -722,7 +722,7 @@
     background: var(--chess-overlay);
     border: 1px solid var(--ui-color-border);
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .chess-promotion__piece:hover {
@@ -961,7 +961,7 @@
     background: transparent;
     border: 0;
     border-radius: var(--radius-sm);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .chess-move:hover {
@@ -1153,7 +1153,7 @@
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .chess-back:hover {
@@ -1244,7 +1244,7 @@
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .chess-result__close:hover {
@@ -1362,7 +1362,7 @@
     place-items: center;
     padding: 0;
     border: 0;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 /* Board squares are game content: the 3D board's stone greys. */

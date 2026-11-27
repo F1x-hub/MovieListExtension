@@ -18,7 +18,7 @@
     box-shadow: var(--elevation-2, 0 8px 24px rgba(0, 0, 0, 0.24));
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     opacity: 0;
     visibility: hidden;
     pointer-events: none;

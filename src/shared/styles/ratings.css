@@ -73,7 +73,7 @@
     color: var(--theme-text-secondary);
     font-size: var(--font-size-sm);
     font-weight: 500;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: var(--transition);
 }
 
@@ -101,7 +101,7 @@
     border: 1px solid var(--theme-border);
     border-radius: var(--radius-lg);
     color: var(--theme-text-secondary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: var(--transition);
 }
 
@@ -207,7 +207,7 @@
     font: inherit;
     font-size: var(--ui-control-font-size);
     line-height: 1.5;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .ratings-main select:is([data-filter-control], [data-sort-control]):not([hidden]):focus-visible {
@@ -280,7 +280,7 @@
     border-radius: var(--radius-sm);
     background: rgba(255, 255, 255, 0.06);
     color: var(--theme-text-secondary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: var(--transition);
     font-size: var(--font-size-2xs);
     /* Now a <button>: drop the native button chrome */
@@ -705,7 +705,7 @@
     padding: 3px 8px;
     border-radius: var(--radius-sm);
     margin-left: auto;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: var(--transition);
 }
 
@@ -894,7 +894,7 @@
     font-size: var(--font-size-md);
     font-weight: 600;
     white-space: nowrap;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     box-shadow: var(--elevation-2);
     transition: border-color var(--ui-control-transition, 150ms ease), background-color var(--ui-control-transition, 150ms ease);
 }
@@ -970,7 +970,7 @@
     border-radius: var(--radius-md);
     background: transparent;
     color: var(--theme-text-secondary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .results-view-btn[aria-pressed="true"] {

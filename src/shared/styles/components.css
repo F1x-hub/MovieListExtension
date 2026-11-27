@@ -12,7 +12,7 @@
     font-size: var(--ui-control-font-size);
     font-weight: var(--ui-control-font-weight);
     text-decoration: none;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-fast) var(--motion-ease-out),
         box-shadow var(--motion-duration-fast) var(--motion-ease-out),
         background-color var(--motion-duration-fast) var(--motion-ease-out),
@@ -358,7 +358,7 @@
     height: 20px;
     border-radius: var(--radius-sm);
     background: var(--ui-color-interactive);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     box-shadow: var(--elevation-1);
 }
 
@@ -367,7 +367,7 @@
     height: 20px;
     border-radius: var(--radius-sm);
     background: var(--ui-color-interactive);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     border: none;
     box-shadow: var(--elevation-1);
 }
@@ -569,7 +569,7 @@
     border: 0;
     background: transparent;
     color: var(--ui-color-content);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 .whats-new-version-label { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; gap: 3px 8px; font-size: var(--font-size-sm); }
 .whats-new-version-date { color: var(--ui-color-content-muted); font-size: var(--font-size-xs); font-weight: 400; }
@@ -628,7 +628,7 @@
     border: none;
     color: var(--ui-color-content-muted);
     font-size: var(--font-size-xl);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     padding: var(--space-xs);
     border-radius: var(--radius-sm);
     transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
@@ -749,7 +749,7 @@
     background: var(--ui-color-surface-muted);
     color: var(--ui-color-content);
     font-size: var(--font-size-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -811,7 +811,7 @@
     padding: 10px 16px;
     color: var(--ui-color-content);
     font-size: var(--font-size-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -833,7 +833,7 @@
     border: none;
     color: var(--ui-color-content);
     text-align: left;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -1098,7 +1098,7 @@ body.app-error-dialog-open {
     color: transparent;
     border-radius: var(--radius-sm);
     padding: 0 2px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     user-select: none;
     transition: background var(--motion-duration-base), color var(--motion-duration-base);
     display: inline;
@@ -1107,7 +1107,7 @@ body.app-error-dialog-open {
 .spoiler-text.revealed {
     background: rgba(255, 255, 255, 0.1);
     color: inherit;
-    cursor: text;
+    cursor: var(--cursor-text, text);
     user-select: text;
 }
 
@@ -1150,7 +1150,7 @@ body.app-error-dialog-open {
     font-size: var(--ui-control-font-size);
     line-height: 1.5;
     text-align: start;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .sort-control__value {
@@ -1218,7 +1218,7 @@ body.app-error-dialog-open {
     border-radius: var(--ui-control-radius);
     white-space: normal;
     overflow-wrap: anywhere;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .sort-control__option[aria-selected="true"] {
@@ -1289,7 +1289,7 @@ select.sort-control__native[hidden] { display: none; }
     color: var(--theme-text-primary);
     font: inherit;
     font-weight: 600;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out);
 }
 

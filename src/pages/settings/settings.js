@@ -2345,6 +2345,64 @@ document.addEventListener('DOMContentLoaded', async () => {
         themeRadios.forEach(radio => radio.addEventListener('change', () => window.ThemeService.applyTheme(radio.value)));
     }
 
+    // CursorService owns the cursor like ThemeService owns the theme: a choice applies
+    // at once on every open page, so Save and Reset do not cover it either.
+    if (window.CursorService) setupCursorSettings(window.CursorService);
+
+    function setupCursorSettings(cursors) {
+        const toggle = document.getElementById('cursorEnabledToggle');
+        const body = document.getElementById('cursorSettingsBody');
+        const size = document.getElementById('cursorSize');
+        const softness = document.getElementById('cursorSoftness');
+        const sizeOutput = document.getElementById('cursorSizeOutput');
+        const softnessOutput = document.getElementById('cursorSoftnessOutput');
+        const resetBtn = document.getElementById('cursorResetBtn');
+        const variantRadios = [...document.querySelectorAll('input[name="cursorVariant"]')];
+        if (!toggle || !body || !size || !softness) return;
+
+        const { min: softMin, max: softMax } = cursors.LIMITS.softness;
+        const softnessPercent = value => Math.round((value - softMin) / (softMax - softMin) * 100);
+
+        const imageRow = (settings, ink) => {
+            const sources = cursors.images({ ...settings, enabled: true }, ink);
+            return ['default', 'pointer', 'text'].map(name => {
+                const image = document.createElement('img');
+                image.src = sources[name];
+                image.alt = '';
+                return image;
+            });
+        };
+
+        const show = settings => {
+            toggle.checked = settings.enabled;
+            body.hidden = !settings.enabled;
+            size.value = String(settings.size);
+            softness.value = String(settings.softness);
+            if (sizeOutput) sizeOutput.textContent = `${settings.size} px`;
+            if (softnessOutput) softnessOutput.textContent = `${softnessPercent(settings.softness)}%`;
+            variantRadios.forEach(radio => { radio.checked = radio.value === settings.variant; });
+            // Previews at 1.5× the chosen size, so the size slider is visible in them too.
+            body.style.setProperty('--cursor-preview-size', `${settings.size * 1.5}px`);
+            document.querySelectorAll('[data-cursor-preview]').forEach(scene => {
+                scene.replaceChildren(...imageRow(settings, scene.dataset.cursorPreview));
+            });
+            document.querySelectorAll('[data-cursor-variant-preview]').forEach(card => {
+                card.replaceChildren(...imageRow({ ...settings, variant: card.dataset.cursorVariantPreview }, 'dark'));
+            });
+        };
+
+        cursors.subscribe(show);
+        show(cursors.getSettings());
+
+        toggle.addEventListener('change', () => cursors.update({ enabled: toggle.checked }));
+        size.addEventListener('input', () => cursors.update({ size: Number(size.value) }));
+        softness.addEventListener('input', () => cursors.update({ softness: Number(softness.value) }));
+        variantRadios.forEach(radio => radio.addEventListener('change', () => {
+            if (radio.checked) cursors.update({ variant: radio.value });
+        }));
+        resetBtn?.addEventListener('click', () => cursors.reset());
+    }
+
     /**
      * Custom Unsaved Dialog UI
      */

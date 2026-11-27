@@ -1357,6 +1357,16 @@ export const locales = {
                 light: { title: "Light", description: "Dark text on white." },
                 auto: { title: "Match system", description: "Follows Chrome's mode." }
             },
+            cursor: {
+                title: "Cursor",
+                description: "The extension's own cursor on its pages. Changes at once, in every open tab.",
+                variant: "Cursor style",
+                soft: { title: "Soft", description: "Arrow, hand and text bar with no sharp edges." },
+                controls_legend: "Cursor settings",
+                size: "Size",
+                softness: "Roundness",
+                reset_button: "Restore defaults"
+            },
             display_mode: {
                 title: "Display Mode",
                 description: "Choose how you want to interact with the extension.",
@@ -4522,6 +4532,16 @@ export const locales = {
             updates: {
                 title: "Автоматические обновления",
                 description: "Загружать новые версии в фоне и устанавливать их после завершения просмотра.",
+            cursor: {
+                title: "Курсор",
+                description: "Свой курсор на страницах расширения. Меняется сразу, на всех открытых вкладках.",
+                variant: "Вариант курсора",
+                soft: { title: "Мягкий", description: "Стрелка, рука и палочка без острых углов." },
+                controls_legend: "Параметры курсора",
+                size: "Размер",
+                softness: "Скругление",
+                reset_button: "Вернуть как было"
+            },
                 page_description: "Проверяйте и безопасно устанавливайте новые версии расширения.",
                 current_version: "Текущая версия",
                 toggle_label: "Устанавливать обновления автоматически",

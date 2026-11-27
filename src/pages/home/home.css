@@ -90,7 +90,7 @@
     min-width: 256px;
     flex-shrink: 0;
     position: relative;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     border-radius: var(--radius-xl);
     overflow: hidden;
     transition: transform var(--motion-duration-slow) var(--motion-ease-out), box-shadow var(--motion-duration-slow) var(--motion-ease-out), border-color var(--motion-duration-slow) var(--motion-ease-out);
@@ -244,7 +244,7 @@
     width: 10px;
     border-radius: var(--radius-xs);
     background: var(--theme-border-hover, rgba(255, 255, 255, 0.18));
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-slow) var(--motion-ease-out), border-color var(--motion-duration-slow) var(--motion-ease-out), color var(--motion-duration-slow) var(--motion-ease-out), opacity var(--motion-duration-slow) var(--motion-ease-out), transform var(--motion-duration-slow) var(--motion-ease-out), box-shadow var(--motion-duration-slow) var(--motion-ease-out), filter var(--motion-duration-slow) var(--motion-ease-out);
     padding: 0;
     border: none;
@@ -446,7 +446,7 @@
     border-radius: var(--radius-md);
     font-size: var(--font-size-md);
     font-weight: 600;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     white-space: nowrap;
     transition: transform var(--motion-duration-base) var(--motion-ease-out), box-shadow var(--motion-duration-base), opacity var(--motion-duration-base);
     box-shadow: 0 4px 14px rgba(255, 255, 255, 0.12);
@@ -668,7 +668,7 @@
     color: var(--theme-bg-primary);
     border: none;
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     font-weight: 600;
     font-size: var(--font-size-md);
     transition: opacity var(--motion-duration-base), transform var(--motion-duration-base);
@@ -776,7 +776,7 @@
 }
 
 .featured-card--skeleton {
-    cursor: default;
+    cursor: var(--cursor-default, default);
     box-shadow: none;
 }
 
@@ -833,7 +833,7 @@
     color: var(--theme-text-primary);
     font: inherit;
     font-size: var(--font-size-sm);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .home-section-retry:hover {

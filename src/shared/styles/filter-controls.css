@@ -115,7 +115,7 @@
     font-weight: 500;
     line-height: 1.25;
     text-align: start;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .filter-choice .tag-text { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
@@ -301,7 +301,7 @@
         color: var(--ui-color-content);
         font: inherit;
         font-size: var(--font-size-sm);
-        cursor: pointer;
+        cursor: var(--cursor-pointer, pointer);
     }
     .filter-choices__more::after { content: ''; width: 6px; height: 6px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: translateY(-2px) rotate(45deg); }
     .filter-choices__more[aria-expanded="true"]::after { transform: translateY(2px) rotate(225deg); }

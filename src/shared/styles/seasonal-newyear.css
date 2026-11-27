@@ -557,7 +557,7 @@ html.season-newyear .popup-logo-img {
     padding: 0;
     background: none;
     border: 0;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     pointer-events: none;
     -webkit-tap-highlight-color: transparent;
 }
@@ -581,7 +581,7 @@ html.season-newyear .popup-logo-img {
 .ny-gift__hit {
     position: absolute;
     inset: 0;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     pointer-events: auto;
 }
 
@@ -693,7 +693,7 @@ html.season-newyear .popup-logo-img {
     background: var(--ny-round-bg);
     border: 1px solid var(--ny-round-edge);
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .ny-reveal__close:hover { background: var(--ny-round-bg-hover); }
@@ -791,7 +791,7 @@ html.season-newyear .popup-logo-img {
     background: transparent;
     border: 0;
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     font-family: inherit;
     font-size: var(--font-size-sm);
     font-weight: 500;
@@ -1164,7 +1164,7 @@ body.player-modal-open .ny-strip *::after {
     border: 0;
     border-radius: var(--radius-lg);
     box-shadow: 0 16px 36px -22px var(--ny-cta-glow-strong);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     font-family: var(--font-family, Inter, sans-serif);
     text-align: left;
     -webkit-tap-highlight-color: transparent;

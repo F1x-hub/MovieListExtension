@@ -623,7 +623,7 @@ class MovieCard {
                          data-action="resume-watching"
                          data-movie-id="${canonicalMovieId || ''}"
                          title="Нажмите, чтобы продолжить просмотр"
-                         style="margin-top: 6px; font-size: 13px; color: #4da6ff; font-weight: 500; display: flex; align-items: center; gap: 5px; cursor: pointer; transition: opacity 0.2s;">
+                         style="margin-top: 6px; font-size: 13px; color: #4da6ff; font-weight: 500; display: flex; align-items: center; gap: 5px; cursor: var(--cursor-pointer, pointer); transition: opacity 0.2s;">
                         <svg data-icon="PLAY_BOX" aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V6A3 3 0 0 1 6 3Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M8 7.2C8 6.6 8.7 6.2 9.2 6.6L13 9.3C13.5 9.7 13.5 10.3 13 10.7L9.2 13.4C8.7 13.8 8 13.4 8 12.8Z"/></svg>
                         <span>${this.escapeHtml(watchingProgress)}</span>
                     </div>

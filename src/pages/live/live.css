@@ -169,7 +169,7 @@ body.live-page { overflow-x: clip; overflow-y: visible; }
     border-radius: var(--radius-md);
     background: transparent;
     color: inherit;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .live-control:hover {
@@ -193,7 +193,7 @@ body.live-page { overflow-x: clip; overflow-y: visible; }
 .live-volume {
     width: 110px;
     accent-color: #f4f4f5;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .live-volume[hidden] {
@@ -328,7 +328,7 @@ html:has(:fullscreen) *:not(:fullscreen, :fullscreen *)::after {
 /* One public programme follows both the player and the standby screen. */
 .live-programme { margin-top: 14px; color: var(--ui-color-content); scroll-margin-top: var(--live-programme-top, 76px); }
 .live-programme [hidden], .live-programme[hidden], .live-programme-button[hidden] { display: none !important; }
-.live-programme button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 8px 12px; border: 1px solid var(--ui-color-border); border-radius: var(--radius-md); background: transparent; color: var(--ui-color-content); font: inherit; font-size: var(--font-size-2xs); line-height: 1.3; cursor: pointer; }
+.live-programme button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 8px 12px; border: 1px solid var(--ui-color-border); border-radius: var(--radius-md); background: transparent; color: var(--ui-color-content); font: inherit; font-size: var(--font-size-2xs); line-height: 1.3; cursor: var(--cursor-pointer, pointer); }
 .live-programme button:hover { background: var(--ui-color-surface-muted); border-color: var(--ui-color-border-hover); }
 .live-programme button:focus-visible { outline: 2px solid var(--ui-color-interactive); outline-offset: 3px; }
 .live-programme button svg { display: block; width: 16px; height: 16px; }

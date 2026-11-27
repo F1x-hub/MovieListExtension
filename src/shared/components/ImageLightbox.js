@@ -106,7 +106,7 @@ class ImageLightbox {
             // Directional cursor and tooltip feedback on mouse movement over image
             img.addEventListener('mousemove', (e) => {
                 if (ImageLightbox.images.length <= 1) {
-                    img.style.cursor = 'default';
+                    img.style.cursor = 'var(--cursor-default, default)';
                     img.removeAttribute('title');
                     return;
                 }

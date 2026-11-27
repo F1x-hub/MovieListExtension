@@ -193,7 +193,7 @@
     font-family: var(--font-family);
     font-size: var(--font-size-md);
     font-weight: 500;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-fast) var(--motion-ease-out), background var(--motion-duration-base) var(--motion-ease-out), border-color var(--motion-duration-base) var(--motion-ease-out);
 }
 
@@ -657,7 +657,7 @@ a.continue-watching-item:hover {
 }
 
 .activity-cell[data-day] {
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .activity-cell[data-level="1"] { background: var(--activity-1); }
@@ -766,7 +766,7 @@ a.continue-watching-item:hover {
     border-radius: var(--radius-md);
     background: transparent;
     color: var(--theme-text-primary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .activity-day__button:hover:not(:disabled) {
@@ -776,7 +776,7 @@ a.continue-watching-item:hover {
 
 .activity-day__button:disabled {
     opacity: 0.4;
-    cursor: default;
+    cursor: var(--cursor-default, default);
 }
 
 .activity-day__button:focus-visible,
@@ -903,7 +903,7 @@ a.continue-watching-item:hover {
     font-size: var(--font-size-md);
     font-variant-numeric: tabular-nums;
     text-align: right;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -925,7 +925,7 @@ a.continue-watching-item:hover {
 }
 
 .rating-distribution__row:disabled {
-    cursor: default;
+    cursor: var(--cursor-default, default);
 }
 
 .rating-distribution__bar i {
@@ -1006,7 +1006,7 @@ a.continue-watching-item:hover {
     border-radius: var(--radius-md);
     background: none;
     color: var(--theme-text-secondary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .recent-ratings-search__clear[hidden] {
@@ -1048,7 +1048,7 @@ a.continue-watching-item:hover {
     color: var(--theme-text-primary);
     font-family: inherit;
     font-size: var(--font-size-sm);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .rating-filter-reset[hidden] {
@@ -1086,7 +1086,7 @@ a.continue-watching-item:hover {
     color: var(--theme-text-secondary);
     font-family: var(--font-family);
     font-size: var(--font-size-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .btn-view-all:hover {
@@ -1326,7 +1326,7 @@ a.continue-watching-item:hover {
     border: none;
     border-radius: var(--radius-md);
     color: var(--theme-text-muted);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out), transform var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -1367,7 +1367,7 @@ a.continue-watching-item:hover {
 
 .banner-preview-wrapper {
     display: block;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .banner-preview {
@@ -1414,7 +1414,7 @@ a.continue-watching-item:hover {
 
 .photo-preview-wrapper {
     display: block;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .photo-preview {
@@ -1504,7 +1504,7 @@ a.continue-watching-item:hover {
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     opacity: 0;
     transition: opacity var(--motion-duration-base) var(--motion-ease-out), background var(--motion-duration-base) var(--motion-ease-out), transform var(--motion-duration-fast) var(--motion-ease-out);
     z-index: 5;
@@ -1667,7 +1667,7 @@ a.continue-watching-item:hover {
     font-size: var(--font-size-sm);
     font-weight: 600;
     color: var(--theme-text-secondary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out), transform var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -1724,7 +1724,7 @@ a.continue-watching-item:hover {
     font-size: var(--font-size-md);
     font-weight: 600;
     color: var(--theme-text-muted);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -2051,7 +2051,7 @@ a.continue-watching-item:hover {
     color: #fafafa;
     font-size: var(--font-size-base);
     line-height: 1;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     opacity: 0;
     transition: opacity var(--motion-duration-fast) var(--motion-ease-out);
 }
@@ -2084,7 +2084,7 @@ a.continue-watching-item:hover {
     font-size: var(--font-size-xs);
     font-weight: 600;
     text-align: center;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), background-color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -2160,7 +2160,7 @@ a.continue-watching-item:hover {
     background: transparent;
     color: var(--theme-text-muted);
     font-size: var(--font-size-lg);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .favorite-picker__close:hover {
@@ -2205,7 +2205,7 @@ a.continue-watching-item:hover {
     color: var(--theme-text-primary);
     font: inherit;
     text-align: left;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .favorite-picker__option:hover {
@@ -2274,7 +2274,7 @@ a.continue-watching-item:hover {
     border-radius: var(--radius-md);
     background: transparent;
     color: var(--theme-text-secondary);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -2351,7 +2351,7 @@ a.continue-watching-item:hover {
     font-size: var(--font-size-md);
     font-variant-numeric: tabular-nums;
     text-align: left;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -2390,7 +2390,7 @@ a.continue-watching-item:hover {
 }
 
 :is(.insight-genres__row, .insight-decades__button, .insight-strip__item):disabled {
-    cursor: default;
+    cursor: var(--cursor-default, default);
 }
 
 :is(.insight-genres__row, .insight-decades__button, .insight-strip__item, .insight-strip__reset):focus-visible {
@@ -2437,7 +2437,7 @@ a.continue-watching-item:hover {
     font-size: var(--font-size-md);
     font-variant-numeric: tabular-nums;
     text-align: center;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -2508,7 +2508,7 @@ a.continue-watching-item:hover {
     color: var(--theme-text-primary);
     font: inherit;
     text-align: center;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .insight-person__photo {
@@ -2640,7 +2640,7 @@ a.continue-watching-item:hover {
 .insight-map__legend i[data-tier="4"] { background: var(--country-4); }
 
 .insight-map [data-code] {
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 /* Hover: a step lighter (darker in the light theme) and outlined by a path above every country. */
@@ -2735,7 +2735,7 @@ a.continue-watching-item:hover {
     text-decoration: underline;
     text-decoration-color: var(--theme-text-secondary);
     text-underline-offset: 3px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .insight-countries__all:focus-visible {
@@ -2999,7 +2999,7 @@ a.continue-watching-item:hover {
     text-decoration: underline;
     text-decoration-color: var(--theme-text-secondary);
     text-underline-offset: 3px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .insight-strip {
@@ -3023,7 +3023,7 @@ a.continue-watching-item:hover {
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
     text-align: center;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .insight-strip__item:disabled {
@@ -3420,7 +3420,7 @@ a.continue-watching-item:hover {
     font-weight: 500;
     line-height: 1;
     white-space: nowrap;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: var(--transition);
 }
 

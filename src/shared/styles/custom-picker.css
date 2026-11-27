@@ -27,7 +27,7 @@
     color: var(--theme-input-text, #f4f4f5);
     font-family: inherit;
     font-size: var(--font-size-sm);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     box-sizing: border-box;
     transition: border-color var(--motion-duration-base) var(--motion-ease-out), box-shadow var(--motion-duration-base) var(--motion-ease-out), background var(--motion-duration-base) var(--motion-ease-out);
 }
@@ -177,7 +177,7 @@
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: var(--theme-text-secondary, #a1a1aa);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out), opacity var(--motion-duration-fast) var(--motion-ease-out), transform var(--motion-duration-fast) var(--motion-ease-out), box-shadow var(--motion-duration-fast) var(--motion-ease-out), filter var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -232,7 +232,7 @@
     border: none;
     background: transparent;
     color: var(--theme-text-primary, #f4f4f5);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out), opacity var(--motion-duration-fast) var(--motion-ease-out), transform var(--motion-duration-fast) var(--motion-ease-out), box-shadow var(--motion-duration-fast) var(--motion-ease-out), filter var(--motion-duration-fast) var(--motion-ease-out);
     position: relative;
     padding: 0;
@@ -298,7 +298,7 @@
     color: var(--theme-text-secondary, #a1a1aa);
     font-size: var(--font-size-2xs);
     font-weight: 500;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out), opacity var(--motion-duration-fast) var(--motion-ease-out), transform var(--motion-duration-fast) var(--motion-ease-out), box-shadow var(--motion-duration-fast) var(--motion-ease-out), filter var(--motion-duration-fast) var(--motion-ease-out);
     text-align: center;
     white-space: nowrap;
@@ -375,7 +375,7 @@
     color: #2aabee;
     font-size: var(--font-size-2xs);
     font-weight: 600;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out), opacity var(--motion-duration-fast) var(--motion-ease-out), transform var(--motion-duration-fast) var(--motion-ease-out), box-shadow var(--motion-duration-fast) var(--motion-ease-out), filter var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -426,7 +426,7 @@
     border: none;
     font-size: var(--font-size-2xs);
     font-weight: 700;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out), opacity var(--motion-duration-fast) var(--motion-ease-out), transform var(--motion-duration-fast) var(--motion-ease-out), box-shadow var(--motion-duration-fast) var(--motion-ease-out), filter var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -445,7 +445,7 @@
     color: var(--theme-text-secondary, #a1a1aa);
     border: none;
     font-size: var(--font-size-2xs);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out), opacity var(--motion-duration-fast) var(--motion-ease-out), transform var(--motion-duration-fast) var(--motion-ease-out), box-shadow var(--motion-duration-fast) var(--motion-ease-out), filter var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -474,7 +474,7 @@
     font-size: var(--font-size-2xs);
     font-family: var(--font-data, monospace);
     font-weight: 500;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out), opacity var(--motion-duration-fast) var(--motion-ease-out), transform var(--motion-duration-fast) var(--motion-ease-out), box-shadow var(--motion-duration-fast) var(--motion-ease-out), filter var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -508,7 +508,7 @@
     color: inherit;
     font-size: var(--font-size-xs);
     line-height: 1;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     opacity: 0.7;
 }
 
@@ -573,7 +573,7 @@
     border: 1px solid rgba(255, 255, 255, 0.08);
     background: rgba(255, 255, 255, 0.04);
     color: var(--theme-text-secondary, #a1a1aa);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out), opacity var(--motion-duration-fast) var(--motion-ease-out), transform var(--motion-duration-fast) var(--motion-ease-out), box-shadow var(--motion-duration-fast) var(--motion-ease-out), filter var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -643,7 +643,7 @@
     font-family: var(--font-data, monospace);
     font-size: var(--font-size-xs);
     font-weight: 500;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: background-color var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out), opacity var(--motion-duration-fast) var(--motion-ease-out), transform var(--motion-duration-fast) var(--motion-ease-out), box-shadow var(--motion-duration-fast) var(--motion-ease-out), filter var(--motion-duration-fast) var(--motion-ease-out);
     flex-shrink: 0;
 }

@@ -42,7 +42,7 @@
             .player-source-lifecycle__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
             .player-source-lifecycle__action {
                 border: 1px solid rgba(255,255,255,.28); border-radius: 8px; padding: 8px 13px;
-                color: inherit; background: rgba(255,255,255,.1); cursor: pointer;
+                color: inherit; background: rgba(255,255,255,.1); cursor: var(--cursor-pointer, pointer);
             }
             .player-source-lifecycle__action:hover { background: rgba(255,255,255,.18); }
             @keyframes player-source-spin { to { transform: rotate(360deg); } }

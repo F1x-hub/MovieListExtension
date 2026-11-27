@@ -139,7 +139,7 @@
     background: var(--games-fill);
     border: 1px solid var(--games-border);
     border-radius: var(--radius-lg);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-base) cubic-bezier(0.23, 1, 0.32, 1),
         background var(--motion-duration-base) var(--motion-ease-out), border-color var(--motion-duration-base) var(--motion-ease-out), box-shadow var(--motion-duration-base) var(--motion-ease-out);
 }
@@ -230,7 +230,7 @@ a.game-menu-card {
     font: 600 0.75rem var(--font-family);
     background: transparent;
     border: 0;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: color var(--motion-duration-menu) var(--motion-ease-out), transform var(--motion-duration-menu) var(--motion-ease-out);
 }
 
@@ -302,7 +302,7 @@ a.game-menu-card {
     font-size: var(--font-size-md);
     font-weight: 600;
     font-family: var(--font-family);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-menu) var(--motion-ease-out), background var(--motion-duration-menu) var(--motion-ease-out), color var(--motion-duration-menu) var(--motion-ease-out), border-color var(--motion-duration-menu) var(--motion-ease-out);
 }
 
@@ -363,7 +363,7 @@ a.game-menu-card {
     background: var(--games-fill);
     border: 1px solid var(--games-border);
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-menu) var(--motion-ease-out), background var(--motion-duration-menu) var(--motion-ease-out), color var(--motion-duration-menu) var(--motion-ease-out), border-color var(--motion-duration-menu) var(--motion-ease-out);
 }
 
@@ -481,7 +481,7 @@ a.game-menu-card {
     background: var(--games-fill);
     border: 1px solid var(--games-border);
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-fast) var(--motion-ease-out), background var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -499,7 +499,7 @@ a.game-menu-card {
 
 .quiz-option:hover:not(:disabled) { border-color: var(--games-border-hover); background: var(--games-fill-hover); }
 .quiz-option:active:not(:disabled) { transform: scale(0.98); }
-.quiz-option:disabled { cursor: default; }
+.quiz-option:disabled { cursor: var(--cursor-default, default); }
 /* Semantic answer feedback: colour plus the text verdict below the options. */
 .quiz-option.correct {
     border-color: var(--games-success);
@@ -556,7 +556,7 @@ a.game-menu-card {
     background: var(--games-fill);
     border: 1px solid var(--games-border);
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-fast) var(--motion-ease-out), background var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -608,7 +608,7 @@ a.game-menu-card {
     background: var(--games-surface);
     border: 1px solid var(--games-border);
     border-radius: var(--radius-lg);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-base) cubic-bezier(0.23, 1, 0.32, 1),
         background var(--motion-duration-base) var(--motion-ease-out), border-color var(--motion-duration-base) var(--motion-ease-out);
 }
@@ -826,7 +826,7 @@ a.game-menu-card {
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-fast) var(--motion-ease-out), background var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -849,7 +849,7 @@ a.game-menu-card {
 
 .rubiks-action-btn:disabled {
     opacity: 0.4;
-    cursor: default;
+    cursor: var(--cursor-default, default);
 }
 
 .rubiks-3d-viewport {
@@ -932,7 +932,7 @@ a.game-menu-card {
     background: rgba(2, 6, 23, 0.7);
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
 }
 
 .rubiks-view-reset:focus-visible {
@@ -999,7 +999,7 @@ a.game-menu-card {
     background: rgba(15, 23, 42, 0.9);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: var(--radius-lg);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out), background var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -1150,7 +1150,7 @@ a.game-menu-card {
     color: var(--games-content);
     font-size: var(--font-size-2xs);
     font-weight: 700;
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     list-style: none;
 }
 
@@ -1192,7 +1192,7 @@ a.game-menu-card {
     background: var(--games-fill);
     border: 1px solid var(--games-border);
     border-radius: var(--radius-sm);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-fast) var(--motion-ease-out), background var(--motion-duration-fast) var(--motion-ease-out), border-color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -1298,7 +1298,7 @@ a.game-menu-card {
     background: var(--ui-button-primary-bg, #fafafa);
     border: 1px solid var(--ui-button-primary-border, transparent);
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-fast) var(--motion-ease-out), box-shadow var(--motion-duration-fast) var(--motion-ease-out), background var(--motion-duration-fast) var(--motion-ease-out);
 }
 
@@ -1484,7 +1484,7 @@ a.game-menu-card {
     background: var(--games-fill);
     border: 1px solid var(--games-border-hover);
     border-radius: var(--radius-md);
-    cursor: pointer;
+    cursor: var(--cursor-pointer, pointer);
     transition: transform var(--motion-duration-fast) var(--motion-ease-out), background var(--motion-duration-fast) var(--motion-ease-out);
 }
 
