@@ -2,7 +2,8 @@ import { ProfileTastePanel } from './ProfileTastePanel.js';
 import { countryName, historicalName } from '../../shared/data/countries.js';
 import { WORLD_MAP } from '../../shared/data/worldMap.js';
 
-// The list shows this many countries; «Все N стран» unfolds the rest.
+// The list beside the map shows this many countries; «Все N стран» unfolds the rest under
+// both, across the width in columns, so a long list leaves no empty column beside the map.
 const ROWS_SHOWN = 6;
 // A country too small for the map's scale is a square this many map units wide: the only
 // circle in the interface is a user's avatar.
@@ -49,24 +50,32 @@ export class ProfileCountriesPanel extends ProfileTastePanel {
                 </div>
                 <div class="insight-countries__list">
                     <h3 class="insight-subtitle">${this.escape(this.t('countries_most'))}</h3>
-                    ${this.renderRows(countries)}
-                    ${countries.length > ROWS_SHOWN ? `<button type="button" class="insight-countries__all" aria-expanded="false"></button>` : ''}
+                    ${this.renderRows(countries.slice(0, ROWS_SHOWN), 0)}
+                    ${countries.length > ROWS_SHOWN ? `<button type="button" class="insight-countries__all" aria-expanded="false" aria-controls="insightCountriesMore"></button>` : ''}
                 </div>
+                ${countries.length > ROWS_SHOWN ? this.renderRows(countries.slice(ROWS_SHOWN), ROWS_SHOWN) : ''}
                 <div class="insight-films" id="insightCountryFilms"></div>
             </div>`;
         this.drawMap(body.querySelector('.insight-map__svg'));
         this.tip = body.querySelector('.insight-map__tip');
         this.allButton = body.querySelector('.insight-countries__all');
+        this.more = body.querySelector('.insight-countries__more');
         this.showAll(false);
         this.bind(body);
         this.allButton?.addEventListener('click', () => this.showAll(this.allButton.getAttribute('aria-expanded') !== 'true'));
     }
 
-    renderRows(countries) {
-        const max = countries[0].count;
-        return `<ul class="insight-genres insight-countries__rows">${countries.map((row, index) => `
-            <li${index < ROWS_SHOWN ? '' : ' data-extra'}>
-                <button type="button" class="insight-genres__row${index ? '' : ' is-top'}" data-taste="country" data-value="${this.escape(row.code)}" aria-expanded="false" aria-controls="insightCountryFilms">
+    /** Rows from `offset` on: the list beside the map (0), or the rest unfolded under it, read down its columns. */
+    renderRows(countries, offset) {
+        const max = this.rows[0].count;
+        const more = offset > 0;
+        const columns = n => Math.ceil(countries.length / n);
+        const attributes = more
+            ? ` id="insightCountriesMore" style="--rows-3: ${columns(3)}; --rows-2: ${columns(2)}" hidden`
+            : '';
+        return `<ul class="insight-genres ${more ? 'insight-countries__more' : 'insight-countries__rows'}"${attributes}>${countries.map((row, index) => `
+            <li>
+                <button type="button" class="insight-genres__row${offset + index ? '' : ' is-top'}" data-taste="country" data-value="${this.escape(row.code)}" aria-expanded="false" aria-controls="insightCountryFilms">
                     <span class="insight-genres__name">${this.escape(countryName(row.code, this.locale))}</span>
                     <span class="insight-genres__bar" aria-hidden="true"><i style="width: ${Math.max(2, (row.count / max) * 100)}%"></i></span>
                     <span class="insight-genres__count">${this.escape(row.count)}</span>
@@ -77,8 +86,7 @@ export class ProfileCountriesPanel extends ProfileTastePanel {
 
     showAll(open) {
         if (!this.allButton) return;
-        const list = this.allButton.parentElement;
-        list.querySelectorAll('[data-extra]').forEach(item => { item.hidden = !open; });
+        this.more.hidden = !open;
         this.allButton.setAttribute('aria-expanded', String(open));
         this.allButton.textContent = open ? this.t('countries_fewer') : this.tn('countries_all', this.rows.length);
     }
@@ -156,7 +164,7 @@ export class ProfileCountriesPanel extends ProfileTastePanel {
     toggleCountry(code) {
         const opener = this.openers.find(button => button.dataset.value === code);
         if (!opener) return;
-        if (opener.closest('[data-extra]')?.hidden) this.showAll(true);
+        if (opener.closest('.insight-countries__more')?.hidden) this.showAll(true);
         if (opener.getAttribute('aria-expanded') === 'true') this.close();
         else this.open(opener);
     }

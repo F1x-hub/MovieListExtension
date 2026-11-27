@@ -90,7 +90,9 @@ window.ready = true;
                 shaded: document.querySelectorAll('.insight-map__country[data-code]').length,
                 small: [...document.querySelectorAll('.insight-map__small')].map(el => el.dataset.code).sort(),
                 circles: document.querySelectorAll('.insight-map circle').length,
-                rows: [...document.querySelectorAll('.insight-genres__row')].filter(row => !row.closest('[data-extra]')?.hidden).map(row => row.dataset.value),
+                rows: [...document.querySelectorAll('.insight-countries__rows .insight-genres__row')].map(row => row.dataset.value),
+                more: [...document.querySelectorAll('.insight-countries__more .insight-genres__row')].map(row => row.dataset.value),
+                moreHidden: document.querySelector('.insight-countries__more').hidden,
                 all: document.querySelector('.insight-countries__all').textContent,
                 elsewhere: document.querySelector('.insight-map__elsewhere').textContent,
                 tipShown: getComputedStyle(document.querySelector('.insight-map__tip')).display !== 'none',
@@ -103,6 +105,8 @@ window.ready = true;
         assert.deepEqual(info.small, ['HK', 'MT']);
         assert.equal(info.circles, 0, 'the only circle in the interface is an avatar');
         assert.deepEqual(info.rows, ['US', 'GB', 'CA', 'JP', 'FR', 'DE']);
+        assert.deepEqual(info.more, ['AU', 'HK', 'GE', 'MT'], 'the rest, in order, under map and list');
+        assert.equal(info.moreHidden, true);
         assert.equal(info.all, 'Все 10 стран');
         assert.equal(info.elsewhere, 'Нет на карте: СССР — 2 фильма.');
         assert.equal(info.tipShown, false, 'a hidden tooltip takes no room under the map');
@@ -147,6 +151,15 @@ window.ready = true;
         await page.mouse.click(at.x, at.y);
         assert.equal(await page.getAttribute('[data-taste="country"][data-value="AU"]', 'aria-expanded'), 'true');
         assert.equal(await page.isVisible('[data-taste="country"][data-value="AU"]'), true, 'a seventh country unfolds the list');
+        const unfolded = await page.evaluate(() => {
+            const map = document.querySelector('.insight-countries__map').getBoundingClientRect();
+            const list = document.querySelector('.insight-countries__list').getBoundingClientRect();
+            const more = document.querySelector('.insight-countries__more').getBoundingClientRect();
+            const bright = [...document.querySelectorAll('.insight-countries .insight-genres__bar i')]
+                .filter(bar => getComputedStyle(bar).backgroundColor === getComputedStyle(document.body).color).length;
+            return { below: more.top >= Math.max(map.bottom, list.bottom) - 1, wide: more.width > list.width * 1.5, bright };
+        });
+        assert.deepEqual(unfolded, { below: true, wide: true, bright: 1 }, 'the rest sits under both, across the width, and one bar is bright');
         assert.equal(await page.textContent('.insight-countries__all'), 'Свернуть');
         await page.mouse.click(at.x, at.y);
         assert.equal(await page.evaluate(() => document.querySelectorAll('.insight-map .is-chosen').length), 0, 'a second press closes');

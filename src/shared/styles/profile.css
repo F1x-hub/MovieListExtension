@@ -2743,6 +2743,36 @@ a.continue-watching-item:hover {
     outline-offset: 2px;
 }
 
+/* The rest of the countries, unfolded under the map and the list across the width, read down
+   each column (the row counts come from the script). */
+.insight-countries__more {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-auto-flow: column;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(var(--rows-3), auto);
+    gap: 0 40px;
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--theme-border);
+}
+
+.insight-countries__more[hidden] {
+    display: none;
+}
+
+/* One bright bar over both lists: the chosen country, or the first while none is chosen. */
+.insight-countries:has([data-taste][aria-expanded="true"]) .is-top:not([aria-expanded="true"]) > .insight-genres__bar i {
+    background: color-mix(in srgb, var(--ui-color-content) 46%, var(--theme-bg-primary));
+}
+
+@media (max-width: 1100px) {
+    .insight-countries__more {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-rows: repeat(var(--rows-2), auto);
+    }
+}
+
 /* A country is a row among rows, like a genre: no pointer under the last one. */
 .insight-films[data-group="country"]::before {
     display: none;
@@ -3262,6 +3292,16 @@ a.continue-watching-item:hover {
 
     .insight-countries__list {
         order: 1;
+    }
+
+    .insight-countries__more {
+        order: 1;
+        grid-auto-flow: row;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: none;
+        margin-top: 0;
+        padding-top: 0;
+        border-top: 0;
     }
 
     .insight-countries .insight-films {
