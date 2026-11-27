@@ -211,7 +211,8 @@ for (const theme of ['dark', 'light']) {
         await test.step('statistics read reactions and marathons only when opened', async () => {
             expect(reads).toHaveLength(0);
             await page.locator('#profileTabStatisticsBtn').click();
-            await expect(page.locator('.insight-genres__row')).toHaveCount(2);
+            // The countries section lists its countries in the same rows: count the genres only.
+            await expect(page.locator('.insight-taste .insight-genres__row')).toHaveCount(2);
             await expect(page.locator('.insight-decades__item')).toHaveCount(3);
             await expect(page.locator('.insight-person')).toHaveCount(4);
             await expect.poll(() => reads.length).toBeGreaterThan(0);
@@ -226,7 +227,7 @@ for (const theme of ['dark', 'light']) {
 
             // A genre and a decade show their films in one panel under both charts.
             const taste = page.locator('#insightTasteFilms');
-            const genre = page.locator('.insight-genres__row').first();
+            const genre = page.locator('.insight-taste .insight-genres__row').first();
             await expect(taste).toBeHidden();
             await genre.click();
             await waitForStillness(page);

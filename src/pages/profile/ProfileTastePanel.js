@@ -8,6 +8,7 @@ import {
     selectFilms,
     sortFilms
 } from './ProfileInsights.js';
+import { countryName } from '../../shared/data/countries.js';
 
 // Two full rows on a wide page, then four more at a time: a genre holds over a hundred films.
 const FILMS_SHOWN = 14;
@@ -27,7 +28,9 @@ const CATALOG_CATEGORIES = { 'мультфильм': 'cartoons', 'аниме': '
  * Genres and release years of «Статистика» and the panel under them: a press on a
  * genre or a decade shows its films, a second press or Escape closes. Bars inside
  * narrow a genre to one score and a decade to one year. Everything is counted from
- * the ratings and films the view has already loaded.
+ * the ratings and films the view has already loaded. The «Страны» section
+ * (ProfileCountriesPanel) opens a country in the same panel; a country, like a genre,
+ * is laid out by score.
  */
 export class ProfileTastePanel {
     /** @param {import('./ProfileInsightsView.js').ProfileInsightsView} view Texts, markup helpers and data */
@@ -56,6 +59,11 @@ export class ProfileTastePanel {
                 </div>
                 <div class="insight-films" id="insightTasteFilms"></div>
             </div>`;
+        this.bind(body);
+    }
+
+    /** The panel, its openers and their events; the countries section calls it for its own body. */
+    bind(body) {
         this.panel = body.querySelector('.insight-films');
         this.openers = [...body.querySelectorAll('[data-taste]')];
         body.addEventListener('click', event => this.onClick(event));
@@ -158,7 +166,15 @@ export class ProfileTastePanel {
         this.panel.classList.remove('is-open');
     }
 
-    get keyName() { return this.choice.taste === 'genre' ? 'score' : 'year'; }
+    get keyName() { return this.choice.taste === 'decade' ? 'year' : 'score'; }
+
+    /** The chosen thing's name: a genre, a decade or a year, a country. */
+    choiceName() {
+        const { taste, value, only } = this.choice;
+        if (taste === 'genre') return value;
+        if (taste === 'country') return countryName(value, this.view.i18n?.currentLocale);
+        return only === null ? `${value}${this.t('decade_suffix')}` : this.t('taste_year', { n: only });
+    }
 
     get picked() {
         const { films, only } = this.choice;
@@ -166,12 +182,12 @@ export class ProfileTastePanel {
     }
 
     renderHead() {
-        const { taste, value, only, films } = this.choice;
+        const { taste, only, films } = this.choice;
         // A year narrows the whole story; a score only the list: the average of all nines says nothing.
         const base = taste === 'decade' ? this.picked : films;
-        const name = taste === 'genre' ? value : only === null ? `${value}${this.t('decade_suffix')}` : this.t('taste_year', { n: only });
+        const name = this.choiceName();
         const average = averageScore(base);
-        const note = taste === 'genre' && only !== null
+        const note = taste !== 'decade' && only !== null
             ? this.tn('taste_scored', this.picked.length, { score: only })
             : base.length > 1 && average !== null
                 ? this.tn('taste_average', base.length, { average: this.view.formatScore(average) })
@@ -208,6 +224,7 @@ export class ProfileTastePanel {
     catalogLink() {
         const { taste, value, only } = this.choice;
         const page = query => `../catalog/catalog.html?${new URLSearchParams(query)}`;
+        if (taste === 'country') return { href: page({ category: 'films', country: value }), text: this.t('country_catalog') };
         if (taste === 'genre') {
             const name = String(value).toLowerCase();
             const category = CATALOG_CATEGORIES[name];
@@ -224,10 +241,11 @@ export class ProfileTastePanel {
 
     renderTools() {
         const { taste, value, films } = this.choice;
-        const keys = taste === 'genre' ? SCORES : SCORES.map((_, index) => value + index);
+        const byScore = taste !== 'decade';
+        const keys = byScore ? SCORES : SCORES.map((_, index) => value + index);
         const counts = countFilms(films, this.keyName, keys);
         const max = Math.max(...counts, 1);
-        const title = taste === 'genre'
+        const title = byScore
             ? this.t(this.data.isOther ? 'taste_scores_other' : 'taste_scores')
             : this.t('taste_years');
         const orders = { best: this.t('taste_order_best'), worst: this.t('taste_order_worst'), recent: this.t('taste_order_recent'), gap: this.t('taste_order_gap') };
@@ -236,7 +254,7 @@ export class ProfileTastePanel {
                 <div>
                     <div class="insight-strip__head">
                         <span>${this.escape(title)}</span>
-                        <button type="button" class="insight-strip__reset" hidden>${this.escape(this.t(taste === 'genre' ? 'taste_all_scores' : 'taste_all_years'))}</button>
+                        <button type="button" class="insight-strip__reset" hidden>${this.escape(this.t(byScore ? 'taste_all_scores' : 'taste_all_years'))}</button>
                     </div>
                     <div class="insight-strip" role="group" aria-label="${this.escape(title)}">${keys.map((key, index) => `
                         <button type="button" class="insight-strip__item" data-only="${key}" aria-pressed="false" aria-label="${this.escape(`${key}: ${this.tn('films_count', counts[index])}`)}"${counts[index] ? '' : ' disabled'}>

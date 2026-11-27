@@ -7,6 +7,7 @@
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID, RANK_SHARES, pointsFor } from './AchievementCatalog.js';
 import { CAT_FRAME, advanceTrail, trailSteps } from './catTrail.js';
 import { participation } from '../utils/marathonHistory.js';
+import { countryKey, filmCountries } from '../data/countries.js';
 
 const SERIES_TYPES = new Set(['tv-series', 'mini-series', 'animated-series', 'tv']);
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -117,7 +118,8 @@ export function computeMetrics(data = {}) {
         if (!movie) continue;
         const movieGenres = names(movie.genres);
         movieGenres.forEach(genre => genres.add(genre));
-        names(movie.countries).forEach(country => countries.add(country));
+        // One country however the catalogue spells it: «США» and «United States of America».
+        filmCountries(movie).map(countryKey).filter(Boolean).forEach(country => countries.add(country));
         const isSeries = Boolean(movie.isSeries || SERIES_TYPES.has(movie.type));
         if (isSeries) metrics.series++;
         if (movieGenres.includes('аниме') || movie.type === 'anime') metrics.anime++;

@@ -78,9 +78,6 @@ it is built.
 3. **Reactions on the timeline.** In a watch room or on Live, reactions are tied to the
    moment of the film; a later viewing shows above the seek bar where the company laughed
    or jumped. Needs a decision on where reactions are stored and how long.
-4. **World map of films watched.** Countries whose films the user rated are filled in,
-   next to the «Путешественник» achievement. Country data is already on the film
-   documents; it needs a map drawing without an external map service.
 
 ## Film page speed
 

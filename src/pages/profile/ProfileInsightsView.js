@@ -1,5 +1,6 @@
 import {
     PINNED_LIMIT,
+    computeCountries,
     computeFavoritePeople,
     computeTasteMatch,
     computeWatchTime,
@@ -13,6 +14,8 @@ import {
 } from './ProfileInsights.js';
 import { ProfileActivityCalendar } from './ProfileActivityCalendar.js';
 import { ProfileTastePanel } from './ProfileTastePanel.js';
+import { ProfileCountriesPanel } from './ProfileCountriesPanel.js';
+import { countryName } from '../../shared/data/countries.js';
 import { setMarkup } from '../../shared/utils/setMarkup.js';
 import { loadMarathonItems, summarizePerson } from '../../shared/utils/marathonHistory.js';
 
@@ -94,6 +97,8 @@ export class ProfileInsightsView {
         this.ready.promise.then(earlier.resolve);
         this.taste?.destroy();
         this.taste = null;
+        this.countries?.destroy();
+        this.countries = null;
         const { activity, match, insights } = this.elements;
         if (activity) {
             activity.replaceChildren();
@@ -271,7 +276,7 @@ export class ProfileInsightsView {
         const pair = document.createElement('div');
         pair.className = 'insight-columns insight-columns--wide';
         pair.append(marathon.section, reactions.section);
-        insights.replaceChildren(this.renderTaste(data), this.renderPeople(data), pair);
+        insights.replaceChildren(this.renderTaste(data), this.renderCountries(data), this.renderPeople(data), pair);
         const stale = () => data !== this.data;
         return Promise.allSettled([
             this.loadMarathon(data, marathon, stale),
@@ -300,6 +305,17 @@ export class ProfileInsightsView {
         this.taste?.destroy();
         this.taste = new ProfileTastePanel(this);
         this.taste.render(body);
+        return section;
+    }
+
+    renderCountries({ ratings, movies }) {
+        const result = computeCountries(ratings, movies);
+        const top = result.countries[0];
+        const { section, body } = this.section('insight-countries-section', this.t('countries_title'),
+            top ? this.tn('countries_note', result.countries.length, { top: countryName(top.code, this.i18n?.currentLocale) }) : '');
+        this.countries?.destroy();
+        this.countries = new ProfileCountriesPanel(this);
+        this.countries.render(body, result);
         return section;
     }
 

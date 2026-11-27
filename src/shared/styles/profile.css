@@ -2581,6 +2581,180 @@ a.continue-watching-item:hover {
     font-size: var(--font-size-sm);
 }
 
+/* «Страны» (ProfileCountriesPanel.js): the map and the list share a row, the films panel opens
+   under both. The shades are the picture's content colour over the page, darkest for no rating,
+   so both themes follow; the chosen country is the content colour itself. */
+.insight-countries {
+    --country-0: color-mix(in srgb, var(--ui-color-content) 9%, var(--theme-bg-primary));
+    --country-1: color-mix(in srgb, var(--ui-color-content) 26%, var(--theme-bg-primary));
+    --country-2: color-mix(in srgb, var(--ui-color-content) 39%, var(--theme-bg-primary));
+    --country-3: color-mix(in srgb, var(--ui-color-content) 55%, var(--theme-bg-primary));
+    --country-4: color-mix(in srgb, var(--ui-color-content) 71%, var(--theme-bg-primary));
+    --country-hover: brightness(1.2);
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    gap: 0 56px;
+    align-items: start;
+    anchor-scope: --insight-opener, --insight-films;
+}
+
+.light-theme .insight-countries {
+    --country-0: color-mix(in srgb, var(--ui-color-content) 6%, var(--theme-bg-primary));
+    --country-1: color-mix(in srgb, var(--ui-color-content) 22%, var(--theme-bg-primary));
+    --country-2: color-mix(in srgb, var(--ui-color-content) 37%, var(--theme-bg-primary));
+    --country-3: color-mix(in srgb, var(--ui-color-content) 55%, var(--theme-bg-primary));
+    --country-4: color-mix(in srgb, var(--ui-color-content) 73%, var(--theme-bg-primary));
+    --country-hover: brightness(0.86);
+}
+
+.insight-map {
+    position: relative;
+}
+
+.insight-map__svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.insight-map__country,
+.insight-map__small {
+    fill: var(--country-0);
+    stroke: var(--theme-bg-primary);
+    stroke-width: 0.5;
+    transition: fill var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.insight-map__small {
+    stroke-width: 1.2;
+}
+
+:is(.insight-map__country, .insight-map__small)[data-tier="1"] { fill: var(--country-1); }
+:is(.insight-map__country, .insight-map__small)[data-tier="2"] { fill: var(--country-2); }
+:is(.insight-map__country, .insight-map__small)[data-tier="3"] { fill: var(--country-3); }
+:is(.insight-map__country, .insight-map__small)[data-tier="4"] { fill: var(--country-4); }
+.insight-map__legend i[data-tier="1"] { background: var(--country-1); }
+.insight-map__legend i[data-tier="2"] { background: var(--country-2); }
+.insight-map__legend i[data-tier="3"] { background: var(--country-3); }
+.insight-map__legend i[data-tier="4"] { background: var(--country-4); }
+
+.insight-map [data-code] {
+    cursor: pointer;
+}
+
+/* Hover: a step lighter (darker in the light theme) and outlined by a path above every country. */
+.insight-map .is-hover {
+    filter: var(--country-hover);
+}
+
+/* Outranks the shade of its tier. */
+.insight-map :is(.insight-map__country, .insight-map__small).is-chosen {
+    fill: var(--ui-color-content);
+    filter: none;
+}
+
+.insight-map__outline {
+    fill: none;
+    stroke: var(--ui-color-content);
+    stroke-width: 1.4;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+}
+
+.insight-map__outline.on-chosen {
+    stroke: var(--country-3);
+    stroke-width: 2;
+}
+
+.insight-map__tip {
+    position: absolute;
+    z-index: 2;
+    display: grid;
+    padding: 7px 10px;
+    font-size: var(--font-size-sm);
+    line-height: 1.35;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+/* `display: grid` above would otherwise outrank the attribute. */
+.insight-map__tip[hidden] {
+    display: none;
+}
+
+.insight-map__tip b {
+    font-size: var(--font-size-md);
+}
+
+.insight-map__tip span {
+    opacity: 0.75;
+    font-variant-numeric: tabular-nums;
+}
+
+.insight-map__legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--theme-text-secondary);
+    font-size: var(--font-size-xs, 12px);
+}
+
+.insight-map__legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.insight-map__legend i {
+    width: 12px;
+    height: 12px;
+    border-radius: var(--radius-sm);
+    background: var(--country-0);
+}
+
+.insight-map__elsewhere {
+    margin: 8px 0 0;
+    color: var(--theme-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.insight-countries__all {
+    margin-top: 8px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--theme-text-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    text-decoration: underline;
+    text-decoration-color: var(--theme-text-secondary);
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+
+.insight-countries__all:focus-visible {
+    outline: 2px solid var(--ui-color-content);
+    outline-offset: 2px;
+}
+
+/* A country is a row among rows, like a genre: no pointer under the last one. */
+.insight-films[data-group="country"]::before {
+    display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .insight-map__country,
+    .insight-map__small {
+        transition: none;
+    }
+}
+
 .insight-films {
     grid-column: 1 / -1;
     scroll-margin-top: 88px;
@@ -3079,6 +3253,24 @@ a.continue-watching-item:hover {
 
     .insight-films__panel {
         gap: 20px;
+    }
+
+    /* The list first, the panel right under it, the map below as a picture of the same numbers. */
+    .insight-countries {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .insight-countries__list {
+        order: 1;
+    }
+
+    .insight-countries .insight-films {
+        order: 2;
+    }
+
+    .insight-countries__map {
+        order: 3;
+        margin-top: 24px;
     }
 
     /* The panel follows the chosen group, as it does for people. */

@@ -5,6 +5,8 @@
  * tested without Firestore. Marathons are counted in shared/utils/marathonHistory.js.
  */
 
+import { countryCode, filmCountries, isHistoricalCountry } from '../../shared/data/countries.js';
+
 export const PINNED_LIMIT = 5;
 export const LIKED_RATING = 8;
 export const MIN_MATCH_COMMON = 3;
@@ -182,22 +184,65 @@ export function computeDecades(ratings = [], movies = {}) {
         .sort((a, b) => a.decade - b.decade);
 }
 
+/** ISO codes of a film's countries, each once; historical and unknown names are left out. */
+function countryCodes(movie) {
+    return new Set(filmCountries(movie).map(countryCode).filter(Boolean));
+}
+
 /**
- * Rated titles behind one bar of the statistics: of a genre, or of a release decade.
- * The same titles that `computeGenres` and `computeDecades` count. `others` is the
- * average of everyone else's scores, without the person's own; 0 means unknown.
+ * Rated titles per country, counted like genres: every scored rating, series included,
+ * one film once per country however the catalogue spells it. Countries that no longer
+ * exist, or that no code is known for, come apart in `elsewhere` under their own name.
+ * @returns {{countries: Array<{code: string, count: number, average: number}>, elsewhere: Array<{name: string, count: number}>}}
+ */
+export function computeCountries(ratings = [], movies = {}) {
+    const countries = new Map();
+    const elsewhere = new Map();
+    for (const rating of ratings) {
+        const score = scoreOf(rating);
+        if (!score) continue;
+        const movie = movieFor(movies, rating.movieId);
+        for (const code of countryCodes(movie)) {
+            const entry = countries.get(code) || { code, count: 0, sum: 0 };
+            entry.count++;
+            entry.sum += score;
+            countries.set(code, entry);
+        }
+        const others = new Set(filmCountries(movie).filter(name => !countryCode(name)).map(name => name.toLowerCase()));
+        for (const key of others) {
+            const entry = elsewhere.get(key) || { name: filmCountries(movie).find(name => name.toLowerCase() === key), count: 0, historical: isHistoricalCountry(key) };
+            entry.count++;
+            elsewhere.set(key, entry);
+        }
+    }
+    return {
+        countries: [...countries.values()]
+            .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
+            .map(({ code, count, sum }) => ({ code, count, average: Math.round((sum / count) * 10) / 10 })),
+        elsewhere: [...elsewhere.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+            .map(({ name, count }) => ({ name, count }))
+    };
+}
+
+/**
+ * Rated titles behind one bar of the statistics: of a genre, a release decade or a
+ * country. The same titles that `computeGenres`, `computeDecades` and
+ * `computeCountries` count. `others` is the average of everyone else's scores,
+ * without the person's own; 0 means unknown.
  * @returns {Array<{movieId: string, score: number|null, year: number|null, ratedAt: number, others: number}>}
  */
-export function selectFilms(ratings = [], movies = {}, { genre = null, decade = null } = {}) {
+export function selectFilms(ratings = [], movies = {}, { genre = null, decade = null, country = null } = {}) {
     const key = genre === null ? null : String(genre).trim().toLowerCase();
     const films = [];
     for (const rating of ratings) {
         const movie = movieFor(movies, rating.movieId);
         const score = scoreOf(rating);
         const year = releaseYear(movie);
-        const fits = key === null
-            ? year !== null && Math.floor(year / 10) * 10 === decade
-            : score !== null && genreNames(movie).has(key);
+        const fits = country !== null
+            ? score !== null && countryCodes(movie).has(country)
+            : key === null
+                ? year !== null && Math.floor(year / 10) * 10 === decade
+                : score !== null && genreNames(movie).has(key);
         if (!fits) continue;
         const count = Number(movie?.ratingsCount) || 0;
         const others = score !== null && count > 1 ? ((Number(movie?.ratingsSum) || 0) - score) / (count - 1) : 0;

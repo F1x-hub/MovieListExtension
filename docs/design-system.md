@@ -29,6 +29,12 @@ Do not add decorative amber, cyan, indigo, blue, purple, pink, orange, or green
 to these surfaces. Do not create a page-specific `--accent-*` variable to bypass
 this rule.
 
+Charts that shade by amount (the profile's activity calendar, the «Страны» world
+map) mix `--ui-color-content` into `--theme-bg-primary` in steps with
+`color-mix()`, so both themes follow without new literals; the chosen item is the
+content colour itself and never one of the steps, and every amount is also in
+text (a legend, a tooltip, the list beside the map).
+
 ### Explicit exceptions
 
 Color is allowed only when it carries content or an unavoidable semantic:

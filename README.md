@@ -61,6 +61,8 @@ lists, provider-aware playback, and Firebase synchronization in one interface.
 - Watch with an ambient light: the colours of the picture spread behind the player on
   every source («Подсветка» in the player menu). Sources whose picture the page cannot
   read use a tab capture, which needs Chrome's optional access to all sites.
+- See on a world map where the films and series you rated come from («Страны» in the
+  profile's «Статистика»), and open any country's films the way a genre opens them.
 - Use light/dark themes with optional seasonal decor, Popup or Side Panel mode,
   localized UI, and accessible controls.
 - Give administrators tools for user approval, moderation, mappings, and service
@@ -292,6 +294,7 @@ settings and pairing. See the
 | `npm run test:chess` | Verify the chess rules (perft, SAN, draws), the bot, the `chess` Cloud Function on an in-memory Firestore, the local store, clocks, notices and strings; the two-browser game is `npm run test:e2e -- chess` |
 | `npm run test:zalp` | Verify Salvo («Залп»): both locales cover every string of the page and the engine, the page keeps to the extension CSP, terrain, blast and projectile rules, the computer's aim and the menu link; a recorded turn replays identically on a second game and a game rebuilt from seed, craters and snapshot matches the live one; the `zalp` Cloud Function's rooms, teams, turn stream, turn order, skipped turns and the end on an in-memory Firestore. The two-browser game is `npm run test:e2e -- zalp` |
 | `npm run vendor:three` | Rebuild `libs/three.games.min.js`, the three.js subset shared by the Rubik's Cube, chess and Battleship (after upgrading `three` or importing new names from it) |
+| `npm run map:world` | Regenerate `src/shared/data/worldMap.js`, the profile's world map, from the `world-atlas` Natural Earth outlines (after changing `scripts/build-world-map.mjs` or upgrading `world-atlas`) |
 | `npm run test:visual-design` | Verify the monochrome palette and shared UI token contract |
 | `npm run test:seasonal-theme` | Check seasonal decor dates and that seasonal achievements keep them, opt-out, Settings preview and the Home season banner |
 | `npm run test:new-year-browser` | Run the built extension with a pinned clock through the New Year season: sign, gifts, countdown, snow and reduced motion |
@@ -475,6 +478,7 @@ keeps npm-compatible three-component semver metadata.
 
 - The extension is called «Сеанс», «Screening» in English: in Chrome's extension list and toolbar (by Chrome's language, through _locales) and in page titles, the popup, the sign-in window, the live channel and the admin panel (by the extension's language). The README is renamed too. MovieList Hub and MovieListSetup.exe keep their names, since that is how the Windows program is installed.
 - Player: the colours of the playing picture spread softly behind the player window, like YouTube's ambient mode, on every source. Videos of the film page are drawn directly, provider frames send a small copy of their picture, and a picture that cannot be read (a protected stream, a player nested deeper) is taken from a capture of the tab, which needs Chrome's access to all sites: the player menu then says «Нужен доступ» under «Подсветка», and choosing «Вкл» asks Chrome for it once. The window and its controls stay grey; the light goes out when the player is minimised, hidden or full screen, and the choice is kept on this computer only.
+- Profile: «Статистика» has a «Страны» section between «Что смотрю» and the favourite actors: a world map shaded by how many rated films and series came from each country, the countries listed like the genres, and the same films panel a genre opens (your scores by value, «Другие в расширении», orders, posters and «Страна в каталоге»). The map is drawn from Natural Earth outlines shipped with the extension, with no map service; countries too small for it are small squares, and the USSR or Yugoslavia are listed under the map instead of being handed to a present country. Country names from Kinopoisk and TMDB are now read as one country however they are spelled («США» and «United States of America», «Германия» and «Германия (ФРГ)»), so «Путешественник» counts each country once: its number can go down, while earned levels stay.
 
 ### Fixes
 
