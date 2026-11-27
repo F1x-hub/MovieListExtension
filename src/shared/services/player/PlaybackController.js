@@ -133,6 +133,16 @@ class PlaybackController {
                 }
             }
         }
+
+        // One class serves every balancer that is asked by Kinopoisk ID.
+        const KpAdapter = typeof KpBalancerAdapter !== 'undefined' ? KpBalancerAdapter : (typeof require !== 'undefined' ? require('./adapters/KpBalancerAdapter').KpBalancerAdapter : null);
+        for (const id of KpAdapter?.IDS || []) {
+            try {
+                this.registerAdapter(new KpAdapter(id));
+            } catch (e) {
+                console.warn('[PlaybackController] Failed to initialize adapter class:', e);
+            }
+        }
     }
 
     /**

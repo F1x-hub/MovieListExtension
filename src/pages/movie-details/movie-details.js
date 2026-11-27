@@ -5719,6 +5719,7 @@ class MovieDetailsManager {
             };
             await this.parserRegistry.searchAll(movie.name || movie.alternativeName, movie.year, {
                 mediaType: movieType,
+                kinopoiskId: movie.kinopoiskId,
                 fallbackTitle: movie.alternativeName,
                 altName: movie.alternativeName || null,
                 onResult: (result, parser) => {
@@ -5827,6 +5828,7 @@ class MovieDetailsManager {
 
         const searchPromise = this.parserRegistry.searchAll(movie.name || movie.alternativeName, movie.year, {
             mediaType: movieType,
+            kinopoiskId: movie.kinopoiskId,
             fallbackTitle: movie.alternativeName,
             altName: movie.alternativeName || null,
             onResult: (result, parser) => {
@@ -6220,7 +6222,7 @@ class MovieDetailsManager {
         this._canonicalPickerSyncTimers = [];
         // Canonical picker mode forces the provider's episode arrows on, so it
         // must stay off for films.
-        if (isSeries && activeAdapter && ['exfs', 'kinogo'].includes(activeProviderId) && nativeBridgeSourceAvailable && !providerMarkedUnavailable) {
+        if (isSeries && activeAdapter && ['exfs', 'kinogo', 'collaps', 'alloha'].includes(activeProviderId) && nativeBridgeSourceAvailable && !providerMarkedUnavailable) {
 
             const dispatchCanonicalPickerMode = () => {
                 const iframes = Array.from(this.elements.videoContainer?.querySelectorAll?.('iframe') || []);
@@ -7067,8 +7069,9 @@ class MovieDetailsManager {
             // A provider with its own episode list can be steered there by hand. A
             // title-only one (Rutube) plays the one video its search found and has no
             // list to choose from, so sending the viewer there would be a dead end.
-            const hasOwnEpisodeList = typeof activeAdapter?.supportsEpisodePicker === 'function'
-                && activeAdapter.supportsEpisodePicker();
+            const hasOwnEpisodeList = typeof activeAdapter?.hasOwnEpisodeList === 'function'
+                ? activeAdapter.hasOwnEpisodeList()
+                : typeof activeAdapter?.supportsEpisodePicker === 'function' && activeAdapter.supportsEpisodePicker();
             const season = selection.seasonNumber;
             const episode = selection.episodeNumber;
             const titleOnly = `${activeAdapter?.label || 'Источник'} ищет видео по названию и не выбирает серию: это может быть не S${season}E${episode}.`;
@@ -8798,6 +8801,7 @@ class MovieDetailsManager {
                 for (const title of titles) {
                     result = await parser.cachedSearch(title, movie.year, {
                         mediaType: requestedMediaType,
+                        kinopoiskId: movie.kinopoiskId,
                         seasonNumber: selection?.seasonNumber ?? null,
                         altName
                     });
@@ -9695,6 +9699,7 @@ class MovieDetailsManager {
                         // one cache entry for the title.
                         searchResult = await parser.cachedSearch(searchTitle, targetMovie.year, {
                             mediaType: requestedMediaType,
+                            kinopoiskId: targetMovie.kinopoiskId,
                             seasonNumber: selection?.seasonNumber ?? null,
                             altName: targetMovie.alternativeName || null
                         });

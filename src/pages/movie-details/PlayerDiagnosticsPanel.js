@@ -1,19 +1,19 @@
 (function (global) {
     'use strict';
     let sequence = 0;
-    const sources = new Set(['animego', 'seasonvar', 'exfs', 'kinogo', 'rutube', 'officialyt', 'kodik', 'vidsrc', 'torrent', 'unknown']);
+    const sources = new Set(['animego', 'seasonvar', 'exfs', 'kinogo', 'rutube', 'officialyt', 'collaps', 'alloha', 'veoveo', 'kodik', 'vidsrc', 'torrent', 'unknown']);
     const types = new Set(['resolveOk', 'resolveFail', 'fallback', 'decodeFailed']);
     const reasons = new Set(['policy', 'decode', 'aborted', 'timeout', 'network', 'http', 'unknown']);
     const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.min(value, 2100000000000) : 0;
     const nullableTime = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? number(value) : null;
     function safeReport(report) {
-        const counters = Array.isArray(report?.counters) ? report.counters.slice(0, 252).filter(value => sources.has(value?.providerId) && types.has(value?.type) && reasons.has(value?.reason)).map(value => ({ providerId: value.providerId, type: value.type, reason: value.reason, count: number(value.count) })) : [];
-        const ttff = Array.isArray(report?.ttff) ? report.ttff.slice(0, 27).filter(value => sources.has(value?.providerId) && ['exact', 'approximate', 'unknown'].includes(value?.quality)).map(value => ({ providerId: value.providerId, quality: value.quality, count: number(value.count), meanMs: value.quality === 'unknown' ? null : number(value.meanMs), maxMs: value.quality === 'unknown' ? null : number(value.maxMs),
+        const counters = Array.isArray(report?.counters) ? report.counters.slice(0, 336).filter(value => sources.has(value?.providerId) && types.has(value?.type) && reasons.has(value?.reason)).map(value => ({ providerId: value.providerId, type: value.type, reason: value.reason, count: number(value.count) })) : [];
+        const ttff = Array.isArray(report?.ttff) ? report.ttff.slice(0, 36).filter(value => sources.has(value?.providerId) && ['exact', 'approximate', 'unknown'].includes(value?.quality)).map(value => ({ providerId: value.providerId, quality: value.quality, count: number(value.count), meanMs: value.quality === 'unknown' ? null : number(value.meanMs), maxMs: value.quality === 'unknown' ? null : number(value.maxMs),
             measuredCount: value.quality === 'unknown' ? 0 : number(value.measuredCount),
             p50Ms: value.quality === 'unknown' ? null : nullableTime(value.p50Ms),
             p95Ms: value.quality === 'unknown' ? null : nullableTime(value.p95Ms),
             histogram: Array.from({ length: 11 }, (_, index) => value.quality === 'unknown' ? 0 : number(value.histogram?.[index])) })) : [];
-        const qoe = Array.isArray(report?.qoe) ? report.qoe.slice(0, 9).filter(value => sources.has(value?.providerId)).map(value => ({ providerId: value.providerId,
+        const qoe = Array.isArray(report?.qoe) ? report.qoe.slice(0, 12).filter(value => sources.has(value?.providerId)).map(value => ({ providerId: value.providerId,
             sessions: number(value.sessions), stallCount: number(value.stallCount), rebufferMsTotal: number(value.rebufferMsTotal), rebufferMsMax: number(value.rebufferMsMax) })) : [];
         return { schema: 1, retentionDays: 7, counters, ttff, qoe };
     }

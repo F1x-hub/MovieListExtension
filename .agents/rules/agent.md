@@ -392,6 +392,23 @@ checklist; `npm run test:visual-design` enforces much of it.
   The domain is also learned from where a site loads the script (`noteScript`) and from a printed
   address (`adopt`, only when that page names its own host and VenomPlayer). Every balancer frame
   greets the page (`PLAYER_FRAME_HELLO`); silence remounts it once, then the next source takes over.
+- Sources asked by Kinopoisk ID: `KpBalancerParser` registers `collaps` (the same Venom balancer,
+  `/embed/kp/<id>`, no token), `alloha` and `veoveo`; `KpBalancerAdapter` serves all three. The ID
+  reaches a parser as `options.kinopoiskId` from every Movie Details search, their search cache is
+  keyed by it (`getSearchCacheKey`), and a name never stands in for it. Collaps and Alloha open
+  the frames Ex-FS and KinoGo open (native bridge, `PARTIAL`); Veoveo's frame has no extension
+  scripts and plays its own adverts (`OPAQUE`, ranked after the other sources). Alloha answers
+  only a request that names a site, so its Referer rule (109) also covers the page's own
+  `xmlhttprequest`, and its frame address is rebuilt around the film's `token_movie`, which the
+  cleaner keys resume positions by. Alloha's series frame opens on the last episode, and its menu
+  drops to the first one after a season change and reports that as the viewer's move, so the
+  episode goes into the address (`getFrameUrl`: `season`, `episode`) and the adapter declines any
+  other episode in place: the page opens the frame again. Alloha's and Veoveo's partner tokens
+  are built in and kept in storage (`kpBalancerAccessV1`); `KpBalancerAccess.ask()` renews them
+  from the aggregator's list (`p.linkpp.ink/api/players`) only after a balancer's 404, at most
+  once a day, and takes only hosts the manifest already covers. That aggregator's network
+  (kinopoisk.cx, troutcdn, linkpp) blocks an address for about half an hour after one request
+  that does not look like a browser's: never reach it from a test, a script or a server.
 - Provider players never adapt: `provider-ad-guard.js` makes Venom start at its highest quality,
   seeds Allplay's saved one, disables WebRTC, and lowers a step on stalls. A quality the viewer
   pressed (Venom's own key, `movieExtension_qualityChosen`, `qualityChosen` in WatchPreferences) is

@@ -161,7 +161,7 @@ class BaseParserService {
                 } else fail('unsupported');
             }
         } else {
-            const frameUrl = BalancerDomains.actualize(source.url);
+            const frameUrl = BalancerDomains.actualize(this.getFrameUrl(source, options));
             const iframeSourceUrl = toPlayerFrameSrcAttribute(withVenomAdFreeParam(frameUrl, this.baseUrl));
             if (!iframeSourceUrl) {
                 console.warn(`[${this.name}] Rejected player URL with an unsupported scheme`);
@@ -363,6 +363,17 @@ class BaseParserService {
         });
         options.onLifecycleState?.('error', { reason: reason || 'stream-failed', source: failedSource, parserId: this.id });
         return false;
+    }
+
+    /**
+     * The address a source's frame is opened at. A parser whose balancer takes the
+     * season and episode in the address overrides this (`options.season`, `options.episode`).
+     * @param {VideoSource} source
+     * @param {Object} [_options] The render options
+     * @returns {string}
+     */
+    getFrameUrl(source, _options = {}) {
+        return source.url;
     }
 
     /**
@@ -686,12 +697,21 @@ class BaseParserService {
         return provider ? `${provider}_${operation}` : 'OTHER';
     }
 
-    async cachedSearch(title, year, options = {}) {
+    /**
+     * What makes two searches the same one. A parser that finds a title by its
+     * ID rather than by its name overrides this.
+     * @returns {string}
+     */
+    getSearchCacheKey(title, year, options = {}) {
         const mediaType = options?.mediaType || null;
         const seasonNumber = options?.seasonNumber ?? '';
         const seasonYear = options?.seasonYear ?? '';
         const altName = options?.altName || '';
-        const cacheKey = `${title}_${year || ''}_${mediaType || ''}_${seasonNumber}_${seasonYear}_${altName}`;
+        return `${title}_${year || ''}_${mediaType || ''}_${seasonNumber}_${seasonYear}_${altName}`;
+    }
+
+    async cachedSearch(title, year, options = {}) {
+        const cacheKey = this.getSearchCacheKey(title, year, options);
         const cached = this._searchCache.get(cacheKey);
         const perf = typeof window !== 'undefined' ? window.MovieDetailsPerf : null;
 

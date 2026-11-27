@@ -140,7 +140,10 @@ for (const rule of embedRules) {
     const host = new URL(referer.value).hostname;
     assert.equal(referer.header, 'referer');
     assert.equal(referer.operation, 'set');
-    assert.deepEqual(rule.condition.resourceTypes, ['sub_frame']);
+    // Alloha is also asked by an extension page whether it has a title, and answers
+    // only a request that names a site: its rule covers that request as well.
+    const askedByPage = host === 'linkpp.ink';
+    assert.deepEqual(rule.condition.resourceTypes, askedByPage ? ['sub_frame', 'xmlhttprequest'] : ['sub_frame']);
     assert.deepEqual(rule.condition.initiatorDomains, ['dgdejomdgiabgcfijcdhjefijdfiemhd']);
     const pattern = new RegExp(rule.condition.regexFilter);
     const embedHost = `api.${rule.condition.requestDomains[0]}`;

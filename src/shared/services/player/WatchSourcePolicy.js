@@ -46,7 +46,8 @@
         };
         return unique.map((value, index) => ({ value, index, health: score(value),
             // VidSrc is offered without an availability check, so it fails slowest.
-            rank: value.startsWith('vidsrc:') ? 2 : anime && value === 'parser:animego' ? -1 : film && value === 'parser:rutube' ? 1 : 0
+            // Veoveo plays its own adverts first and has no extension controls in its frame.
+            rank: value.startsWith('vidsrc:') ? 2 : value === 'parser:veoveo' ? 1 : anime && value === 'parser:animego' ? -1 : film && value === 'parser:rutube' ? 1 : 0
         })).sort((a, b) => a.rank - b.rank || b.health - a.health || a.index - b.index).map(entry => entry.value);
     }
     function select(values, { room, explicit, preference, last, ...options } = {}) {

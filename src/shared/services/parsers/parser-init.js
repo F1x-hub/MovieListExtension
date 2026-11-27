@@ -12,7 +12,7 @@
 
     void window.BalancerDomains?.load();
 
-    const registry = new ParserRegistry(['kinogo', 'exfs', 'seasonvar', 'rutube', 'animego', 'officialyt', 'hdrezka']);
+    const registry = new ParserRegistry(['kinogo', 'exfs', 'seasonvar', 'collaps', 'alloha', 'rutube', 'animego', 'officialyt', 'hdrezka', 'veoveo']);
 
     // Register KinoGo parser
     if (typeof KinogoParser !== 'undefined') {
@@ -58,6 +58,13 @@
     }
 
     if (typeof HdrezkaParser !== 'undefined') registry.register(new HdrezkaParser());
+
+    // Balancers asked by Kinopoisk ID: Collaps, Alloha, Veoveo.
+    if (typeof KpBalancerParser !== 'undefined') {
+        KpBalancerParser.IDS.forEach(id => registry.register(new KpBalancerParser(id)));
+    } else {
+        console.warn('[ParserInit] KpBalancerParser is unavailable');
+    }
 
     // Expose globally
     window.parserRegistry = registry;
