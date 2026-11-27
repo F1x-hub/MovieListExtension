@@ -115,7 +115,6 @@ class PlaybackController {
     _initDefaultAdapters() {
         const adapterClasses = [
             typeof SeasonvarAdapter !== 'undefined' ? SeasonvarAdapter : (typeof require !== 'undefined' ? require('./adapters/SeasonvarAdapter').SeasonvarAdapter : null),
-            typeof VidSrcAdapter !== 'undefined' ? VidSrcAdapter : (typeof require !== 'undefined' ? require('./adapters/VidSrcAdapter').VidSrcAdapter : null),
             typeof KinogoAdapter !== 'undefined' ? KinogoAdapter : (typeof require !== 'undefined' ? require('./adapters/KinogoAdapter').KinogoAdapter : null),
             typeof ExFsAdapter !== 'undefined' ? ExFsAdapter : (typeof require !== 'undefined' ? require('./adapters/ExFsAdapter').ExFsAdapter : null),
             typeof RutubeAdapter !== 'undefined' ? RutubeAdapter : (typeof require !== 'undefined' ? require('./adapters/RutubeAdapter').RutubeAdapter : null),

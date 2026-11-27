@@ -147,6 +147,23 @@
         /** Whether `time` can be played now; a prepared source refuses what is still missing. */
         isAvailable(span, time) {
             return Number.isFinite(time) && span?.duration > 0 && (!span.partial || time <= span.availableEnd);
+        },
+        /**
+         * Whether the element already holds data at `time`: a range that starts at it
+         * (a fragment may begin a moment later) and reaches `ahead` seconds past it or
+         * the end of the film. A jump there only decodes; nothing has to be loaded.
+         */
+        isBuffered(video, time, ahead = 0.5) {
+            const ranges = video?.buffered;
+            if (!Number.isFinite(time) || !ranges) return false;
+            const duration = Number(video.duration);
+            for (let index = 0; index < ranges.length; index++) {
+                const start = ranges.start(index);
+                const end = ranges.end(index);
+                if (start > time + 0.25 || end <= time) continue;
+                if (end - time >= ahead || (Number.isFinite(duration) && end >= duration - 0.25)) return true;
+            }
+            return false;
         }
     });
     global.PlayerMediaControls = Object.freeze({ PlayerVolumeController, PlaybackRate, SubtitleAppearance, Timeline });

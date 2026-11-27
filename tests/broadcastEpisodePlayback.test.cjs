@@ -6,7 +6,6 @@ const { JSDOM } = require('jsdom');
 const { PlaybackController } = require('../src/shared/services/player/PlaybackController');
 const { AutoNextCoordinator } = require('../src/shared/services/player/AutoNextCoordinator');
 const { SeasonvarAdapter } = require('../src/shared/services/player/adapters/SeasonvarAdapter');
-const { VidSrcAdapter } = require('../src/shared/services/player/adapters/VidSrcAdapter');
 const { BasePlaybackAdapter } = require('../src/shared/services/player/adapters/BasePlaybackAdapter');
 
 const read = file => fs.readFileSync(file, 'utf8');
@@ -92,15 +91,15 @@ test('provider capabilities allow direct and native confirmation; S0 is preserve
     controller.setBroadcastSelection(episode);
     const native = { id: 'native', canHandle: () => true, getSelectionMode: () => 'NATIVE_BRIDGE' };
     assert.equal(controller.canPlayBroadcastProvider(native), true);
+    assert.equal(controller.canPlayBroadcastProvider(new SeasonvarAdapter()), true, 'a directly addressed source plays a numbered season');
     assert.equal(controller.canPlayBroadcastProvider({ canHandle: () => true, getSelectionMode: () => 'OPAQUE' }), false);
     controller.broadcastSelection = null;
     controller.setBroadcastSelection({ ...episode, seasonNumber: 0 });
     assert.equal(controller.canPlayBroadcastProvider(new SeasonvarAdapter()), false);
     assert.equal(controller.canPlayBroadcastProvider(native), false);
-    const vidsrc = new VidSrcAdapter();
-    controller.updateSelection({ imdbId: 'tt1234567' });
-    assert.equal(controller.canPlayBroadcastProvider(vidsrc), true);
-    assert.match(vidsrc.buildUrl(controller.getSelection()), /season=0&episode=6/);
+    const direct = { id: 'direct', canHandle: () => true, getSelectionMode: () => 'DIRECT' };
+    assert.equal(controller.canPlayBroadcastProvider(direct), false, 'S0 needs a source that says it maps Specials');
+    assert.equal(controller.canPlayBroadcastProvider({ ...direct, supportsBroadcastSelection: () => true }), true);
     controller.registerAdapter(new SeasonvarAdapter());
     await assert.rejects(controller.switchProvider('seasonvar'), { code: 'BROADCAST_EPISODE_UNAVAILABLE' });
 });
@@ -138,25 +137,6 @@ test('every source entry rejects opaque broadcast playback before provider/netwo
     assert.equal(await manager.changeVideoSource('https://media.fixture/unknown.mp4'), false);
     assert.equal(await manager.loadParserSource('opaque'), false);
     assert.equal(await manager.mountPlayer('opaque'), false);
-    assert.equal(manager.loadVidSrcSource('tt1234567'), false);
-    manager.selectedMovie = { type: 'movie' };
-    assert.match(manager.buildVidSrcUrl('tt1234567'), /\/tv\?.*season=2&episode=6/);
-});
-
-test('VidSrc fails under the name the source list knows it by, or the move to the next source never happens', () => {
-    const { manager } = managerHarness();
-    const renders = [];
-    Object.assign(manager, {
-        selectedMovie: { type: 'movie' },
-        renderDefaultPlayer(url, options) { renders.push({ url, options }); }
-    });
-    manager.loadVidSrcSource('tt1234567', { requestId: 4, movieId: 7 });
-    assert.match(renders[0].url, /^https:\/\/vidsrc-embed\.ru\/embed\/movie\?imdb=tt1234567/, 'the frame loads the embed');
-    assert.equal(renders[0].options.sourceValue, 'vidsrc:tt1234567', 'the lifecycle reports the source list value');
-    assert.equal(renders[0].options.requestId, 4);
-    assert.equal(renders[0].options.movieId, 7);
-    assert.match(fs.readFileSync('src/pages/movie-details/movie-details.js', 'utf8'),
-        /createSourceLifecycleOptions\(\{ url: sourceValue, movieId, requestId \}\)/);
 });
 
 test('native broadcast waits for exact confirmation and closes on refusal or bridge exception', async () => {

@@ -38,8 +38,10 @@
         enableWorker: true,
         capLevelToPlayerSize: false,
         capLevelOnFPSDrop: true,
-        // hls.js keeps the whole played-back buffer by default (Infinity).
-        backBufferLength: 60,
+        // hls.js keeps the whole played-back buffer by default (Infinity). Five minutes let
+        // −10 s presses rewind that far without loading again; at high bitrates Chrome's own
+        // memory limit for a stream evicts the oldest part earlier.
+        backBufferLength: 300,
         maxBufferLength: 60,
         maxMaxBufferLength: 240,
         maxBufferSize: 90 * 1000 * 1000

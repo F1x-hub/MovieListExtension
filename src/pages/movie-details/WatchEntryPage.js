@@ -216,11 +216,9 @@
             ]);
             if (!isCurrent()) return null;
             const room = this.watchRoomController?.room && this.watchRoomController.activeProviderHint;
-            // The last source may only be where a failed run ended, and VidSrc fails slowest.
-            const lastWorth = last?.startsWith?.('vidsrc:') ? null : last;
             const choose = values => global.WatchSourcePolicy.select(values, {
                 room: room ? `parser:${room}` : null, explicit: this.activeSourceValue,
-                preference, last: lastWorth, ...this.getWatchRankOptions()
+                preference, last, ...this.getWatchRankOptions()
             });
             await this.waitForWatchSource(choose);
             return isCurrent() ? choose(this.getWatchInnerValues()) : null;
@@ -247,8 +245,8 @@
             while (!finished && !isDecided() && Date.now() < deadline) {
                 await new Promise(resolve => setTimeout(resolve, WATCH_SOURCE_POLL_MS));
             }
-            // Past the limit only a confirmed source may start. VidSrc is never checked, so
-            // with nothing else found yet the viewer waits for the verdict instead of it.
+            // Past the limit only a found source may start: with none found yet the viewer
+            // waits for the verdict.
             if (!finished && !this.getWatchInnerValues().some(value => value.startsWith('parser:'))) await probe;
             // Answers of the last moment reach the list on its next repaint.
             if (finished) await new Promise(resolve => setTimeout(resolve, WATCH_SOURCE_POLL_MS));

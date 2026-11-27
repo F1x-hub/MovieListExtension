@@ -97,8 +97,6 @@
     "https://anison.fm/*",
     "https://rutube.ru/*",
     "https://*.rutube.ru/*",
-    "https://vidsrc-embed.ru/*",
-    "https://*.vidsrc-embed.ru/*",
     "https://*.rtbcdn.ru/*",
     "http://localhost:3579/*",
     "http://127.0.0.1:3579/*",
@@ -225,18 +223,16 @@
         "*://*.allarknow.online/*",
         "*://*.stloadi.live/*"
       ],
-      "js": ["content-scripts/provider-preview-bridge.js", "content-scripts/provider-ad-guard.js"],
+      "js": ["content-scripts/provider-preview-bridge.js", "content-scripts/provider-ad-guard.js", "content-scripts/provider-buffer-keeper.js"],
       "world": "MAIN",
       "run_at": "document_start",
       "all_frames": true
     },
     {
       "matches": [
-        "https://rutube.ru/play/embed/*",
-        "https://vidsrc-embed.ru/*",
-        "https://*.vidsrc-embed.ru/*"
+        "https://rutube.ru/play/embed/*"
       ],
-      "js": ["content-scripts/provider-preview-bridge.js"],
+      "js": ["content-scripts/provider-preview-bridge.js", "content-scripts/provider-buffer-keeper.js"],
       "world": "MAIN",
       "run_at": "document_start",
       "all_frames": true
@@ -256,9 +252,7 @@
         "*://*.allarknow.online/*",
         "*://*.stloadi.live/*",
         "https://widgets.kinopoisk.ru/*",
-        "https://rutube.ru/play/embed/*",
-        "https://vidsrc-embed.ru/*",
-        "https://*.vidsrc-embed.ru/*"
+        "https://rutube.ru/play/embed/*"
       ],
       "js": [
         "src/shared/lib/hls.min.js",

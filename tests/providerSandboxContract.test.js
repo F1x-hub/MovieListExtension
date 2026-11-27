@@ -17,7 +17,7 @@ try {
     assert.ok(source.includes(marker), 'providers remain disabled pending live verification');
     const configured = new JSDOM('<div id="player"></div>', { url: 'https://host.test/', runScripts: 'outside-only' });
     try {
-        configured.window.eval(source.replace(marker, "const SANDBOX_PROVIDERS = Object.freeze(['provider.test', 'host.test', 'vidsrc-embed.ru']);"));
+        configured.window.eval(source.replace(marker, "const SANDBOX_PROVIDERS = Object.freeze(['provider.test', 'host.test']);"));
         Surface = configured.window.MovieDetailsPlayerSurface;
         const policy = Surface.getProviderSandbox('https://provider.test/embed');
         assert.equal(policy, 'allow-scripts allow-same-origin allow-forms allow-presentation');
@@ -36,13 +36,8 @@ try {
         const parser = new Parser({ id: 'test', name: 'Test', baseUrl: 'https://site.test' });
         await parser.renderPlayer(target, [{ url: 'https://provider.test/embed', name: 'Test', type: 'iframe' }], { lifecycle: false });
         assert.equal(target.querySelector('iframe').getAttribute('sandbox'), policy, 'real parser mount applies shared policy');
-        configured.window.eval(read('../src/shared/services/player/adapters/BasePlaybackAdapter.js'));
-        configured.window.eval(read('../src/shared/services/player/adapters/VidSrcAdapter.js'));
-        const mounted = await new configured.window.VidSrcAdapter().mount(target, { imdbId: 'tt1234567', mediaType: 'movie' });
-        assert.equal(mounted.element.getAttribute('sandbox'), policy, 'real VidSrc mount applies shared policy');
     } finally { configured.window.close(); }
-    for (const file of ['../src/shared/services/parsers/BaseParserService.js',
-        '../src/shared/services/player/adapters/VidSrcAdapter.js', '../src/pages/movie-details/movie-details.js']) {
+    for (const file of ['../src/shared/services/parsers/BaseParserService.js', '../src/pages/movie-details/movie-details.js']) {
         assert.ok(read(file).includes('getProviderSandbox'), `provider mount uses policy: ${file}`);
     }
     console.log('Provider sandbox infrastructure: explicit tokens, empty default, isolated allowlist, safe renderer and provider call sites passed.');

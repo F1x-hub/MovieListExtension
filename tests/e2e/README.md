@@ -242,9 +242,6 @@ Reading the rows:
   `<id>-watch.png`, then repeat that title alone before judging its sources.
 - `window hidden` says nothing about the source, even with exit code 1. Repeat with the
   windows in view.
-- `unavailable` on VidSrc alone is expected on some networks. It is the one source offered
-  without an availability check, and the player reports it unavailable when its site does not
-  open in the browser.
 - A screenshot is taken within seconds of the start, so a black picture may be the video's own
   opening. A later row or another title shows whether capture works at all.
 

@@ -169,6 +169,175 @@
         }, true);
     }
 
+    // Venom plays DASH (`dash`, or `dasha` for AV1) before HLS. Its DASH engine, dash.js
+    // 3.0, throws away all but the fragment being played on every seek, so jumping around
+    // loads again; its HLS engine keeps what it loaded, but this balancer's HLS stops at
+    // 720p while DASH has 1080p. So DASH plays while the viewer watches, HLS takes over
+    // while they jump around, and DASH comes back after a while of plain watching. The
+    // switch is Venom's own `renew` with `_fallFrom`, the path it takes itself when DASH
+    // fails to decode: a new player at the same moment, the dub kept. Measured on Collaps
+    // on 2026-11-28: HLS plays 1–7.5 s after the burst (its first fragments are slow to
+    // come), DASH about 2 s after the calm period, unseen at a pause. A new episode starts
+    // on DASH.
+    const SEEK_BURST = 3;
+    const SEEK_BURST_MS = 5000;
+    // The burst is over: the jump the viewer settled on is where HLS starts.
+    const SEEK_SETTLE_MS = 700;
+    const CALM_BEFORE_DASH_MS = 120000;
+    const PAUSE_AFTER_SEEK_MS = 20000;
+    // A starting film seeks by itself (Venom's resume, then the move to the asked moment):
+    // those are not the viewer's, so seeks count from a while after it plays.
+    const QUIET_AFTER_START_MS = 3000;
+    const RESUME_LIMIT_MS = 8000;
+    // Its HLS module is fetched on the first switch, so the first start can take seconds.
+    const PLAY_RETRY_MS = 20000;
+
+    function switchEngineBySeeking(facade, options) {
+        if (typeof facade?.once !== 'function') return;
+        // The extension's controls move the film into their own wrapper, out of Venom's
+        // container, so media events are watched on the whole frame.
+        const container = document;
+        let player = null;
+        // Venom hands its internal player to listeners as `this`; only it can renew.
+        const capture = () => facade.once('timeupdate', function captureInternal() {
+            if (typeof this?.renew === 'function' && this.config?.source) player = this;
+        });
+        capture();
+        const film = () => [...container.querySelectorAll('video')]
+            .filter(video => video.isConnected && video.dataset.ghost !== 'true' && (video.currentSrc || video.src))
+            .sort((a, b) => (Number(b.duration) || 0) - (Number(a.duration) || 0))[0] || null;
+        const hasDash = source => Boolean(source && (source.dash || source.dasha));
+        const hasHls = source => Boolean(source && (source.hls || source.hlsList));
+        let dashSource = null;
+        let onHls = false;
+        let switching = false;
+        let seeks = [];
+        let settleTimer = null;
+        let calmTimer = null;
+        let quietUntil = Infinity;
+        // A new episode or title builds its source from the playlist: DASH again.
+        function onEpisode() {
+            quietUntil = Infinity;
+            onHls = false;
+            dashSource = null;
+            seeks = [];
+            clearTimeout(calmTimer);
+            clearTimeout(settleTimer);
+            capture();
+        }
+
+        const renewAt = (config, time, wasPaused) => {
+            switching = true;
+            quietUntil = Infinity;
+            const previous = film();
+            // A time in the frame's address outranks `time` unless it is ignored.
+            const next = player.renew({ ...config, time, ignoreUrlTime: true });
+            player = next;
+            // Listeners belong to one player: the new one needs its own.
+            next.on?.('playlistItem', onEpisode);
+            capture();
+            // In case Venom still starts elsewhere, the film is moved to `time` below.
+            const started = performance.now();
+            let finished = false;
+            const done = () => {
+                if (finished) return;
+                finished = true;
+                switching = false;
+                waitForCalm();
+            };
+            const settle = () => {
+                const video = film();
+                if (!video || video === previous) {
+                    if (performance.now() - started < RESUME_LIMIT_MS) setTimeout(settle, 50);
+                    else done();
+                    return;
+                }
+                // Venom's HLS loads nothing until the film is played, and it first fetches
+                // its HLS module and attaches a new source, which undoes an early play().
+                if (!wasPaused) {
+                    const until = performance.now() + PLAY_RETRY_MS;
+                    const keepPlaying = () => {
+                        if (!video.isConnected || performance.now() > until) return;
+                        if (video.paused) video.play().catch(() => {});
+                        if (video.paused || video.readyState < 3) setTimeout(keepPlaying, 250);
+                    };
+                    keepPlaying();
+                }
+                const go = () => {
+                    if (Math.abs(video.currentTime - time) > 1) video.currentTime = time;
+                    setTimeout(done, 1000);
+                };
+                if (video.readyState >= 1) go();
+                else {
+                    video.addEventListener('loadedmetadata', go, { once: true });
+                    // A paused film loads on the viewer's play: the count of seeks may go on.
+                    if (wasPaused) setTimeout(done, 1000);
+                }
+            };
+            settle();
+        };
+
+        // Which engine plays, for diagnostics and the live check.
+        const mark = engine => { document.documentElement.dataset.movieExtensionEngine = engine; };
+
+        const toHls = () => {
+            const video = film();
+            const source = player?.config?.source;
+            if (!video || switching || onHls || !hasDash(source) || !hasHls(source)) return;
+            dashSource = { ...source };
+            onHls = true;
+            seeks = [];
+            mark('hls');
+            renewAt({ ...player.config, source: { ...source }, _fallFrom: source.dash ? 'dash' : 'dasha' }, video.currentTime, video.paused);
+            waitForCalm();
+        };
+
+        // While playing the switch back costs a short stop (about 2 s measured); at the
+        // viewer's own pause it costs nothing they see, so a pause is taken when one comes.
+        const toDash = ({ atPause = false } = {}) => {
+            const video = film();
+            if (!video || switching || !onHls || !dashSource || video.seeking) return;
+            if (atPause ? !video.paused : video.paused) return;
+            onHls = false;
+            clearTimeout(calmTimer);
+            mark('dash');
+            // The HLS player's config may still carry the `_fallFrom` that dropped DASH.
+            const { _fallFrom: dropped, ...config } = player.config;
+            renewAt({ ...config, source: { ...dashSource } }, video.currentTime, atPause);
+        };
+
+        const waitForCalm = () => {
+            clearTimeout(calmTimer);
+            if (onHls) calmTimer = setTimeout(toDash, CALM_BEFORE_DASH_MS);
+        };
+
+        let lastSeekAt = 0;
+        container.addEventListener('seeking', event => {
+            if (switching || !player || event.target?.tagName !== 'VIDEO' || event.target.dataset.ghost === 'true') return;
+            if (performance.now() < quietUntil) return;
+            lastSeekAt = performance.now();
+            if (onHls) { waitForCalm(); return; }
+            const now = performance.now();
+            seeks = seeks.filter(at => now - at < SEEK_BURST_MS);
+            seeks.push(now);
+            clearTimeout(settleTimer);
+            if (seeks.length >= SEEK_BURST) settleTimer = setTimeout(toHls, SEEK_SETTLE_MS);
+        }, true);
+        // Calm means watching: a paused film waits, and the count starts again on play.
+        container.addEventListener('pause', event => {
+            if (switching || event.target?.tagName !== 'VIDEO' || event.target.dataset.ghost === 'true') return;
+            clearTimeout(calmTimer);
+            // A pause right after jumping around is part of the search, not the end of it.
+            if (onHls && performance.now() - lastSeekAt >= PAUSE_AFTER_SEEK_MS) setTimeout(() => toDash({ atPause: true }), 300);
+        }, true);
+        container.addEventListener('playing', event => {
+            if (event.target?.tagName !== 'VIDEO' || event.target.dataset.ghost === 'true') return;
+            if (quietUntil === Infinity) quietUntil = performance.now() + QUIET_AFTER_START_MS;
+            if (onHls && !switching) waitForCalm();
+        }, true);
+        facade.on?.('playlistItem', onEpisode);
+    }
+
     function installVenomFactoryGuard() {
         let library;
         Object.defineProperty(window, 'VenomPlayer', {
@@ -188,6 +357,8 @@
                         const prepared = options && typeof options === 'object'
                             ? { ...options, ads: null, stats: null, quality: BEST_QUALITY } : options;
                         const player = value.make.call(value, prepared, ...args);
+                        try { switchEngineBySeeking(player, prepared); }
+                        catch { /* Venom keeps the engine it chose. */ }
                         try { keepPlaybackSmooth(player, prepared); }
                         catch { /* The chosen quality stays. */ }
                         try { window.MovieExtensionPreviewBridge?.trackVenom(player, prepared); }

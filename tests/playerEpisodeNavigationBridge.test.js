@@ -265,7 +265,7 @@ function playerNavigateEvent(direction, source, origin) {
             return { manager, frame };
         };
         const options = { requestId: 5, isRequestCurrent: () => true, onLifecycleState: (state, detail) => outcomes.push([state, detail.reason]) };
-        const url = 'https://vidsrc-embed.ru/embed/movie?imdb=tt0816692&autoplay=1';
+        const url = 'https://provider.example/embed/movie?id=816692&autoplay=1';
 
         let requested = null;
         const blocked = makeManager(async (target, init) => {
@@ -273,7 +273,7 @@ function playerNavigateEvent(direction, source, origin) {
             throw new TypeError('Failed to fetch');
         });
         assert.strictEqual(await blocked.manager.verifyFrameSiteReachable(url, options), false);
-        assert.deepStrictEqual(requested, { target: 'https://vidsrc-embed.ru/', mode: 'no-cors', credentials: 'omit' });
+        assert.deepStrictEqual(requested, { target: 'https://provider.example/', mode: 'no-cors', credentials: 'omit' });
         assert.deepStrictEqual(outcomes, [['unavailable', 'provider-unreachable']], 'the player moves on as from any unavailable source');
         assert.match(lifecycleStates.at(-1).message, /не открывается/);
 

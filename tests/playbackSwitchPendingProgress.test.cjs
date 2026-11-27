@@ -4,8 +4,6 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { createRequire } = require('node:module');
 const { execFileSync } = require('node:child_process');
-const { JSDOM } = require('jsdom');
-const { VidSrcAdapter } = require('../src/shared/services/player/adapters/VidSrcAdapter');
 
 const file = path.resolve(__dirname, '../src/shared/services/player/PlaybackController.js');
 const deferred = () => {
@@ -90,29 +88,5 @@ async function pendingWrite(source) {
     write.reject(new Error('Storage unavailable'));
     await tick();
     assert.equal(owner.getActiveProvider(), 'fast');
-
-    // Exercise the real adapter: stale cleanup must not blank the newer iframe
-    // on two overlapping mounts of the very same provider instance.
-    const previousDocument = global.document;
-    const dom = new JSDOM('<div id="player"></div>');
-    global.document = dom.window.document;
-    try {
-        const sameProvider = controllerFrom(source, async () => {});
-        sameProvider.container = dom.window.document.getElementById('player');
-        sameProvider.setSelection({ ...sameProvider.getSelection(), imdbId: 'tt1234567' });
-        const vidsrc = new VidSrcAdapter();
-        sameProvider.registerAdapter(vidsrc);
-        const outcomes = await Promise.allSettled([
-            sameProvider.switchProvider('vidsrc'), sameProvider.switchProvider('vidsrc')
-        ]);
-        assert.equal(outcomes[0].reason.code, 'STALE_PLAYBACK_REQUEST');
-        assert.equal(outcomes[1].status, 'fulfilled');
-        assert.equal(sameProvider.container.querySelectorAll('iframe').length, 1);
-        assert.equal(vidsrc.activeIframe, sameProvider.activeMount.element);
-        assert.notEqual(vidsrc.activeIframe.src, 'about:blank');
-    } finally {
-        global.document = previousDocument;
-        dom.window.close();
-    }
     console.log('Provider switch: mounts before storage settles, captures outgoing identity/timestamp, preserves latest switch and handles failed persistence');
 })().catch(error => { console.error(error); process.exitCode = 1; });

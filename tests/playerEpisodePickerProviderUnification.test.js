@@ -1,7 +1,6 @@
 const assert = require('assert');
 const { BasePlaybackAdapter } = require('../src/shared/services/player/adapters/BasePlaybackAdapter');
 const { SeasonvarAdapter } = require('../src/shared/services/player/adapters/SeasonvarAdapter');
-const { VidSrcAdapter } = require('../src/shared/services/player/adapters/VidSrcAdapter');
 const { KinogoAdapter } = require('../src/shared/services/player/adapters/KinogoAdapter');
 const { ExFsAdapter } = require('../src/shared/services/player/adapters/ExFsAdapter');
 const { RutubeAdapter } = require('../src/shared/services/player/adapters/RutubeAdapter');
@@ -52,7 +51,6 @@ function createMockElement(tagName = 'div') {
 console.log('--- Test Suite 1: Provider Capability Matrix ---');
 {
     const seasonvar = new SeasonvarAdapter();
-    const vidsrc = new VidSrcAdapter();
     const kinogo = new KinogoAdapter();
     const exfs = new ExFsAdapter();
     const rutube = new RutubeAdapter();
@@ -63,13 +61,6 @@ console.log('--- Test Suite 1: Provider Capability Matrix ---');
     assert.equal(seasonvar.supportsSeasonDiscovery(), true, 'Seasonvar must support season discovery');
     assert.equal(seasonvar.supportsEpisodeDiscovery(), true, 'Seasonvar must support episode discovery');
     assert.equal(seasonvar.supportsTitleOnlyPlayback(), false, 'Seasonvar must NOT be title-only');
-
-    // 2. VidSrc capabilities
-    assert.equal(vidsrc.supportsDirectSeasonEpisode(), true, 'VidSrc must support direct S/E');
-    assert.equal(vidsrc.supportsEpisodePicker(), true, 'VidSrc must support episode picker via host metadata');
-    assert.equal(vidsrc.supportsSeasonDiscovery(), false, 'VidSrc does not self-discover seasons');
-    assert.equal(vidsrc.supportsEpisodeDiscovery(), false, 'VidSrc does not self-discover episodes');
-    assert.equal(vidsrc.supportsTitleOnlyPlayback(), false, 'VidSrc is not title-only');
 
     // 3. KinoGo capabilities
     assert.equal(kinogo.supportsDirectSeasonEpisode(), false, 'KinoGo is title balancer');
@@ -87,7 +78,7 @@ console.log('--- Test Suite 1: Provider Capability Matrix ---');
     assert.equal(rutube.supportsEpisodePicker(), false, 'Rutube must NOT show episode picker');
     assert.equal(rutube.supportsTitleOnlyPlayback(), true, 'Rutube is title-only');
 
-    console.log('  ✅ Capabilities Matrix verified for Seasonvar, VidSrc, KinoGo, Ex-FS, Rutube');
+    console.log('  ✅ Capabilities Matrix verified for Seasonvar, KinoGo, Ex-FS, Rutube');
 }
 
 // -------------------------------------------------------------
@@ -192,35 +183,6 @@ console.log('\n--- Test Suite 2: Seasonvar getVideoSources URL Validation ---');
         assert.equal(videoLoaded, true, 'Video load() must be called');
 
         console.log('  ✅ SeasonvarAdapter safely resolves sources and supports in-place episode selection');
-    }
-
-    // -------------------------------------------------------------
-    // Test Suite 4: VidSrc Direct S/E URL Generation & applySelection (Part 12, 35)
-    // -------------------------------------------------------------
-    console.log('\n--- Test Suite 4: VidSrc URL Generation & applySelection ---');
-    {
-        const vidsrc = new VidSrcAdapter();
-
-        const selection = {
-            imdbId: 'tt9288030',
-            mediaType: 'tv-series',
-            seasonNumber: 2,
-            episodeNumber: 5
-        };
-
-        // 10. VidSrc builds correct S/E URL
-        const url = vidsrc.buildUrl(selection);
-        assert.equal(url, 'https://vidsrc-embed.ru/embed/tv?imdb=tt9288030&season=2&episode=5&autoplay=1', 'VidSrc TV URL must include exact season and episode');
-
-        // 11. VidSrc applySelection updates iframe.src directly
-        const mockIframe = { src: 'about:blank' };
-        vidsrc.activeIframe = mockIframe;
-
-        const applied = await vidsrc.applySelection(selection);
-        assert.equal(applied, true, 'VidSrc applySelection must return true');
-        assert.equal(mockIframe.src, url, 'VidSrc active iframe src must be updated');
-
-        console.log('  ✅ VidSrc builds exact S/E embed URLs and applies in-place updates');
     }
 
     // -------------------------------------------------------------

@@ -1,7 +1,6 @@
 const assert = require('assert');
 const fs = require('fs');
 const { SeasonvarAdapter } = require('../src/shared/services/player/adapters/SeasonvarAdapter');
-const { VidSrcAdapter } = require('../src/shared/services/player/adapters/VidSrcAdapter');
 const { KinogoAdapter } = require('../src/shared/services/player/adapters/KinogoAdapter');
 const { ExFsAdapter } = require('../src/shared/services/player/adapters/ExFsAdapter');
 const { RutubeAdapter } = require('../src/shared/services/player/adapters/RutubeAdapter');
@@ -10,17 +9,12 @@ const { canAutoNext } = require('../src/shared/services/player/PlaybackRuntime')
 console.log('🧪 Running Phase 7 capability contract tests...');
 
 const seasonvar = new SeasonvarAdapter();
-const vidsrc = new VidSrcAdapter();
 const kinogo = new KinogoAdapter();
 const exfs = new ExFsAdapter();
 const rutube = new RutubeAdapter();
 
 assert.equal(seasonvar.supportsPrevNext(), true);
 assert.equal(seasonvar.supportsAutoNext(), true);
-assert.equal(vidsrc.supportsPrevNext(), true);
-assert.equal(vidsrc.supportsAutoNext(), false);
-assert.equal(vidsrc.canHandle({ mediaType: 'tv-series', imdbId: null }), false);
-assert.equal(vidsrc.canHandle({ mediaType: 'tv-series', imdbId: 'tt9288030' }), true);
 assert.equal(kinogo.supportsPrevNext(), true);
 assert.equal(exfs.supportsPrevNext(), true);
 assert.equal(rutube.supportsPrevNext(), false);
@@ -28,7 +22,6 @@ assert.equal(kinogo.supportsProviderInternalSelection(), true);
 assert.equal(exfs.supportsProviderInternalSelection(), true);
 assert.equal(rutube.supportsProviderInternalSelection(), true);
 assert.equal(seasonvar.getSelectionMode(), 'DIRECT');
-assert.equal(vidsrc.getSelectionMode(), 'DIRECT');
 assert.equal(kinogo.getSelectionMode(), 'NATIVE_BRIDGE');
 assert.equal(exfs.getSelectionMode(), 'NATIVE_BRIDGE');
 assert.equal(rutube.getSelectionMode(), 'OPAQUE');
@@ -38,15 +31,15 @@ const selection = {
     mediaType: 'tv-series',
     seasonNumber: 3,
     episodeNumber: 6,
-    providerId: 'vidsrc'
+    providerId: 'rutube'
 };
 const nextEpisode = { seasonNumber: 3, episodeNumber: 7, isReleased: true };
 assert.equal(canAutoNext({
     selection,
     runtime: { progressConfidence: 'OPAQUE', isEnded: true },
-    providerCapabilities: vidsrc,
+    providerCapabilities: rutube,
     nextEpisode
-}), false, 'Opaque VidSrc telemetry must not enable AutoNext');
+}), false, 'Opaque Rutube telemetry must not enable AutoNext');
 
 const movieDetailsSource = fs.readFileSync(
     require.resolve('../src/pages/movie-details/movie-details.js'),
@@ -66,7 +59,7 @@ assert.equal(movieDetailsSource.includes('activeProvider ==='), false);
 assert.equal(
     movieDetailsSource.includes('this.playbackController.setActiveProvider(providerKey);'),
     true,
-    'Manual parser/VidSrc source changes must synchronize the canonical active provider'
+    'Manual parser source changes must synchronize the canonical active provider'
 );
 assert.equal(
     movieDetailsSource.includes('manuallyMountedParser'),

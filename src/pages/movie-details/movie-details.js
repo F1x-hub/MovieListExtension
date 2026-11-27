@@ -7035,7 +7035,6 @@ class MovieDetailsManager {
         let provKey = providerId;
         if (typeof provKey === 'string') {
             if (provKey.startsWith('parser:')) provKey = provKey.replace('parser:', '');
-            else if (provKey.startsWith('vidsrc:')) provKey = 'vidsrc';
         }
 
         const activeAdapter = this.playbackController?.getAdapter(provKey)
@@ -7181,7 +7180,7 @@ class MovieDetailsManager {
             await this.openTorrentPicker();
             return;
         }
-        const activeProvider = this.playbackController?.getActiveProvider() || this.activeSource?.parserId || (this.currentVideoUrl?.startsWith('vidsrc:') ? 'vidsrc' : null);
+        const activeProvider = this.playbackController?.getActiveProvider() || this.activeSource?.parserId || null;
 
         if (activeProvider) {
             const adapter = this.playbackController?.getAdapter(activeProvider);
@@ -7204,7 +7203,7 @@ class MovieDetailsManager {
                     .map(iframe => iframe.src || iframe.getAttribute?.('src') || null)
             });
 
-            if (manuallyMountedParser && activeProvider !== 'vidsrc') {
+            if (manuallyMountedParser) {
                 const selectionMode = typeof adapter?.getSelectionMode === 'function'
                     ? adapter.getSelectionMode()
                     : 'OPAQUE';
@@ -7428,7 +7427,7 @@ class MovieDetailsManager {
 
                 // A source button click is an explicit user intent. Preserve it
                 // across the async watch flow instead of allowing stale storage or
-                // the first URL in currentSources to select VidSrc/Ex-FS again.
+                // the first URL in currentSources to select another source again.
                 const explicitSource = this.activeSourceValue
                     && [...this.elements.sourceButtonsContainer.querySelectorAll('.source-btn')]
                         .some(button => button.dataset.value === this.activeSourceValue)
@@ -8978,19 +8977,6 @@ class MovieDetailsManager {
             this.elements.sourceButtonsContainer.appendChild(btn);
         }
 
-        // --- VidSrc embed source ---
-        const imdbId = this.selectedMovie?.externalId?.imdb;
-        if (imdbId) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'source-btn';
-            btn.setAttribute('data-value', `vidsrc:${imdbId}`);
-            btn.setAttribute('aria-pressed', 'false');
-            btn.textContent = 'VidSrc';
-            this.elements.sourceButtonsContainer.appendChild(btn);
-        }
-        // --- end VidSrc ---
-
         // Add URL buttons only for parsers without a canonical parser button.
         // Ex-FS, for example, can expose video or iframe sources and must not appear twice.
         if (this.currentSources && this.currentSources.length > 0) {
@@ -9255,7 +9241,6 @@ class MovieDetailsManager {
     getSourceButtonProviderKey(value) {
         const sourceValue = String(value || '');
         if (sourceValue.startsWith('parser:')) return sourceValue.slice('parser:'.length);
-        if (sourceValue.startsWith('vidsrc:')) return 'vidsrc';
         return null;
     }
 
@@ -9471,8 +9456,9 @@ class MovieDetailsManager {
     }
 
     async changeVideoSource(url, { fromWatchRoom = false, providerSource = null, userInitiated = false, manualRetry = false } = {}) {
-        if (!url) return false;
-        const broadcastProviderId = url.startsWith('parser:') ? url.slice(7) : (url.startsWith('vidsrc:') ? 'vidsrc' : null);
+        // VidSrc is no longer a source: a choice of it saved earlier starts nothing.
+        if (!url || url.startsWith('vidsrc:')) return false;
+        const broadcastProviderId = url.startsWith('parser:') ? url.slice(7) : null;
         if (this.broadcastEpisode && !this.canUseBroadcastSource(broadcastProviderId)) return false;
         if (this.broadcastEpisode) {
             this.broadcastConfirmedSelection = null;
@@ -9514,8 +9500,6 @@ class MovieDetailsManager {
         let providerKey = url;
         if (url.startsWith('parser:')) {
             providerKey = url.replace('parser:', '');
-        } else if (url.startsWith('vidsrc:')) {
-            providerKey = 'vidsrc';
         }
         this.playerMetricsDispose?.();
         this.playerMetricsAttempt = { requestId, providerId: providerKey, startAt: globalThis.performance?.now?.() ?? Date.now(), complete: false, attached: false };
@@ -9526,7 +9510,7 @@ class MovieDetailsManager {
         // mounting. Without this, a previous provider (for example Ex-FS) remains
         // active in PlaybackController and the next episode selection is routed
         // back to that stale provider instead of the source the user selected.
-        if (this.playbackController && (url.startsWith('parser:') || url.startsWith('vidsrc:'))) {
+        if (this.playbackController && url.startsWith('parser:')) {
             this.playbackController.setActiveProvider(providerKey);
         }
 
@@ -9553,13 +9537,6 @@ class MovieDetailsManager {
 
         if (!this.isSourceSwitchRequestCurrent(requestId, movieId)) return false;
         
-        // VidSrc embed source
-        if (url.startsWith('vidsrc:')) {
-            this.unmountActivePlayer();
-            this.loadVidSrcSource(url.replace('vidsrc:', ''), { requestId, movieId });
-            return this.isSourceSwitchRequestCurrent(requestId, movieId);
-        }
-
         // Check if this is a parser-based source (e.g. "parser:seasonvar")
         if (url.startsWith('parser:')) {
             const parserId = url.replace('parser:', '');
@@ -9958,13 +9935,8 @@ class MovieDetailsManager {
         return this.loadParserSource('seasonvar');
     }
 
-    /**
-     * @param {string} url What the frame loads.
-     * @param {object} [options]
-     * @param {string} [options.sourceValue] What the source list calls it, when that
-     *   differs from the frame's address: retries and the move to the next source go by it.
-     */
-    renderDefaultPlayer(url, { requestId = null, movieId = this.selectedMovie?.kinopoiskId, sourceValue = url } = {}) {
+    /** @param {string} url What the frame loads; the source list knows the source by the same address. */
+    renderDefaultPlayer(url, { requestId = null, movieId = this.selectedMovie?.kinopoiskId } = {}) {
         if (!this.getPlayerSurface().mountFrame(url, {
             allow: 'autoplay; fullscreen', sandbox: MovieDetailsPlayerSurface.getProviderSandbox(url)
         })) return;
@@ -9975,7 +9947,7 @@ class MovieDetailsManager {
         }
         const lifecycle = window.PlayerSourceLifecycle;
         if (!iframe || !lifecycle) return;
-        const lifecycleOptions = this.createSourceLifecycleOptions({ url: sourceValue, movieId, requestId });
+        const lifecycleOptions = this.createSourceLifecycleOptions({ url, movieId, requestId });
         this.sourceLifecycleWatcher = lifecycle.watchIframe(iframe, {
             timeoutMs: 5000,
             isRequestCurrent: lifecycleOptions.isRequestCurrent,
@@ -9991,7 +9963,7 @@ class MovieDetailsManager {
         });
         // A site that cannot be reached at all still fires «load», with Chrome's own
         // error page in the frame, so the watcher above calls it ready and the viewer
-        // gets a blank player (VidSrc where its domain does not open).
+        // gets a blank player (a provider whose domain does not open).
         void this.verifyFrameSiteReachable(url, lifecycleOptions);
     }
 
@@ -10029,44 +10001,6 @@ class MovieDetailsManager {
             lifecycleOptions.onLifecycleState?.('unavailable', { reason: 'provider-unreachable' });
             return false;
         }
-    }
-
-    /**
-     * Build vidsrc-embed.ru URL for a movie or TV episode.
-     * @param {string} imdbId  - e.g. "tt0110912"
-     * @param {object} [opts]  - { season, episode } for TV
-     * @returns {string}
-     */
-    buildVidSrcUrl(imdbId, opts = {}) {
-        const base = 'https://vidsrc-embed.ru/embed';
-        const isSeries = Boolean(this.broadcastEpisode) || (typeof isSeriesMedia === 'function'
-            ? isSeriesMedia(this.selectedMovie)
-            : Boolean(this.selectedMovie?.isSeries || (this.selectedMovie?.type && ['tv-series', 'mini-series', 'animated-series', 'anime', 'tv', 'tv-show', 'series', 'tv_series'].includes(String(this.selectedMovie.type).toLowerCase().replace(/_/g, '-')))));
-
-        if (isSeries) {
-            const selection = this.playbackController?.getSelection();
-            const s = (opts.season != null ? opts.season : (selection?.seasonNumber != null ? selection.seasonNumber : 1));
-            const e = (opts.episode != null ? opts.episode : (selection?.episodeNumber != null ? selection.episodeNumber : 1));
-            return `${base}/tv?imdb=${encodeURIComponent(imdbId)}&season=${s}&episode=${e}&autoplay=1`;
-        }
-        return `${base}/movie?imdb=${encodeURIComponent(imdbId)}&autoplay=1`;
-    }
-
-    /**
-     * Load VidSrc embed player into the video container.
-     * @param {string} imdbId
-     */
-    loadVidSrcSource(imdbId, lifecycleContext = {}) {
-        if (this.broadcastEpisode && !this.canUseBroadcastSource('vidsrc')) return false;
-        if (!imdbId) {
-            this.renderPlayerPlaceholder('IMDb ID не найден для этого фильма');
-            return;
-        }
-
-        const url = this.buildVidSrcUrl(imdbId);
-        console.log('[VidSrc] Loading embed');
-        this.currentVideoUrl = url;
-        this.renderDefaultPlayer(url, { ...lifecycleContext, sourceValue: `vidsrc:${imdbId}` });
     }
 
     async getLastSource(movieId) {

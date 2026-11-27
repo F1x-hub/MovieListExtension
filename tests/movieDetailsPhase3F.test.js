@@ -13,7 +13,6 @@ const { createDefaultPlaybackRuntimeState, isMediaIdentityMatching, isPlaybackCo
 const { ProgressService } = require('../src/shared/services/ProgressService');
 const { PlaybackController } = require('../src/shared/services/player/PlaybackController');
 const { SeasonvarAdapter } = require('../src/shared/services/player/adapters/SeasonvarAdapter');
-const { VidSrcAdapter } = require('../src/shared/services/player/adapters/VidSrcAdapter');
 const { KinogoAdapter } = require('../src/shared/services/player/adapters/KinogoAdapter');
 const { ExFsAdapter } = require('../src/shared/services/player/adapters/ExFsAdapter');
 const { RutubeAdapter } = require('../src/shared/services/player/adapters/RutubeAdapter');

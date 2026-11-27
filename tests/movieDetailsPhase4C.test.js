@@ -220,19 +220,19 @@ async function runTests() {
         const sRecord = (await historyService.getHistory(600))['3:7'];
         assert.strictEqual(sRecord.src, 'AUTO_RELIABLE');
 
-        // 4.2 VidSrc (OPAQUE) -> NEVER auto-writes EpisodeHistory
-        const controllerVidSrc = new PlaybackController({
+        // 4.2 Rutube (OPAQUE) -> NEVER auto-writes EpisodeHistory
+        const controllerRutube = new PlaybackController({
             episodeHistoryService: historyService
         });
         const opaqueRuntime = {
             currentTime: 2400,
             duration: 2500,
             progressConfidence: 'OPAQUE',
-            providerId: 'vidsrc',
+            providerId: 'rutube',
             isEnded: true
         };
-        const mediaIdVidSrc = { kinopoiskId: 700, seasonNumber: 1, episodeNumber: 1 };
-        controllerVidSrc._checkAndTriggerCompletion(opaqueRuntime, controllerVidSrc.mountRequestId, mediaIdVidSrc);
+        const mediaIdRutube = { kinopoiskId: 700, seasonNumber: 1, episodeNumber: 1 };
+        controllerRutube._checkAndTriggerCompletion(opaqueRuntime, controllerRutube.mountRequestId, mediaIdRutube);
         await new Promise(r => setTimeout(r, 50));
         assert.strictEqual(await historyService.isCompleted(700, 1, 1), false);
 

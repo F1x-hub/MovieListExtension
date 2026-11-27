@@ -208,7 +208,7 @@ console.log('\n--- Test Suite 2: Compact Episode Picker Lifecycle & DOM Visibili
                 getAdapter(id) {
                     return {
                         capabilities: {
-                            supportsDirectSeasonEpisode: id === 'seasonvar' || id === 'vidsrc'
+                            supportsDirectSeasonEpisode: id === 'seasonvar'
                         }
                     };
                 },

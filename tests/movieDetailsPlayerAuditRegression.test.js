@@ -368,7 +368,7 @@ return isTrustedHostMessage;`);
     globalThis.document = doc;
     try {
         const sources = doc.getElementById('sources');
-        ['parser:kinogo', 'parser:exfs', 'vidsrc:tt1'].forEach((value, index) => {
+        ['parser:kinogo', 'parser:exfs', 'parser:rutube'].forEach((value, index) => {
             const btn = doc.createElement('button');
             btn.className = `source-btn${index === 0 ? ' active' : ''}`;
             btn.setAttribute('data-value', value);
@@ -381,14 +381,14 @@ return isTrustedHostMessage;`);
             getSourceButtonProviderKey: extractMethod('getSourceButtonProviderKey'),
             refreshSourceButtonStates: extractMethod('refreshSourceButtonStates')
         };
-        const [kinogo, exfs, vidsrc] = sources.children;
+        const [kinogo, exfs, rutube] = sources.children;
         manager.elements.videoContainer.dataset.sourceState = 'loading';
         manager.refreshSourceButtonStates();
         assert.equal(kinogo.dataset.sourceState, 'loading');
         assert.match(kinogo.querySelector('.source-btn__state').textContent, /загружается/, 'status must have a text alternative');
         assert.equal(exfs.dataset.sourceState, 'unavailable', 'failed providers stay marked after switching away');
         assert.match(exfs.title, /недоступен/);
-        assert.equal(vidsrc.dataset.sourceState, undefined);
+        assert.equal(rutube.dataset.sourceState, undefined);
 
         manager.elements.videoContainer.dataset.sourceState = 'ready';
         manager.refreshSourceButtonStates();

@@ -98,8 +98,8 @@ test('another source keeps the episode', async ({ viewer, page }) => {
     // would hide what the sources after it do on their own.
     const others = (await viewer.sources()).sort((a, b) => (a.value === 'parser:kinogo') - (b.value === 'parser:kinogo'));
     for (const source of others) {
-        // VidSrc may not answer, and Rutube has no episodes to keep.
-        if (source.active || ['mediaplayer', 'vidsrc', 'parser:rutube'].some(prefix => source.value.startsWith(prefix))) continue;
+        // Rutube has no episodes to keep.
+        if (source.active || ['mediaplayer', 'parser:rutube'].some(prefix => source.value.startsWith(prefix))) continue;
         const row = await viewer.checkSource(SERIES, { source, filmstrip: false, watchSeconds: 3 });
         console.log(`[player] ${source.name} after S1E2: ${row.outcome}, header ${await subtitle(page).textContent()}, ${row.minutes} min`);
         if (row.outcome !== 'plays') continue;
@@ -112,10 +112,14 @@ test('«Попробовать другой источник» continues the sam
     await viewer.open(SERIES);
     await viewer.checkSource(SERIES, { filmstrip: false, watchSeconds: 3 });
 
-    const failing = (await viewer.sources()).find(source => source.value.startsWith('vidsrc:'));
-    test.skip(!failing, 'VidSrc is not offered today');
-    const row = await viewer.checkSource(SERIES, { source: failing, filmstrip: false, watchSeconds: 3 });
-    test.skip(row.outcome !== 'unavailable', 'VidSrc answers today, so nothing fails');
+    // No source is known to refuse every day: the first one that does today is the case.
+    let failing = null;
+    for (const source of await viewer.sources()) {
+        if (source.active || source.value.startsWith('mediaplayer')) continue;
+        const row = await viewer.checkSource(SERIES, { source, filmstrip: false, watchSeconds: 3 });
+        if (row.outcome === 'unavailable') { failing = source; break; }
+    }
+    test.skip(!failing, 'every offered source answers today, so nothing fails');
     await viewer.shot('source-failed');
 
     const pressedAt = Date.now();
@@ -123,7 +127,7 @@ test('«Попробовать другой источник» continues the sam
     await expect.poll(async () => (await viewer.activeSource())?.value, { message: 'the page moves to another source', intervals: [250] }).not.toBe(failing.value);
     const played = await viewer.playAsViewer(SERIES, { stateLogStartedAt: pressedAt, requested: false });
     const active = await viewer.activeSource();
-    console.log(`[player] VidSrc failed, moved to ${active.name}: ${played.outcome}, ${played.video ? minutes(played.video.duration) : '?'} min, presses ${played.presses}`);
+    console.log(`[player] ${failing.name} failed, moved to ${active.name}: ${played.outcome}, ${played.video ? minutes(played.video.duration) : '?'} min, presses ${played.presses}`);
     await viewer.shot('after-another-source');
     expect(played.outcome, 'the next source plays').toBe('plays');
     await expect(subtitle(page)).toHaveText('S1E1');

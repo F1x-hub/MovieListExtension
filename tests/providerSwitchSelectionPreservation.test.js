@@ -1,7 +1,7 @@
 /**
  * Provider Switch Selection Preservation & Canonical State Audit
  *
- * Validates that switching between playback providers (Seasonvar, VidSrc, KinoGo, etc.)
+ * Validates that switching between playback providers (Seasonvar, KinoGo, Rutube, etc.)
  * strictly preserves canonical PlaybackSelection (seasonNumber, episodeNumber)
  * without corruption from stale preloaded caches, saved progress, or stray async events.
  */
@@ -10,72 +10,26 @@ const assert = require('assert');
 const { PlaybackSelection, resolveWatchTarget } = require('../src/shared/services/player/PlaybackSelection');
 const { PlaybackController } = require('../src/shared/services/player/PlaybackController');
 const { BasePlaybackAdapter } = require('../src/shared/services/player/adapters/BasePlaybackAdapter');
-const { VidSrcAdapter } = require('../src/shared/services/player/adapters/VidSrcAdapter');
 const { SeasonvarAdapter } = require('../src/shared/services/player/adapters/SeasonvarAdapter');
 const { KinogoAdapter } = require('../src/shared/services/player/adapters/KinogoAdapter');
+const { RutubeAdapter } = require('../src/shared/services/player/adapters/RutubeAdapter');
 const { SeasonvarParser } = require('../src/shared/services/parsers/SeasonvarParser');
 
 console.log('🧪 Running Provider Switch Selection Preservation Audit...\n');
 
 async function runTests() {
     // -------------------------------------------------------------
-    // Test 1: VidSrc URL builder generates exact canonical S3E1 URL
-    // -------------------------------------------------------------
-    console.log('--- Test 1: VidSrc URL builder generates exact canonical S3E1 URL ---');
-    {
-        const vidsrc = new VidSrcAdapter();
-        const selection = {
-            kinopoiskId: 1209839,
-            imdbId: 'tt9288030',
-            mediaType: 'tv-series',
-            seasonNumber: 3,
-            episodeNumber: 1
-        };
-
-        const url = vidsrc.buildUrl(selection);
-        assert.strictEqual(
-            url,
-            'https://vidsrc-embed.ru/embed/tv?imdb=tt9288030&season=3&episode=1&autoplay=1',
-            'VidSrc URL must strictly embed season=3&episode=1'
-        );
-        console.log('  ✅ VidSrc generates exact S3E1 embed URL');
-    }
-
-    // -------------------------------------------------------------
-    // Test 2: VidSrc URL builder generates exact canonical S3E6 URL
-    // -------------------------------------------------------------
-    console.log('\n--- Test 2: VidSrc URL builder generates exact canonical S3E6 URL ---');
-    {
-        const vidsrc = new VidSrcAdapter();
-        const selection = {
-            kinopoiskId: 1209839,
-            imdbId: 'tt9288030',
-            mediaType: 'tv-series',
-            seasonNumber: 3,
-            episodeNumber: 6
-        };
-
-        const url = vidsrc.buildUrl(selection);
-        assert.strictEqual(
-            url,
-            'https://vidsrc-embed.ru/embed/tv?imdb=tt9288030&season=3&episode=6&autoplay=1',
-            'VidSrc URL must strictly embed season=3&episode=6'
-        );
-        console.log('  ✅ VidSrc generates exact S3E6 embed URL');
-    }
-
-    // -------------------------------------------------------------
     // Test 3: PlaybackController preserves canonical S3E1 across switches
     // -------------------------------------------------------------
-    console.log('\n--- Test 3: PlaybackController preserves canonical S3E1 across provider switches ---');
+    console.log('--- Test 3: PlaybackController preserves canonical S3E1 across provider switches ---');
     {
         const controller = new PlaybackController();
         const seasonvarAdapter = new SeasonvarAdapter();
-        const vidsrcAdapter = new VidSrcAdapter();
+        const rutubeAdapter = new RutubeAdapter();
         const kinogoAdapter = new KinogoAdapter();
 
         controller.registerAdapter(seasonvarAdapter);
-        controller.registerAdapter(vidsrcAdapter);
+        controller.registerAdapter(rutubeAdapter);
         controller.registerAdapter(kinogoAdapter);
 
         // Explicit user selection: S3E1
@@ -100,16 +54,16 @@ async function runTests() {
         };
         controller.setContainer(mockContainer, {});
 
-        // Switch provider to vidsrc
+        // Switch provider to rutube
         controller.updateSelection({
-            providerId: 'vidsrc',
+            providerId: 'rutube',
             source: 'PROVIDER_SWITCH'
         });
 
-        const vidsrcSel = controller.getSelection();
-        assert.strictEqual(vidsrcSel.seasonNumber, 3, 'Season must remain 3 after switch to VidSrc');
-        assert.strictEqual(vidsrcSel.episodeNumber, 1, 'Episode must remain 1 after switch to VidSrc');
-        assert.strictEqual(vidsrcSel.providerId, 'vidsrc');
+        const rutubeSel = controller.getSelection();
+        assert.strictEqual(rutubeSel.seasonNumber, 3, 'Season must remain 3 after switch to Rutube');
+        assert.strictEqual(rutubeSel.episodeNumber, 1, 'Episode must remain 1 after switch to Rutube');
+        assert.strictEqual(rutubeSel.providerId, 'rutube');
 
         // Switch provider to kinogo
         controller.updateSelection({
@@ -249,12 +203,26 @@ async function runTests() {
     }
 
     // -------------------------------------------------------------
-    // Test 6: Full Round-Trip Preservation (S3E6 -> VidSrc -> Seasonvar -> KinoGo -> VidSrc)
+    // Test 6: Full Round-Trip Preservation (S3E6 -> Seasonvar -> Rutube -> KinoGo -> Seasonvar)
     // -------------------------------------------------------------
-    console.log('\n--- Test 6: Full Round-Trip Preservation (S3E6 -> VidSrc -> Seasonvar -> KinoGo -> VidSrc) ---');
+    console.log('\n--- Test 6: Full Round-Trip Preservation (S3E6 -> Seasonvar -> Rutube -> KinoGo -> Seasonvar) ---');
     {
         const controller = new PlaybackController();
-        const vidsrc = new VidSrcAdapter();
+
+        // Seasonvar is the direct S/E provider: record the season and episode
+        // its parser is asked to render for the controller's canonical selection.
+        const rendered = [];
+        const seasonvar = new SeasonvarAdapter({
+            renderPlayer: async (container, sources, options) => {
+                rendered.push({ season: options.season, episode: options.episode });
+                return true;
+            }
+        });
+        const mountOnSeasonvar = () => seasonvar.mount(
+            { querySelector: () => null, querySelectorAll: () => [] },
+            controller.getSelection(),
+            { sources: [{ name: '6 серия', url: 'http://cdn.example.com/s3e6.mp4' }] }
+        );
 
         controller.setSelection({
             kinopoiskId: 1209839,
@@ -265,12 +233,13 @@ async function runTests() {
             source: 'SEASONS_TAB'
         });
 
-        // Step 1: Switch to VidSrc
-        controller.updateSelection({ providerId: 'vidsrc', source: 'PROVIDER_SWITCH' });
-        assert.strictEqual(vidsrc.buildUrl(controller.getSelection()), 'https://vidsrc-embed.ru/embed/tv?imdb=tt9288030&season=3&episode=6&autoplay=1');
-
-        // Step 2: Switch to Seasonvar
+        // Step 1: Switch to Seasonvar
         controller.updateSelection({ providerId: 'seasonvar', source: 'PROVIDER_SWITCH' });
+        await mountOnSeasonvar();
+        assert.deepStrictEqual(rendered[0], { season: 3, episode: 6 });
+
+        // Step 2: Switch to Rutube
+        controller.updateSelection({ providerId: 'rutube', source: 'PROVIDER_SWITCH' });
         assert.strictEqual(controller.getSelection().seasonNumber, 3);
         assert.strictEqual(controller.getSelection().episodeNumber, 6);
 
@@ -279,9 +248,10 @@ async function runTests() {
         assert.strictEqual(controller.getSelection().seasonNumber, 3);
         assert.strictEqual(controller.getSelection().episodeNumber, 6);
 
-        // Step 4: Switch back to VidSrc
-        controller.updateSelection({ providerId: 'vidsrc', source: 'PROVIDER_SWITCH' });
-        assert.strictEqual(vidsrc.buildUrl(controller.getSelection()), 'https://vidsrc-embed.ru/embed/tv?imdb=tt9288030&season=3&episode=6&autoplay=1');
+        // Step 4: Switch back to Seasonvar
+        controller.updateSelection({ providerId: 'seasonvar', source: 'PROVIDER_SWITCH' });
+        await mountOnSeasonvar();
+        assert.deepStrictEqual(rendered[1], { season: 3, episode: 6 });
         console.log('  ✅ Full round-trip provider switching preserves canonical S3E6 across all steps');
     }
 

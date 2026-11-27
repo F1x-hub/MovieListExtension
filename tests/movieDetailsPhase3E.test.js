@@ -12,7 +12,6 @@ const { PlaybackSelection, normalizePlaybackSelection } = require('../src/shared
 const { PlaybackRuntimeState, createDefaultPlaybackRuntimeState, isMediaIdentityMatching } = require('../src/shared/services/player/PlaybackRuntime');
 const { BasePlaybackAdapter } = require('../src/shared/services/player/adapters/BasePlaybackAdapter');
 const { SeasonvarAdapter } = require('../src/shared/services/player/adapters/SeasonvarAdapter');
-const { VidSrcAdapter } = require('../src/shared/services/player/adapters/VidSrcAdapter');
 const { KinogoAdapter } = require('../src/shared/services/player/adapters/KinogoAdapter');
 const { ExFsAdapter } = require('../src/shared/services/player/adapters/ExFsAdapter');
 const { RutubeAdapter } = require('../src/shared/services/player/adapters/RutubeAdapter');
@@ -219,15 +218,6 @@ async function runAllTests() {
         assert.strictEqual(adapter.supportsEnded(), true);
         assert.strictEqual(adapter.supportsTimestampResume(), true);
         assert.strictEqual(adapter.getProgressConfidence(), 'RELIABLE');
-    });
-
-    await test('52.3 VidSrc adapter declares OPAQUE progress confidence and 0 telemetry', () => {
-        const adapter = new VidSrcAdapter();
-        assert.strictEqual(adapter.supportsProgressTracking(), false);
-        assert.strictEqual(adapter.supportsDuration(), false);
-        assert.strictEqual(adapter.supportsEnded(), false);
-        assert.strictEqual(adapter.supportsTimestampResume(), false);
-        assert.strictEqual(adapter.getProgressConfidence(), 'OPAQUE');
     });
 
     await test('52.4 KinoGo adapter declares PARTIAL progress confidence', () => {
@@ -519,7 +509,14 @@ async function runAllTests() {
             }
         });
         controller.registerAdapter(mockSeasonvar);
-        controller.registerAdapter(new VidSrcAdapter());
+        controller.registerAdapter(new RutubeAdapter({
+            getVideoSources: async () => [{ url: 'https://rutube.ru/play/embed/123' }],
+            renderPlayer: async (cont) => {
+                const iframe = { tagName: 'IFRAME', src: 'https://rutube.ru/play/embed/123' };
+                cont.appendChild(iframe);
+                return iframe;
+            }
+        }));
 
         await controller.play({
             kinopoiskId: 404900,
@@ -534,12 +531,12 @@ async function runAllTests() {
         mockVideo.triggerLoadedMetadata(3000);
         mockVideo.triggerTimeUpdate(1250);
 
-        // Switch to VidSrc
-        await controller.switchProvider('vidsrc');
+        // Switch to Rutube (an opaque provider)
+        await controller.switchProvider('rutube');
 
         const saved = await progressService.getProgress(404900);
         assert.ok(saved);
-        assert.strictEqual(saved.timestamp, 1250, 'Seasonvar timestamp must be flushed before VidSrc mounts');
+        assert.strictEqual(saved.timestamp, 1250, 'Seasonvar timestamp must be flushed before Rutube mounts');
         assert.strictEqual(controller.getRuntimeState().progressConfidence, 'OPAQUE');
     });
 
@@ -656,13 +653,20 @@ async function runAllTests() {
     });
 
     // =========================================================================
-    // PART 56: OPAQUE PROVIDERS (VIDSRC & RUTUBE)
+    // PART 56: OPAQUE PROVIDERS (RUTUBE)
     // =========================================================================
     console.log('\n--- Part 56: Opaque Provider Protection ---');
 
-    await test('56.1 VidSrc mount does NOT overwrite stored timestamp with 0', async () => {
+    await test('56.1 Rutube mount does NOT overwrite stored timestamp with 0', async () => {
         const { controller, progressService } = createHarness();
-        controller.registerAdapter(new VidSrcAdapter());
+        controller.registerAdapter(new RutubeAdapter({
+            getVideoSources: async () => [{ url: 'https://rutube.ru/play/embed/123' }],
+            renderPlayer: async (cont) => {
+                const iframe = { tagName: 'IFRAME', src: 'https://rutube.ru/play/embed/123' };
+                cont.appendChild(iframe);
+                return iframe;
+            }
+        }));
 
         // Prepopulate storage with existing Seasonvar progress (t=1800)
         await progressService.saveProgress(404900, {
@@ -679,14 +683,14 @@ async function runAllTests() {
             mediaType: 'tv-series',
             seasonNumber: 2,
             episodeNumber: 4,
-            providerId: 'vidsrc'
+            providerId: 'rutube'
         });
 
         // Attempt flush
         await controller.flushProgress({ force: true });
 
         const saved = await progressService.getProgress(404900);
-        assert.strictEqual(saved.timestamp, 1800, 'VidSrc must never overwrite stored timestamp with 0');
+        assert.strictEqual(saved.timestamp, 1800, 'Rutube must never overwrite stored timestamp with 0');
     });
 
     await test('56.2 Rutube mount starts as OPAQUE without false telemetry', async () => {

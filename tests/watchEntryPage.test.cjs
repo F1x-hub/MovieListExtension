@@ -21,7 +21,7 @@ w.chrome = { storage: { local: {
 } } };
 
 function manager() {
-    const values = ['parser:exfs', 'parser:animego', 'parser:rutube', 'vidsrc:tt42', 'https://example.test/embed', 'mediaplayer:torrent'];
+    const values = ['parser:exfs', 'parser:animego', 'parser:rutube', 'parser:veoveo', 'https://example.test/embed', 'mediaplayer:torrent'];
     const container = w.document.createElement('div');
     for (const value of values) {
         const button = w.document.createElement('button');
@@ -51,7 +51,7 @@ function start(instance, manual = false) {
 
 (async () => {
     const m = manager();
-    prefs = 'parser:rutube'; m.getLastSource = async () => 'vidsrc:tt42';
+    prefs = 'parser:rutube'; m.getLastSource = async () => 'parser:exfs';
     m.activeSourceValue = 'https://example.test/embed';
     m.watchRoomController = { room: {}, activeProviderHint: 'animego' };
     assert.equal(await m.resolveWatchSource(), 'parser:animego', 'room wins over explicit selection');
@@ -60,7 +60,9 @@ function start(instance, manual = false) {
     m.activeSourceValue = null;
     assert.equal(await m.resolveWatchSource(), 'parser:rutube', 'preference wins over last source');
     prefs = null;
-    assert.equal(await m.resolveWatchSource(), 'parser:animego', 'VidSrc as the last source may only be where a failed run ended');
+    // VidSrc was removed: a choice of it saved earlier is no longer in the list.
+    m.getLastSource = async () => 'vidsrc:tt42';
+    assert.equal(await m.resolveWatchSource(), 'parser:animego', 'a last source that is no longer offered is ignored');
     m.getLastSource = async () => 'parser:exfs';
     assert.equal(await m.resolveWatchSource(), 'parser:exfs', 'last source wins over anime default');
     m.getLastSource = async () => null;
@@ -147,12 +149,12 @@ function start(instance, manual = false) {
     const alias = manager(); let activations = 0;
     alias.handleWatchClick = async () => { activations++; };
     alias.syncWatchEntry();
-    await callbacks.onWatch('vidsrc:tt42');
-    assert.equal(alias.activeSourceValue, 'vidsrc:tt42');
+    await callbacks.onWatch('parser:veoveo');
+    assert.equal(alias.activeSourceValue, 'parser:veoveo');
     assert.equal(activations, 1, 'alias uses the canonical watch activation path');
     assert.equal(alias.changes.length, 0, 'alias cannot bypass source resolution by directly mounting');
     await callbacks.onWatch('https://obsolete.test/embed');
-    assert.equal(alias.activeSourceValue, 'vidsrc:tt42', 'obsolete alias cannot replace the explicit source');
+    assert.equal(alias.activeSourceValue, 'parser:veoveo', 'obsolete alias cannot replace the explicit source');
     assert.equal(saves, 0, 'alias activation does not write preferences');
 
     const activation = deferred(); let calls = 0;

@@ -310,7 +310,7 @@ checklist; `npm run test:visual-design` enforces much of it.
   new episode starts at its selection's `initialTimestamp` (0 when it has none) once the old
   position is flushed.
 - Adapters declare `progressConfidence`: Seasonvar, HDRezka, AnimeGo and torrents are `RELIABLE`,
-  KinoGo and Ex-FS `PARTIAL`, VidSrc and Rutube `OPAQUE`. Completion needs `RELIABLE`: 90% for
+  KinoGo and Ex-FS `PARTIAL`, Rutube `OPAQUE`. Completion needs `RELIABLE`: 90% for
   content over 120 s, a real `ended` below that. Auto-next also needs direct season/episode
   support, `supportsEnded` and a real `ended`, and any lifecycle change cancels its countdown.
   Only reliable completion writes `EpisodeHistoryService` by itself; the others need the manual
@@ -319,7 +319,7 @@ checklist; `npm run test:visual-design` enforces much of it.
   with `mousedown` the press opens and the following `click` closes. Picker clicks go through
   `playSelection()` with error handling. Capability methods (`supportsEpisodePicker()`,
   `supportsDirectSeasonEpisode()`, `getSelectionMode()`, `applySelection()`) decide whether it
-  shows; Seasonvar and VidSrc are `DIRECT`, while KinoGo and Ex-FS use the host picker through
+  shows; Seasonvar is `DIRECT`, while KinoGo and Ex-FS use the host picker through
   the versioned `APPLY_PLAYBACK_SELECTION` bridge. In-place switches trust only the typed result
   of `PlaybackController.applySelection()` and never assume an opaque provider switched.
 
@@ -371,9 +371,10 @@ checklist; `npm run test:visual-design` enforces much of it.
   a source that plays. Chrome loads no media for a hidden page that has played nothing, so the
   lifecycle timeouts do not run while the page is hidden.
 - Watch start: `resolveWatchSource` starts as soon as no pending source could outrank the best one
-  found (at most 10 s). No source ends in `showNoWatchSource`, never in a spinner, and VidSrc
-  ranks last. A cold `handleWatchClick` (`startProgressiveSourceDiscovery()`) releases the first
-  source that is safe by parser priority and lets slower providers finish in the background; a
+  found (at most 10 s). No source ends in `showNoWatchSource`, never in a spinner. VidSrc was
+  removed on 2026-11-27; a `vidsrc:` source saved before that starts nothing. A cold
+  `handleWatchClick` (`startProgressiveSourceDiscovery()`) releases the first source that is safe
+  by parser priority and lets slower providers finish in the background; a
   lower-priority result never overrides an explicit choice. Provider frames fetch nothing until
   the host sends `PLAYER_START` (on `PLAYER_READY`, outside broadcasts and watch rooms).
 - Parser caches never store an empty source, episode or season list as a success. Do not add an
@@ -447,6 +448,29 @@ checklist; `npm run test:visual-design` enforces much of it.
 - Movie Details marks the torrent `<video>` with `data-player-provider="torrent"` and exposes its
   hls.js as `_movieExtensionHls`; `player-cleaner` mounts one wrapper around that same element and
   keeps autoplay behind Movie Details' buffer gate.
+- Buffer kept across seeks: the extension's own hls.js keeps 300 s behind
+  (`DEFAULT_HLS_CONFIG.backBufferLength`). Venom (`player-venom`: Collaps, KinoGo, Ex-FS) plays
+  through dash.js 3, which on every seek removes all but the fragment being played, within a
+  millisecond and before `seeking` fires. In provider frames `provider-buffer-keeper.js` (MAIN,
+  `document_start`, only frames the extension embeds) wraps `SourceBuffer.prototype.remove`: it
+  keeps 300 s behind and, for 2.5 s after a seek or while `media.seeking`, what is loaded
+  ahead. A kept removal still runs natively on a moment that holds no data, so `updating` and
+  the update events stay real. A removal across the playing moment always passes (quality
+  change; holding it back restarted Venom's frame), and after a `QuotaExceededError` every
+  removal passes for 30 s. The player still believes the data gone and loads it again over
+  what is there. `player-cleaner`'s loader waits 800 ms when a jump lands inside
+  `video.buffered` (`Timeline.isBuffered`). Checks: `node tests/providerBufferKeeper.test.cjs`,
+  `node tests/playerSeekLoader.test.cjs`, live `node tests/live/player-seek.cjs`.
+- Venom's engine follows the viewer (`switchEngineBySeeking` in `provider-ad-guard.js`): DASH
+  (1080p on the Collaps/KinoGo/Ex-FS balancer) while watching; three seeks within 5 s switch to
+  HLS (720p there, but hls.js keeps what it loaded); two minutes without a seek, or the viewer's
+  pause at least 20 s after the last seek, switch back. The switch is Venom's own internal
+  `renew` (`_fallFrom` drops DASH; `ignoreUrlTime` so the asked time wins), reached through the
+  internal player that `make()`'s facade hands to listeners as `this`. Venom's HLS loads nothing
+  until `play()`, and its module load undoes an early one, so play is retried for 20 s. Seeks
+  count only from 3 s after the film plays (Venom's resume and the move to the asked time are
+  not the viewer's). A new episode resets to DASH. `<html data-movie-extension-engine>` shows
+  the engine. Check: `node tests/venomEngineSwitch.test.cjs`.
 - Hover previews (`GhostPlayer`) never show a frame of another moment in place of the one asked
   for; keyed frames persist in IndexedDB `movieExtensionPreviewFrames` on extension pages and stay
   in memory in provider frames. Check with `node tests/playerHoverPreview.test.cjs`.

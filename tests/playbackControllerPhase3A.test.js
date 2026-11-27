@@ -6,7 +6,6 @@
 const assert = require('assert');
 const { normalizePlaybackSelection, VALID_MEDIA_TYPES, VALID_SOURCES } = require('../src/shared/services/player/PlaybackSelection');
 const { BasePlaybackAdapter } = require('../src/shared/services/player/adapters/BasePlaybackAdapter');
-const { VidSrcAdapter } = require('../src/shared/services/player/adapters/VidSrcAdapter');
 const { SeasonvarAdapter } = require('../src/shared/services/player/adapters/SeasonvarAdapter');
 const { KinogoAdapter } = require('../src/shared/services/player/adapters/KinogoAdapter');
 const { ExFsAdapter } = require('../src/shared/services/player/adapters/ExFsAdapter');
@@ -173,14 +172,6 @@ async function runAllTests() {
     // ==========================================
     console.log('\n--- Part 39: Provider Capability Declarations ---');
 
-    await test('39.1 VidSrc adapter supports direct S/E, movies, and series', () => {
-        const adapter = new VidSrcAdapter();
-        assert.strictEqual(adapter.id, 'vidsrc');
-        assert.strictEqual(adapter.supportsMovies(), true);
-        assert.strictEqual(adapter.supportsSeries(), true);
-        assert.strictEqual(adapter.supportsDirectSeasonEpisode(), true);
-    });
-
     await test('39.2 Seasonvar adapter supports direct S/E, series only', () => {
         const adapter = new SeasonvarAdapter();
         assert.strictEqual(adapter.id, 'seasonvar');
@@ -215,6 +206,19 @@ async function runAllTests() {
         const container = createMockElement('div', 'videoContainer');
         const controller = new PlaybackController({ container });
 
+        // Mock Seasonvar mount (the direct S/E provider): record what the parser is asked to render
+        const seasonvarRenders = [];
+        const mockSeasonvar = new SeasonvarAdapter({
+            getVideoSources: async () => [{ url: 'http://cdn.seasonvar.ru/got-s4e7.mp4', name: '7 серия' }],
+            renderPlayer: async (c, s, options) => {
+                seasonvarRenders.push(options);
+                const video = createMockElement('video');
+                c.appendChild(video);
+                return video;
+            }
+        });
+        controller.registerAdapter(mockSeasonvar);
+
         // Mock Kinogo mount
         const mockKinogo = new KinogoAdapter({
             getVideoSources: async () => [{ url: 'https://ortified.ws/embed/123', parserId: 'kinogo' }],
@@ -226,7 +230,7 @@ async function runAllTests() {
         });
         controller.registerAdapter(mockKinogo);
 
-        // 1. Start with S4E7 on VidSrc
+        // 1. Start with S4E7 on Seasonvar
         await controller.play({
             kinopoiskId: 464963,
             imdbId: 'tt0944947',
@@ -234,9 +238,9 @@ async function runAllTests() {
             mediaType: 'tv-series',
             seasonNumber: 4,
             episodeNumber: 7
-        }, { providerId: 'vidsrc' });
+        }, { providerId: 'seasonvar' });
 
-        assert.strictEqual(controller.getActiveProvider(), 'vidsrc');
+        assert.strictEqual(controller.getActiveProvider(), 'seasonvar');
         assert.strictEqual(controller.getSelection().seasonNumber, 4);
         assert.strictEqual(controller.getSelection().episodeNumber, 7);
 
@@ -248,18 +252,18 @@ async function runAllTests() {
         assert.strictEqual(controller.getSelection().episodeNumber, 7);
         assert.strictEqual(controller.getSelection().source, 'PROVIDER_SWITCH');
 
-        // 3. Switch back to VidSrc
-        await controller.switchProvider('vidsrc', { isSwitch: true });
-        assert.strictEqual(controller.getActiveProvider(), 'vidsrc');
+        // 3. Switch back to Seasonvar
+        await controller.switchProvider('seasonvar', { isSwitch: true });
+        assert.strictEqual(controller.getActiveProvider(), 'seasonvar');
         assert.strictEqual(controller.getSelection().seasonNumber, 4);
         assert.strictEqual(controller.getSelection().episodeNumber, 7);
 
-        // Verify VidSrc built the URL with preserved S4E7
-        const vidsrcAdapter = controller.getAdapter('vidsrc');
-        const builtUrl = vidsrcAdapter.buildUrl(controller.getSelection());
-        assert.ok(builtUrl.includes('season=4'));
-        assert.ok(builtUrl.includes('episode=7'));
-        assert.ok(builtUrl.includes('imdb=tt0944947'));
+        // Verify Seasonvar was remounted with preserved S4E7
+        assert.strictEqual(seasonvarRenders.length, 2);
+        const remount = seasonvarRenders[1];
+        assert.strictEqual(remount.season, 4);
+        assert.strictEqual(remount.episode, 7);
+        assert.strictEqual(remount.movieId, 464963);
     });
 
     // ==========================================
@@ -328,6 +332,17 @@ async function runAllTests() {
         const container = createMockElement('div', 'videoContainer');
         const controller = new PlaybackController({ container });
 
+        // KinoGo with a stub parser stands in for an iframe provider: one iframe per mount
+        const mockKinogo = new KinogoAdapter({
+            getVideoSources: async () => [{ url: 'https://ortified.ws/embed/999', parserId: 'kinogo' }],
+            renderPlayer: async (c) => {
+                const iframe = createMockElement('iframe');
+                c.appendChild(iframe);
+                return iframe;
+            }
+        });
+        controller.registerAdapter(mockKinogo);
+
         controller.setSelection({
             kinopoiskId: 999,
             imdbId: 'tt1234567',
@@ -336,7 +351,7 @@ async function runAllTests() {
         });
 
         for (let i = 0; i < 10; i++) {
-            await controller.switchProvider('vidsrc');
+            await controller.switchProvider('kinogo');
         }
 
         const iframes = container.querySelectorAll('iframe');

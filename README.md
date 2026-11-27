@@ -56,7 +56,7 @@ lists, provider-aware playback, and Firebase synchronization in one interface.
 - Preview frames and their timestamps while hovering over the custom player's
   timeline when a direct video or HLS preview source is available.
   This includes native Rutube and torrent streams and supported Ex-FS/KinoGo
-  provider frames. Embedded Rutube/VidSrc players are supported when their
+  provider frames. Rutube's embedded player is supported when its
   active HLS source is exposed; opaque, DRM, and DASH-only sources without an
   HLS/file alternative cannot supply frames to the independent preview decoder.
 - Watch with an ambient light: the colours of the picture spread behind the player on
@@ -485,6 +485,9 @@ keeps npm-compatible three-component semver metadata.
 
 ### Fixes
 
+- Player: jumping forward inside the already loaded (grey) part of the timeline no longer starts loading over, on every source. In the extension's own player ±10 s, the arrow keys or a click there bring up no loader (it waits 800 ms instead of 150 ms where the browser only decodes, 400 ms for a short `waiting`, and still 150 ms for a jump past the loaded part), and five minutes are kept behind the playing moment instead of one. In provider frames a new `provider-buffer-keeper.js` keeps what the provider's player throws away on a seek: Venom (Collaps, KinoGo, Ex-FS) plays through dash.js 3, which removes everything but the fragment being played; now what is loaded ahead stays and up to five minutes stay behind. Measured in the owner's Chrome with `tests/live/player-seek.cjs` at intervals down to 0.1 s on HDRezka, Rutube, AnimeGo, Seasonvar, Collaps, KinoGo, Ex-FS, Alloha and Veoveo. Limits, all in Venom: presses 2–4 times a second sometimes load again, a jump back past the played fragment still does, and Chrome holds about three minutes of 1080p in all.
+- VidSrc is no longer a source. It was the one source offered without an availability check, it did not answer from the owner's network, and its player sat in frames the extension could not reach. Its button, adapter and `vidsrc-embed.ru` permissions are gone; a title whose last source was VidSrc starts from the best remaining one.
+- Player: Venom frames (Collaps, KinoGo, Ex-FS) change engine by themselves. They play DASH, which has 1080p there, while you watch; after three jumps within five seconds they move to HLS, which stops at 720p on that balancer but keeps everything it has loaded, so jumping forward and back plays at once; after two minutes without a jump, or at your pause a while after the last one, they return to DASH. The move is Venom's own way of changing players: the same moment and the same dub. Measured in the owner's Chrome on Collaps and Ex-FS: HLS plays about 1 s after the jumps (up to 7.5 s the first time in a session), DASH comes back after about 2 s, or unseen at a pause.
 - Interface copy reads less like a template: messages no longer say «успешно … !» or «Будьте первым!», empty lists say what will appear in them, the email check shows the expected form, loaders and errors drop developer words («парсим», «метаданные», «правила Firestore») and officialese («находится на рассмотрении»), in Russian and English. Released What's New entries are unchanged.
 
 </details>

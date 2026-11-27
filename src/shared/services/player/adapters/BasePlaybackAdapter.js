@@ -31,7 +31,7 @@ class BasePlaybackAdapter {
 
     /**
      * Whether this adapter can deterministically play an exact Season + Episode.
-     * True for VidSrc and Seasonvar; False for Title-only balancers like KinoGo & Ex-FS.
+     * True for Seasonvar; False for Title-only balancers like KinoGo & Ex-FS.
      * @returns {boolean}
      */
     supportsDirectSeasonEpisode() {

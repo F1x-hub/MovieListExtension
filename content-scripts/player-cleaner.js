@@ -3624,6 +3624,7 @@
             let isHovering = false;
             let isLoading = false;
             let loaderDelayId = null;
+            let loaderDueAt = 0;
             let isUserInactive = false;
             let inactivityTimeout;
             
@@ -3661,15 +3662,26 @@
                 }
             };
 
-            const showLoader = () => {
+            // A jump into data the element already holds only decodes from the nearest
+            // keyframe, which can outlast a short delay without anything loading; the
+            // loader waits longer there. A short `waiting` while playing is common too.
+            const loaderDelayFor = (media) => {
+                if (media && window.PlayerMediaControls.Timeline.isBuffered(media, media.currentTime)) return 800;
+                return media?.seeking ? 150 : 400;
+            };
+
+            const showLoader = (media = permanentVideo || video) => {
                 isLoading = true;
-                // Media can emit a short `waiting` event while still playing.
-                // Delay the indicator to avoid a distracting flash on every seek.
-                if (loaderDelayId === null) {
+                // A later jump out of loaded data shows the loader sooner, never later.
+                const delay = loaderDelayFor(media);
+                const dueAt = performance.now() + delay;
+                if (loaderDelayId === null || dueAt < loaderDueAt) {
+                    clearTimeout(loaderDelayId);
+                    loaderDueAt = dueAt;
                     loaderDelayId = setTimeout(() => {
                         if (isLoading) loader.style.display = 'block';
                         loaderDelayId = null;
-                    }, 150);
+                    }, delay);
                 }
                 // Force update visibility to hide play button immediately
                 updateVisibility();
@@ -4827,10 +4839,10 @@
                 
                 // Loader Events
                 videoEl.addEventListener('waiting', () => {
-                    showLoader();
+                    showLoader(videoEl);
                 });
                 videoEl.addEventListener('seeking', () => {
-                    showLoader();
+                    showLoader(videoEl);
                 });
                 videoEl.addEventListener('seeked', () => {
                     hideLoader();

@@ -90,7 +90,7 @@ test('an address on a domain the balancer left moves to the current one and keep
         'https://walking-as.allarknow.online/?token_movie=a&token=b',
         'https://cinemar.cc/embed/1/token',
         'https://evil.nextembed.ws.example/embed/movie/1',
-        'parser:kinogo', 'vidsrc:tt1', '/relative/path', ''
+        'parser:kinogo', 'mediaplayer:torrent', '/relative/path', ''
     ]) assert.equal(domains.actualize(same), same, same);
     assert.equal(domains.actualize(null), null);
 });

@@ -6,6 +6,13 @@ records what was finished.
 
 ## Do first
 
+- **`tests/movieDetailsPlayerAuditRegression.test.js` fails, and `npm test` stops on it.**
+  Since the ambient-light commit (2c35f58) the cleaner's command listener begins with
+  `if (isExtensionPageContext() || !isTrustedHostMessage(event)) return;`, and the test
+  (line 267, "every cleaner command listener must verify the host first") expects the host
+  check alone. Decide whether the extension-page shortcut is safe there and update the test,
+  or put the host check first. Found on 2026-11-27; the rest of that file passes.
+
 - **Find out why `tests/hdrezkaProviderBrowser.cjs` still fails now and then.** `pretest`
   starts with it, so one failure stops the whole of `npm test`. Of the three failures seen
   before 2026-11-18, all in the manual «Повторить поиск HDRezka» step, one is explained and
@@ -57,6 +64,63 @@ records what was finished.
   read for posters, two at a time within the 10-second enrichment window, so a person
   with 250 credits (Matthew McConaughey, `kp:797`) shows some of them without a year,
   sorted last, until later visits have read their pages.
+- **In a Venom frame, the first jumps of a search can load again.** Since 2026-11-28 Venom
+  switches to HLS after three seeks within 5 s and back to DASH after calm watching
+  (`switchEngineBySeeking`); on HLS, jumps forward and back stay inside the loaded part. What
+  follows describes DASH, which still plays until the third seek and whenever the viewer just
+  watches. The first switch in a session can take up to 7.5 s while Venom fetches its HLS module
+  and first fragments; later ones about 1 s.
+- **Earlier: in a Venom frame, a jump back, or forward presses 2–4 times a second, can load again.**
+  What is left of the owner's report of 2026-11-27 (±10 s inside the loaded part looked as
+  if loading started over). Venom (`player-venom@0.3.8`: Collaps, KinoGo, Ex-FS) plays
+  through dash.js 3, which on every seek removes its whole buffer except the fragment being
+  played and has no setting for that. `provider-buffer-keeper.js` keeps the data in the
+  browser, so a jump plays at once, but dash.js still believes the data gone and downloads
+  it again over what is there.
+
+  Measured that day in the owner's Chrome with `node tests/live/player-seek.cjs <title>
+  <source> --forward` (four +10 s presses that fit in the loaded part, every 5, 1, 0.5,
+  0.25 and 0.1 s; Interstellar 258687, Breaking Bad 404900 for Seasonvar, 5401195 for
+  AnimeGo):
+
+  | Source | Player | Forward presses inside loaded data |
+  | --- | --- | --- |
+  | HDRezka, Rutube, AnimeGo | the extension's hls.js | all, 2–20 ms each; 300 s stay behind |
+  | Seasonvar | the extension's page, a plain MP4 | all; one seek of 1.1 s at 0.1 s presses |
+  | Collaps, KinoGo, Ex-FS | Venom frame, with the keeper | all at 5 s, 1 s and 0.1 s; at 0.25–0.5 s two of four in about one phase of three |
+  | Alloha | its own frame player, with the keeper | all |
+  | Veoveo | its own frame player, no extension scripts | all; it keeps about 90 s behind by itself |
+
+  Before the keeper Venom kept one fragment after a seek: +10 s every second landed inside
+  loaded data 5–7 times of 12, now 11–12. At 1080p Chrome's limit for one stream (about
+  150 MB) holds roughly three minutes in all, so with Venom's two minutes ahead about one
+  minute stays behind.
+
+  Still open, all in Venom:
+  - Presses 2–4 times a second sometimes land in a hole: dash.js was writing a fragment
+    over kept data when the next seek aborted it, which leaves that fragment missing. A fix
+    would have to skip appends of data the buffer already holds, which means reading
+    fragment times out of the stream and telling a quality change apart.
+  - A jump to a moment dash.js has no fragment for (any jump back past the played
+    fragment) makes it flush everything across the playing moment and load again. Holding
+    that flush back made the frame start over («Загрузка плеера…») in two runs of three, so
+    the keeper lets it pass. The owner accepted jumps back as they are.
+  - The extension's loader was never seen in a frame, even on 700 ms reloads; what a viewer
+    sees there was not checked. Torrents were not run (same hls.js settings as HDRezka).
+
+  The script needs `npm run live:bridge`; `--detail` prints the seconds kept behind before
+  each jump, the loaded ranges and what the player did to its buffer.
+- **Two overlapping starts of one source may leave an empty player.** When a newer
+  `switchProvider` supersedes a mount still in flight, `PlaybackController` unmounts the
+  stale one with `element: mountResult?.element` (about line 1147), but only the removed
+  VidSrc adapter read that element: KinoGo, Rutube, Seasonvar and the Kinopoisk-ID adapters
+  clear the whole container, the newer player with it. Seen on 2026-11-27 only with a stub
+  parser under JSDOM (the first call rejects `STALE_PLAYBACK_REQUEST`, the second resolves,
+  no frame is left); not tried with real parsers or in a browser. The test that covered
+  this for VidSrc went with VidSrc.
+- **A Live broadcast of a special (season 0) has no source that can play it.** VidSrc was
+  the one adapter that declared `supportsBroadcastSelection` for S0; it was removed on
+  2026-11-27, and Seasonvar refuses season 0.
 - **The language list in very short windows.** Below about 400px high, the upper option
   can sit under the header when the page is scrolled to the end; scrolling up reveals
   it. This comes from the geometry, and no test covers it.
@@ -105,13 +169,6 @@ have been measured only in the rig so far.
   series tried (Breaking Bad, The Simpsons) all came through `stravers.live`, where
   «Следующая» works. A series with only the balancer's frame has not been seen: it would
   say it cannot open the episode, though Ex-FS changes episodes on that same player.
-- **VidSrc** did not answer from this network in any run. `vidsrc-embed.ru` and
-  `vidsrc-embed.su` are silent; `vsembed.ru` answers with a page that showed only black in a
-  frame, and `vidsrc.me` redirects to an unrelated host. It now runs last, so it costs
-  nothing while another source works. Nobody has tried from another network. On 2026-11-18
-  `vidsrc-embed.ru` failed with a TLS error in the owner's Chrome and in Node while `vidsrc.to`
-  answered; the player now reports a frame whose site does not open as unavailable and moves on
-  instead of showing a blank frame.
 - **Rutube plays one video per series.** Its search takes the title only, so on Breaking Bad
   S1E2 it played the 58-minute S1E1; the hint now says the video was found by title. A search
   that names the season and episode was not built.

@@ -5,7 +5,6 @@
 
 const assert = require('assert');
 const { normalizePlaybackSelection } = require('../src/shared/services/player/PlaybackSelection');
-const { VidSrcAdapter } = require('../src/shared/services/player/adapters/VidSrcAdapter');
 const { SeasonvarAdapter } = require('../src/shared/services/player/adapters/SeasonvarAdapter');
 const { KinogoAdapter } = require('../src/shared/services/player/adapters/KinogoAdapter');
 const { ExFsAdapter } = require('../src/shared/services/player/adapters/ExFsAdapter');
@@ -15,7 +14,6 @@ const { PlaybackController } = require('../src/shared/services/player/PlaybackCo
 // Mock helper to replicate MovieDetailsManager methods in test harness
 function createMovieDetailsHarness() {
     const controller = new PlaybackController();
-    controller.registerAdapter(new VidSrcAdapter());
     controller.registerAdapter(new SeasonvarAdapter());
     controller.registerAdapter(new KinogoAdapter());
     controller.registerAdapter(new ExFsAdapter());
@@ -230,7 +228,6 @@ function createMovieDetailsHarness() {
             let provKey = providerId;
             if (typeof provKey === 'string') {
                 if (provKey.startsWith('parser:')) provKey = provKey.replace('parser:', '');
-                else if (provKey.startsWith('vidsrc:')) provKey = 'vidsrc';
             }
 
             const activeAdapter = this.playbackController?.getAdapter(provKey);
@@ -300,7 +297,7 @@ function createMovieDetailsHarness() {
                 this.currentEpisode = selectionPayload.episodeNumber;
             }
 
-            const activeProvider = this.playbackController?.getActiveProvider() || 'vidsrc';
+            const activeProvider = this.playbackController?.getActiveProvider() || this.activeSource?.parserId || null;
             this.updateSourceGuidance(activeProvider);
         },
 
@@ -370,20 +367,6 @@ function createMovieDetailsHarness() {
             this.updatePlayerHeaderTitle();
             this.elements.videoPlayerModal.style.display = 'flex';
         },
-
-        buildVidSrcUrl(imdbId, opts = {}) {
-            const base = 'https://vidsrc-embed.ru/embed';
-            const isSeries = this.selectedMovie?.type &&
-                ['tv-series', 'mini-series', 'animated-series', 'anime'].includes(this.selectedMovie.type);
-
-            if (isSeries) {
-                const selection = this.playbackController?.getSelection();
-                const s = (opts.season != null ? opts.season : (selection?.seasonNumber != null ? selection.seasonNumber : 1));
-                const e = (opts.episode != null ? opts.episode : (selection?.episodeNumber != null ? selection.episodeNumber : 1));
-                return `${base}/tv?imdb=${imdbId}&season=${s}&episode=${e}&autoplay=1`;
-            }
-            return `${base}/movie?imdb=${imdbId}&autoplay=1`;
-        }
     };
 }
 
@@ -644,7 +627,7 @@ async function runAllTests() {
         assert.strictEqual(harness.elements.playerSourceGuidance.text, 'Выберите S3E7 в плеере источника');
     });
 
-    await test('50.2 Hides guidance notice on direct provider (vidsrc)', () => {
+    await test('50.2 Hides guidance notice on direct provider (seasonvar)', () => {
         const harness = createMovieDetailsHarness();
         harness.selectedMovie = { kinopoiskId: 700, nameRu: 'Сериал', type: 'tv-series' };
         harness.playbackController.setSelection({
@@ -654,7 +637,7 @@ async function runAllTests() {
             episodeNumber: 7
         });
 
-        harness.updateSourceGuidance('vidsrc');
+        harness.updateSourceGuidance('seasonvar');
         assert.strictEqual(harness.elements.playerSourceGuidance.style.display, 'none');
     });
 
@@ -668,25 +651,6 @@ async function runAllTests() {
 
         harness.updateSourceGuidance('kinogo');
         assert.strictEqual(harness.elements.playerSourceGuidance.style.display, 'none');
-    });
-
-    // ==========================================
-    // PART 51: Provider S/E Integration & VidSrc URL
-    // ==========================================
-    console.log('--- Part 51: Provider S/E Integration & VidSrc URL ---');
-
-    await test('51.1 buildVidSrcUrl utilizes canonical selection season and episode', () => {
-        const harness = createMovieDetailsHarness();
-        harness.selectedMovie = { kinopoiskId: 800, imdbId: 'tt1234567', type: 'tv-series' };
-        harness.playbackController.setSelection({
-            kinopoiskId: 800,
-            mediaType: 'tv-series',
-            seasonNumber: 4,
-            episodeNumber: 12
-        });
-
-        const url = harness.buildVidSrcUrl('tt1234567');
-        assert.strictEqual(url, 'https://vidsrc-embed.ru/embed/tv?imdb=tt1234567&season=4&episode=12&autoplay=1');
     });
 
     // ==========================================

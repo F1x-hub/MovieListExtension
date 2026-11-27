@@ -24,7 +24,6 @@ const { createDefaultPlaybackRuntimeState, isPlaybackCompleted, canAutoNext, nor
 const { PlaybackController } = require('../src/shared/services/player/PlaybackController');
 const { AutoNextCoordinator } = require('../src/shared/services/player/AutoNextCoordinator');
 const { SeasonvarAdapter } = require('../src/shared/services/player/adapters/SeasonvarAdapter');
-const { VidSrcAdapter } = require('../src/shared/services/player/adapters/VidSrcAdapter');
 const { KinogoAdapter } = require('../src/shared/services/player/adapters/KinogoAdapter');
 const { ExFsAdapter } = require('../src/shared/services/player/adapters/ExFsAdapter');
 const { RutubeAdapter } = require('../src/shared/services/player/adapters/RutubeAdapter');
@@ -169,16 +168,6 @@ test('5. Movies are NEVER eligible for Auto-Next (false)', () => {
     const selection = { mediaType: 'movie', seasonNumber: null, episodeNumber: null, providerId: 'seasonvar' };
     const runtime = { progressConfidence: 'RELIABLE', isEnded: true, currentTime: 7200, duration: 7200 };
     const adapter = new SeasonvarAdapter();
-    const nextEp = { seasonNumber: 1, episodeNumber: 2, isReleased: true };
-
-    const result = canAutoNext({ selection, runtime, providerCapabilities: adapter, nextEpisode: nextEp });
-    assert.strictEqual(result, false);
-});
-
-test('6. VidSrc (ended unsupported / OPAQUE) is NOT eligible (false)', () => {
-    const selection = { mediaType: 'tv-series', seasonNumber: 1, episodeNumber: 1, providerId: 'vidsrc' };
-    const runtime = { progressConfidence: 'OPAQUE', isEnded: true, currentTime: 0, duration: 0 };
-    const adapter = new VidSrcAdapter();
     const nextEp = { seasonNumber: 1, episodeNumber: 2, isReleased: true };
 
     const result = canAutoNext({ selection, runtime, providerCapabilities: adapter, nextEpisode: nextEp });

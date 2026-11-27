@@ -6,7 +6,6 @@
 const assert = require('assert');
 const { BasePlaybackAdapter } = require('../src/shared/services/player/adapters/BasePlaybackAdapter');
 const { SeasonvarAdapter } = require('../src/shared/services/player/adapters/SeasonvarAdapter');
-const { VidSrcAdapter } = require('../src/shared/services/player/adapters/VidSrcAdapter');
 const { KinogoAdapter } = require('../src/shared/services/player/adapters/KinogoAdapter');
 const { ExFsAdapter } = require('../src/shared/services/player/adapters/ExFsAdapter');
 const { RutubeAdapter } = require('../src/shared/services/player/adapters/RutubeAdapter');
@@ -116,8 +115,6 @@ function trace(provider, requested, capability, action, resolved, success) {
         seasonvarDiscovery: 0,
         seasonvarPlaylist: 0,
         seasonvarMedia: 0,
-        vidsrcMetadata: 0,
-        vidsrcDiscovery: 0,
         invalidTitleAsUrl: 0,
         invalidExtensionMediaUrls: 0,
         uncaughtErrors: 0
@@ -348,63 +345,6 @@ function trace(provider, requested, capability, action, resolved, success) {
     }
 
     // =========================================================
-    // PART 5: VIDSRC PICKER (S2E5)
-    // =========================================================
-    console.log('\n--- PART 5: VidSrc Picker (S2E5) ---');
-    {
-        const vidsrc = new VidSrcAdapter();
-        assert.strictEqual(vidsrc.supportsEpisodePicker(), true, 'VidSrc must declare supportsEpisodePicker() = true');
-        assert.strictEqual(vidsrc.supportsDirectSeasonEpisode(), true, 'VidSrc must support direct S/E');
-
-        const selection = {
-            imdbId: 'tt9288030',
-            mediaType: 'tv-series',
-            seasonNumber: 2,
-            episodeNumber: 5
-        };
-
-        const url = vidsrc.buildUrl(selection);
-        assert.ok(url.includes('season=2'), 'VidSrc URL must include season=2');
-        assert.ok(url.includes('episode=5'), 'VidSrc URL must include episode=5');
-        assert.ok(url.includes('imdb=tt9288030'), 'VidSrc URL must include imdbId');
-
-        const mockIframe = createMockElement('iframe');
-        vidsrc.activeIframe = mockIframe;
-
-        const applied = await vidsrc.applySelection(selection);
-        assert.strictEqual(applied, true, 'VidSrc applySelection must update iframe in-place');
-        assert.strictEqual(mockIframe.src, url, 'Iframe src must reflect exact S2E5 parameters');
-
-        trace('vidsrc', 'S2E5', 'supportsEpisodePicker=true', 'applySelection', mockIframe.src, true);
-        console.log('  ✅ Part 5 PASSED: VidSrc picker renders with host metadata, builds exact season=2&episode=5 URL, updates in-place');
-    }
-
-    // =========================================================
-    // PART 6: VIDSRC CROSS-SEASON (S2E5 -> S3E2)
-    // =========================================================
-    console.log('\n--- PART 6: VidSrc Cross-Season (S2E5 -> S3E2) ---');
-    {
-        const vidsrc = new VidSrcAdapter();
-        const mockIframe = createMockElement('iframe');
-        mockIframe.src = 'https://vidsrc-embed.ru/embed/tv?imdb=tt9288030&season=2&episode=5&autoplay=1';
-        vidsrc.activeIframe = mockIframe;
-
-        const targetSelection = {
-            imdbId: 'tt9288030',
-            mediaType: 'tv-series',
-            seasonNumber: 3,
-            episodeNumber: 2
-        };
-
-        const applied = await vidsrc.applySelection(targetSelection);
-        assert.strictEqual(applied, true);
-        assert.strictEqual(mockIframe.src, 'https://vidsrc-embed.ru/embed/tv?imdb=tt9288030&season=3&episode=2&autoplay=1');
-
-        trace('vidsrc', 'S3E2', 'supportsEpisodePicker=true', 'applySelection', mockIframe.src, true);
-        console.log('  ✅ Part 6 PASSED: VidSrc cross-season switch updates iframe src directly with 0 metadata requests');
-    }
-
-    // =========================================================
     // PART 7, 8, 9: KINOGO, EX-FS, RUTUBE CAPABILITIES
     // =========================================================
     console.log('\n--- PARTS 7, 8, 9: KinoGo, Ex-FS, Rutube Capability & Host Picker Visibility ---');
@@ -437,14 +377,13 @@ function trace(provider, requested, capability, action, resolved, success) {
     {
         const adapters = {
             seasonvar: new SeasonvarAdapter(),
-            vidsrc: new VidSrcAdapter(),
             kinogo: new KinogoAdapter(),
             exfs: new ExFsAdapter(),
             rutube: new RutubeAdapter()
         };
 
-        const sequence = ['seasonvar', 'vidsrc', 'kinogo', 'exfs', 'rutube', 'seasonvar'];
-        const expectedVisibility = [true, true, true, true, false, true];
+        const sequence = ['seasonvar', 'kinogo', 'exfs', 'rutube', 'seasonvar'];
+        const expectedVisibility = [true, true, true, false, true];
 
         sequence.forEach((provId, index) => {
             const adapter = adapters[provId];
@@ -452,7 +391,7 @@ function trace(provider, requested, capability, action, resolved, success) {
             assert.strictEqual(isVisible, expectedVisibility[index], `Picker visibility for ${provId} must be ${expectedVisibility[index]}`);
         });
 
-        console.log('  ✅ Part 10 PASSED: Provider switch sequence [Seasonvar -> VidSrc -> KinoGo -> Ex-FS -> Rutube -> Seasonvar] verified');
+        console.log('  ✅ Part 10 PASSED: Provider switch sequence [Seasonvar -> KinoGo -> Ex-FS -> Rutube -> Seasonvar] verified');
     }
 
     // =========================================================
@@ -467,9 +406,13 @@ function trace(provider, requested, capability, action, resolved, success) {
             getVideoSources: async () => [{ url: 'http://cdn.seasonvar.ru/s3e2.mp4', name: '2 серия' }],
             renderPlayer: async (c) => { c.appendChild(createMockElement('video')); return true; }
         });
-        const mockVidSrc = new VidSrcAdapter();
+        const mockKinogo = new KinogoAdapter({
+            search: async () => [{ url: 'https://kinogo.example/reacher.html' }],
+            getVideoSources: async () => [{ url: 'https://kinogo.example/embed/1209839', type: 'iframe' }],
+            renderPlayer: async (c) => c.appendChild(createMockElement('iframe'))
+        });
         controller.registerAdapter(mockSeasonvar);
-        controller.registerAdapter(mockVidSrc);
+        controller.registerAdapter(mockKinogo);
 
         // Start on Seasonvar with S3E2
         await controller.play({
@@ -485,11 +428,11 @@ function trace(provider, requested, capability, action, resolved, success) {
         assert.strictEqual(controller.getSelection().seasonNumber, 3);
         assert.strictEqual(controller.getSelection().episodeNumber, 2);
 
-        // Switch to VidSrc
-        await controller.switchProvider('vidsrc', { isSwitch: true });
-        assert.strictEqual(controller.getActiveProvider(), 'vidsrc');
-        assert.strictEqual(controller.getSelection().seasonNumber, 3, 'Canonical season must be preserved on VidSrc');
-        assert.strictEqual(controller.getSelection().episodeNumber, 2, 'Canonical episode must be preserved on VidSrc');
+        // Switch to KinoGo
+        await controller.switchProvider('kinogo', { isSwitch: true });
+        assert.strictEqual(controller.getActiveProvider(), 'kinogo');
+        assert.strictEqual(controller.getSelection().seasonNumber, 3, 'Canonical season must be preserved on KinoGo');
+        assert.strictEqual(controller.getSelection().episodeNumber, 2, 'Canonical episode must be preserved on KinoGo');
 
         // Switch back to Seasonvar
         await controller.switchProvider('seasonvar', { isSwitch: true });
@@ -556,8 +499,12 @@ function trace(provider, requested, capability, action, resolved, success) {
         const container = createMockElement('div');
         const controller = new PlaybackController({ container });
 
-        const mockVidSrc = new VidSrcAdapter();
-        controller.registerAdapter(mockVidSrc);
+        const mockKinogo = new KinogoAdapter({
+            search: async () => [{ url: 'https://kinogo.example/reacher.html' }],
+            getVideoSources: async () => [{ url: 'https://kinogo.example/embed/1209839', type: 'iframe' }],
+            renderPlayer: async (c) => c.appendChild(createMockElement('iframe'))
+        });
+        controller.registerAdapter(mockKinogo);
 
         await controller.play({
             kinopoiskId: 1209839,
@@ -566,9 +513,9 @@ function trace(provider, requested, capability, action, resolved, success) {
             mediaType: 'tv-series',
             seasonNumber: 3,
             episodeNumber: 2
-        }, { providerId: 'vidsrc' });
+        }, { providerId: 'kinogo' });
 
-        assert.strictEqual(controller.getActiveProvider(), 'vidsrc');
+        assert.strictEqual(controller.getActiveProvider(), 'kinogo');
 
         // Click S3E6 in Seasons Tab
         await controller.play({
@@ -581,11 +528,11 @@ function trace(provider, requested, capability, action, resolved, success) {
             source: 'SEASONS_TAB'
         });
 
-        assert.strictEqual(controller.getActiveProvider(), 'vidsrc', 'Provider must be preserved upon Seasons Tab click');
+        assert.strictEqual(controller.getActiveProvider(), 'kinogo', 'Provider must be preserved upon Seasons Tab click');
         assert.strictEqual(controller.getSelection().seasonNumber, 3);
         assert.strictEqual(controller.getSelection().episodeNumber, 6);
 
-        console.log('  ✅ Parts 16 & 17 PASSED: Seasons tab click S3E6 preserves active provider (VidSrc) and updates S/E');
+        console.log('  ✅ Parts 16 & 17 PASSED: Seasons tab click S3E6 preserves active provider (KinoGo) and updates S/E');
     }
 
     // =========================================================
@@ -624,7 +571,6 @@ function trace(provider, requested, capability, action, resolved, success) {
         console.log(`  - Seasonvar Same-Season Discovery Requests: 0`);
         console.log(`  - Seasonvar Uncached Cross-Season Playlist Requests: 1`);
         console.log(`  - Seasonvar Cached Playlist Requests: 0`);
-        console.log(`  - VidSrc Metadata Requests: 0`);
         console.log(`  - Invalid Title-As-URL Fetches: ${networkAccounts.invalidTitleAsUrl}`);
         console.log(`  - Invalid Extension URLs: ${networkAccounts.invalidExtensionMediaUrls}`);
         console.log(`  - Uncaught Errors: ${networkAccounts.uncaughtErrors}`);
@@ -632,6 +578,6 @@ function trace(provider, requested, capability, action, resolved, success) {
     }
 
     console.log('\n================================================================');
-    console.log('🎉 ALL 22 AUDIT PARTS VERIFIED AND PASSED WITH 100% SUCCESS!');
+    console.log('🎉 ALL AUDIT PARTS VERIFIED AND PASSED WITH 100% SUCCESS!');
     console.log('================================================================\n');
 })();

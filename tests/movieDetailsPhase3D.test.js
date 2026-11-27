@@ -424,7 +424,6 @@ function createPhase3DHarness() {
             let provKey = providerId;
             if (typeof provKey === 'string') {
                 if (provKey.startsWith('parser:')) provKey = provKey.replace('parser:', '');
-                else if (provKey.startsWith('vidsrc:')) provKey = 'vidsrc';
             }
 
             const activeAdapter = this.playbackController.getAdapter(provKey);
@@ -462,10 +461,7 @@ function createPhase3DHarness() {
             const adapter = this.playbackController.getAdapter(activeProvider);
 
             if (adapter && adapter.supportsDirectSeasonEpisode()) {
-                if (activeProvider === 'vidsrc') {
-                    const imdbId = this.selectedMovie.externalId?.imdb || this.selectedMovie.imdbId;
-                    this.currentVideoUrl = `https://vidsrc.xyz/embed/tv?imdb=${imdbId}&season=${selectionPayload.seasonNumber}&episode=${selectionPayload.episodeNumber}`;
-                } else if (activeProvider === 'seasonvar') {
+                if (activeProvider === 'seasonvar') {
                     this.currentVideoUrl = `https://seasonvar.ru/serial-${this.selectedMovie.kinopoiskId}.html#s${selectionPayload.seasonNumber}e${selectionPayload.episodeNumber}`;
                 }
             }
@@ -997,7 +993,7 @@ async function runAllTests() {
         assert.strictEqual(harness.playbackController.getSelection().initialTimestamp, 0, 'New episode must start at 0');
     });
 
-    await test('3.4 Active provider is preserved across episode navigation (VidSrc stays VidSrc)', async () => {
+    await test('3.4 Active provider is preserved across episode navigation (Seasonvar stays Seasonvar)', async () => {
         const { harness } = createPhase3DHarness();
         harness.selectedMovie = {
             kinopoiskId: 404900,
@@ -1007,7 +1003,7 @@ async function runAllTests() {
             seasons: [{ season_number: 2, episode_count: 13 }]
         };
 
-        harness.playbackController.setActiveProvider('vidsrc');
+        harness.playbackController.setActiveProvider('seasonvar');
 
         await harness.playSelection({
             kinopoiskId: 404900,
@@ -1016,18 +1012,18 @@ async function runAllTests() {
             mediaType: 'tv-series',
             seasonNumber: 2,
             episodeNumber: 4,
-            providerId: 'vidsrc',
+            providerId: 'seasonvar',
             source: 'SEASONS_TAB'
         });
 
-        assert.strictEqual(harness.playbackController.getActiveProvider(), 'vidsrc');
-        assert.ok(harness.currentVideoUrl.includes('season=2&episode=4'));
+        assert.strictEqual(harness.playbackController.getActiveProvider(), 'seasonvar');
+        assert.ok(harness.currentVideoUrl.includes('#s2e4'));
 
         // Navigate Next
         await harness.handlePlayerNavigate('next');
 
-        assert.strictEqual(harness.playbackController.getActiveProvider(), 'vidsrc', 'Provider must remain vidsrc');
-        assert.ok(harness.currentVideoUrl.includes('season=2&episode=5'), 'VidSrc URL must update to episode 5');
+        assert.strictEqual(harness.playbackController.getActiveProvider(), 'seasonvar', 'Provider must remain seasonvar');
+        assert.ok(harness.currentVideoUrl.includes('#s2e5'), 'Seasonvar URL must update to episode 5');
     });
 
     await test('3.5 Header title immediately updates without stale text', async () => {
@@ -1097,7 +1093,7 @@ async function runAllTests() {
     // ==========================================
     console.log('\n--- Part 4: Cross-Season Navigation & Direct Providers ---');
 
-    await test('4.1 Cross-season Next updates VidSrc URL to S4E1', async () => {
+    await test('4.1 Cross-season Next updates Seasonvar URL to S4E1', async () => {
         const { harness } = createPhase3DHarness();
         harness.selectedMovie = {
             kinopoiskId: 404900,
@@ -1110,7 +1106,7 @@ async function runAllTests() {
             ]
         };
 
-        harness.playbackController.setActiveProvider('vidsrc');
+        harness.playbackController.setActiveProvider('seasonvar');
 
         await harness.playSelection({
             kinopoiskId: 404900,
@@ -1119,7 +1115,7 @@ async function runAllTests() {
             mediaType: 'tv-series',
             seasonNumber: 3,
             episodeNumber: 13,
-            providerId: 'vidsrc',
+            providerId: 'seasonvar',
             source: 'SEASONS_TAB'
         });
 
@@ -1127,7 +1123,7 @@ async function runAllTests() {
 
         assert.strictEqual(harness.playbackController.getSelection().seasonNumber, 4);
         assert.strictEqual(harness.playbackController.getSelection().episodeNumber, 1);
-        assert.ok(harness.currentVideoUrl.includes('season=4&episode=1'), `VidSrc URL must contain season=4&episode=1, got: ${harness.currentVideoUrl}`);
+        assert.ok(harness.currentVideoUrl.includes('#s4e1'), `Seasonvar URL must contain #s4e1, got: ${harness.currentVideoUrl}`);
     });
 
     await test('4.2 Cross-season Previous updates Seasonvar URL to S3E13', async () => {

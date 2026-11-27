@@ -198,7 +198,7 @@ function setup(options = {}) {
         const { hls } = setup();
         assert.equal(hls.config.capLevelToPlayerSize, false, 'the best rendition plays whatever the player size');
         assert.equal(hls.config.capLevelOnFPSDrop, true, 'a computer that loses frames steps down');
-        assert.equal(hls.config.backBufferLength, 60, 'played-back buffer is bounded');
+        assert.equal(hls.config.backBufferLength, 300, 'played-back buffer is bounded to five minutes');
         assert.equal(hls.config.maxBufferLength, 60);
         assert.equal(hls.config.maxMaxBufferLength, 240);
         assert.ok(hls.config.maxBufferSize * 8 <= 150e6 * 8, 'inside Chrome\'s media memory');

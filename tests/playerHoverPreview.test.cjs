@@ -279,7 +279,7 @@ const { chromium } = require('playwright');
 
         // Exercise the provider-to-preview DOM contract with a real decoder,
         // including source changes on the same primary video (MSE ownership).
-        for (const provider of ['kinogo', 'exfs', 'rutube', 'torrent', 'vidsrc']) {
+        for (const provider of ['kinogo', 'exfs', 'rutube', 'torrent']) {
             await page.evaluate(({ provider, origin }) => {
                 const movie = document.getElementById('movie');
                 Object.defineProperty(movie, 'currentSrc', {

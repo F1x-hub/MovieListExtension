@@ -8,7 +8,6 @@ const path = require('path');
 const { PlaybackSelection } = require('../src/shared/services/player/PlaybackSelection.js');
 const { PlaybackController } = require('../src/shared/services/player/PlaybackController.js');
 const { BasePlaybackAdapter } = require('../src/shared/services/player/adapters/BasePlaybackAdapter.js');
-const { VidSrcAdapter } = require('../src/shared/services/player/adapters/VidSrcAdapter.js');
 const { SeasonvarAdapter } = require('../src/shared/services/player/adapters/SeasonvarAdapter.js');
 const { KinogoAdapter } = require('../src/shared/services/player/adapters/KinogoAdapter.js');
 const { ExFsAdapter } = require('../src/shared/services/player/adapters/ExFsAdapter.js');
@@ -121,7 +120,6 @@ function createHarness() {
     };
 
     const controller = new PlaybackController();
-    controller.registerAdapter(new VidSrcAdapter());
     controller.registerAdapter(new SeasonvarAdapter());
     controller.registerAdapter(new KinogoAdapter());
     controller.registerAdapter(new ExFsAdapter());
@@ -170,7 +168,6 @@ function createHarness() {
             let provKey = providerId;
             if (typeof provKey === 'string') {
                 if (provKey.startsWith('parser:')) provKey = provKey.replace('parser:', '');
-                else if (provKey.startsWith('vidsrc:')) provKey = 'vidsrc';
             }
 
             const activeAdapter = this.playbackController?.getAdapter(provKey);
@@ -191,7 +188,7 @@ function createHarness() {
             }
             this.updatePlayerHeaderTitle();
             this.elements.videoPlayerModal.style.display = 'flex';
-            const activeProvider = this.playbackController?.getActiveProvider() || 'vidsrc';
+            const activeProvider = this.playbackController?.getActiveProvider() || this.activeSource?.parserId || null;
             this.updateSourceGuidance(activeProvider);
         },
 
@@ -299,7 +296,7 @@ async function runAllTests() {
     });
 
     // 8. Direct provider hides guidance
-    await test('8. Direct provider (vidsrc) hides title-only guidance', () => {
+    await test('8. Direct provider (seasonvar) hides title-only guidance', () => {
         const { manager } = createHarness();
         manager.selectedMovie = { kinopoiskId: 101, nameRu: 'Сериал', type: 'tv-series' };
         manager.playbackController.setSelection({
@@ -308,7 +305,7 @@ async function runAllTests() {
             seasonNumber: 1,
             episodeNumber: 1
         });
-        manager.updateSourceGuidance('vidsrc');
+        manager.updateSourceGuidance('seasonvar');
         assert.strictEqual(manager.elements.playerSourceGuidance.style.display, 'none');
     });
 
@@ -401,6 +398,21 @@ async function runAllTests() {
         };
     }
 
+    // Every remaining adapter mounts through its parser. These options give the real
+    // Rutube adapter a stub parser and a ready source, so its mount succeeds at once.
+    function createRutubeMountOptions() {
+        return {
+            sources: [{ url: 'https://rutube.ru/play/embed/test' }],
+            parser: {
+                async renderPlayer(container) {
+                    const iframe = createMockElement('iframe');
+                    container.appendChild(iframe);
+                    return iframe;
+                }
+            }
+        };
+    }
+
     // 17. Stale loading result ignored
     await test('17. PlaybackController generation token discards superseded mounts', async () => {
         const { controller } = createHarness();
@@ -422,7 +434,7 @@ async function runAllTests() {
         // Trigger switchProvider 1 (slow) then immediately switchProvider 2
         controller.setSelection({ kinopoiskId: 1, imdbId: 'tt0903747', mediaType: 'movie' });
         const p1 = controller.switchProvider('slow').catch(err => err);
-        const p2 = controller.switchProvider('vidsrc');
+        const p2 = controller.switchProvider('rutube', createRutubeMountOptions());
         await Promise.all([p1, p2]);
         await new Promise(r => setTimeout(r, 70));
 
@@ -460,9 +472,9 @@ async function runAllTests() {
         const fakeContainer = createFakeContainer();
         controller.setContainer(fakeContainer, null);
 
-        const result = await controller.play({ kinopoiskId: 10, imdbId: 'tt0903747', mediaType: 'movie' }, { providerId: 'vidsrc' });
+        const result = await controller.play({ kinopoiskId: 10, imdbId: 'tt0903747', mediaType: 'movie' }, { providerId: 'rutube', ...createRutubeMountOptions() });
         assert.ok(result, 'Subsequent mount succeeds');
-        assert.strictEqual(controller.getActiveProvider(), 'vidsrc');
+        assert.strictEqual(controller.getActiveProvider(), 'rutube');
     });
 
     // 20. Close lifecycle preserved
@@ -487,10 +499,10 @@ async function runAllTests() {
         controller.setSelection({ kinopoiskId: 1, imdbId: 'tt0903747', mediaType: 'tv-series', seasonNumber: 1, episodeNumber: 1 });
         const p1 = controller.switchProvider('kinogo').catch(err => err);
         const p2 = controller.switchProvider('seasonvar').catch(err => err);
-        const p3 = controller.switchProvider('vidsrc');
+        const p3 = controller.switchProvider('rutube', createRutubeMountOptions());
 
         await Promise.all([p1, p2, p3]);
-        assert.strictEqual(controller.getActiveProvider(), 'vidsrc');
+        assert.strictEqual(controller.getActiveProvider(), 'rutube');
     });
 
     // 22. No orphan drawer listeners
@@ -551,10 +563,11 @@ async function runAllTests() {
         assert.strictEqual(manager.elements.playerSourceGuidance.style.display, 'none');
     });
 
-    // 28. Series direct regression (VidSrc / Seasonvar)
+    // 28. Series direct regression (Seasonvar)
     await test('28. Series direct provider hides guidance and formats subtitle', () => {
         const { manager } = createHarness();
         manager.selectedMovie = { kinopoiskId: 400, nameRu: 'В Филадельфии всегда солнечно', type: 'tv-series' };
+        manager.playbackController.setActiveProvider('seasonvar');
         manager.playSelection({
             kinopoiskId: 400,
             mediaType: 'tv-series',

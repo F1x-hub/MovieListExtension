@@ -17,7 +17,7 @@ function provider(host, embedded = true) {
     window.eval(bridge);
     return dom;
 }
-for (const host of ['api.namy.ws', 'api.variyt.ws', 'api.nextembed.ws', 'api.lumex.cloud', 'rutube.ru', 'vidsrc-embed.ru']) {
+for (const host of ['api.namy.ws', 'api.variyt.ws', 'api.nextembed.ws', 'api.lumex.cloud', 'rutube.ru']) {
     const dom = provider(host);
     const { window } = dom;
     window.eval(`
@@ -84,12 +84,12 @@ window.video.dispatchEvent(new window.Event('loadedmetadata'));
 assert.equal(window.video.dataset.playerPreviewUrl, undefined, 'DASH-only must not show another episode');
 dom.window.close();
 
-const ordinary = provider('vidsrc-embed.ru', false);
+const ordinary = provider('rutube.ru', false);
 assert.equal(ordinary.window.MovieExtensionPreviewBridge, undefined, 'leave ordinary website embeds alone');
 ordinary.window.close();
 
 const manifest = JSON.parse(fs.readFileSync(require('node:path').join(__dirname, '../manifest.json')));
-for (const pattern of ['*://*.namy.ws/*', '*://*.nextembed.ws/*', 'https://rutube.ru/play/embed/*', 'https://vidsrc-embed.ru/*']) {
+for (const pattern of ['*://*.namy.ws/*', '*://*.nextembed.ws/*', 'https://rutube.ru/play/embed/*']) {
     assert.ok(manifest.content_scripts.some(script => script.matches.includes(pattern)
         && script.world === 'MAIN' && script.run_at === 'document_start'
         && script.js.includes('content-scripts/provider-preview-bridge.js')));

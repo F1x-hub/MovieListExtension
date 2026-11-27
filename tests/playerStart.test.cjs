@@ -40,9 +40,8 @@ function watchPage() {
     page.probeSourceAvailability = () => (page.probe ||= new Promise(resolve => { finish = () => { page.sourceProbeDone = true; resolve(); }; }));
     const report = (id, found) => {
         page.sourceAvailability.set(id, found ? 'found' : 'missing');
-        show([...parsers.filter(item => page.sourceAvailability.get(item) === 'found').map(item => `parser:${item}`), 'vidsrc:tt42']);
+        show(parsers.filter(item => page.sourceAvailability.get(item) === 'found').map(item => `parser:${item}`));
     };
-    show(['vidsrc:tt42']);
     return { dom, w, page, report, finish: () => finish?.() };
 }
 
@@ -79,21 +78,21 @@ test('Rutube ranks after the rest for a film, and a remembered source needs no w
     assert.equal(await page.resolveWatchSource(), 'parser:rutube');
 });
 
-test('with nothing confirmed yet VidSrc does not take the start: the viewer waits for the verdict', async t => {
+test('with nothing found yet the viewer waits for the verdict, and every source saying no ends the wait', async t => {
     const { dom, page, report, finish } = watchPage();
     t.after(() => dom.window.close());
     page.probeSourceAvailability();
     const choice = page.resolveWatchSource();
-    let settled = null;
-    void choice.then(value => { settled = value; });
+    let settled = false;
+    void choice.then(() => { settled = true; });
     await sleep(300);
-    assert.equal(settled, null);
+    assert.equal(settled, false, 'no answer yet is not "no source"');
     report('kinogo', false);
     report('exfs', false);
     report('seasonvar', false);
     report('rutube', false);
     finish();
-    assert.equal(await choice, 'vidsrc:tt42', 'the last resort, once every checked source has said no');
+    assert.equal(await choice, null, 'nothing to start once every checked source has said no');
 });
 
 test('a slow check holds «Смотреть» back for a limited time only', async t => {
@@ -138,13 +137,15 @@ test('no source at all ends in a message with a retry, not in an endless spinner
     assert.equal(states[0].options.onRetry(), 'retried');
 });
 
-test('VidSrc is the last source in every ranking', () => {
+test('Veoveo ranks after the other sources, wherever it stands in the list', () => {
     const { dom, w } = watchPage();
     const rank = w.WatchSourcePolicy.rank;
-    const values = ['vidsrc:tt1', 'parser:rutube', 'parser:kinogo', 'parser:animego'];
-    assert.equal([...rank(values, { film: true })].at(-1), 'vidsrc:tt1');
-    assert.equal([...rank(values, { anime: true })].at(-1), 'vidsrc:tt1');
-    assert.equal([...rank(values, { health: { vidsrc: 1, kinogo: 0 } })].at(-1), 'vidsrc:tt1', 'a good score does not change it');
+    const values = ['parser:veoveo', 'parser:rutube', 'parser:kinogo', 'parser:animego'];
+    assert.equal([...rank(values)].at(-1), 'parser:veoveo');
+    assert.equal([...rank(values, { anime: true })].at(-1), 'parser:veoveo');
+    assert.equal([...rank(values, { health: { veoveo: 1, kinogo: 0 } })].at(-1), 'parser:veoveo', 'a good score does not change it');
+    assert.deepEqual([...rank(values, { film: true })].slice(0, 2), ['parser:kinogo', 'parser:animego'],
+        'for a film it shares the end of the list with Rutube');
     dom.window.close();
 });
 
