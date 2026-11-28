@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from temp/tv-mockup/icons.js (MIC). Tint it in code. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp" android:height="20dp"
+    android:viewportWidth="20" android:viewportHeight="20">
+    <path android:pathData="M7 6A3 3 0 0 1 13 6V10A3 3 0 0 1 7 10Z"
+        android:strokeColor="#FFFFFFFF" android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M10 3A3 3 0 0 1 13 6V10A3 3 0 0 1 10 13Z"
+        android:fillColor="#FFFFFFFF" />
+    <path android:pathData="M4.5 10A5.5 5.5 0 0 0 15.5 10M10 15.5V17.5"
+        android:strokeColor="#FFFFFFFF" android:strokeWidth="2" android:strokeLineCap="round" />
+</vector>

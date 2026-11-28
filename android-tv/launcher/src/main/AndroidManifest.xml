@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- «TCL Home»: the owner's own home screen. Rebuilt from the sideloaded original (no source
+     survived); components, filters and the accessibility config are kept as they were, so an
+     install over the original keeps the enabled accessibility service and the HOME role. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="true" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
+    <queries>
+        <package android:name="app.seans.tv" />
+        <package android:name="org.smarttube.stable" />
+        <package android:name="top.rootu.lampa" />
+        <package android:name="com.google.android.youtube.tv" />
+        <package android:name="com.android.vending" />
+        <package android:name="org.videolan.vlc" />
+        <package android:name="com.mediatek.wwtv.mediaplayer" />
+        <package android:name="com.mediatek.wwtv.tvcenter" />
+        <package android:name="com.google.android.tv.inputplayer" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:banner="@drawable/home_icon"
+        android:icon="@drawable/home_icon"
+        android:label="TCL Home"
+        android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
+
+        <activity
+            android:name=".HomeActivity"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".HomeRedirectService"
+            android:exported="true"
+            android:label="TCL Home"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/home_redirect" />
+        </service>
+    </application>
+</manifest>

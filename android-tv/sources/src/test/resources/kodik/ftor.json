@@ -1,0 +1,28 @@
+{
+ "advert_script": "",
+ "domain": "kodikplayer.com",
+ "default": 720,
+ "links": {
+  "360": [
+   {
+    "src": "Tg9eUBQck29aj2ZrHO4cG29bT3UdjA9uiFp0lFRtThIeULIdUhGeTu1eVLxwjPU6jENciEHtk3YcjBV1WI==",
+    "type": "application/x-mpegURL"
+   }
+  ],
+  "480": [
+   {
+    "src": "Tg9eUBQck29aj2ZrHO4cG29bT3UdjA9uiFp0lFRtThIeULIdVLoeTu1eVLxwjPU6jENciEHtk3YcjBV1WI==",
+    "type": "application/x-mpegURL"
+   }
+  ],
+  "720": [
+   {
+    "src": "Tg9eUBQck29aj2ZrHO4cG29bT3UdjA9uiFp0lFRtThIeULIdVhQeTu1eVLxwjPU6jENciEHtk3YcjBV1WI==",
+    "type": "application/x-mpegURL"
+   }
+  ]
+ },
+ "vast": [],
+ "reserve_vast": [],
+ "ip": "0.0.0.0"
+}

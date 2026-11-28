@@ -1,0 +1,14 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+captures/
+/tv-lock.txt
+# Never commit secrets or signing keys
+*.jks
+*.keystore
+*.pem
+serviceAccountKey*.json
+google-services.json

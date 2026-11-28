@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Seans" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+        <!-- The page colour (SeansColors.Bg). The screens draw no background of their own, so each
+             frame fills the screen once (the TV GPU is the bottleneck). -->
+        <item name="android:windowBackground">@color/seans_bg</item>
+    </style>
+</resources>

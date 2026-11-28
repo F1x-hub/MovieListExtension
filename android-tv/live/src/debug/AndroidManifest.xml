@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TEMPORARY (tv-live): debug-only entry to check the Live screen on the TV before `:app` has
+     navigation. Remove this file and `src/debug/java/.../LiveDebugActivity.kt` after the check. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="app.seans.tv.live.debug.LiveDebugActivity"
+            android:exported="true"
+            android:screenOrientation="landscape"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+    </application>
+</manifest>

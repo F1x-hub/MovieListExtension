@@ -79,6 +79,8 @@ native-host/**/obj/
 !docs/design-system.md
 !docs/aegis/**
 !docs/UPDATER_RELEASE.md
+!android-tv/AGENTS.md
+!android-tv/docs/**
 
 # Telegram Bot
 telegram-bot/

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  No cleartext HTTP anywhere: Seasonvar redirects http→https and its CDN (*.11cdn.org) serves
+  HTTPS. `tv-sources` asks `tv-app` (through the coordinator) if a host ever needs cleartext.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

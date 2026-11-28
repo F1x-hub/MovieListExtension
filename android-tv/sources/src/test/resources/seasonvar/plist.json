@@ -1,0 +1,33 @@
+[
+ {
+  "title": "1 серия SD/FullHD<br>LostFilm",
+  "file": "#2Ly9kYXRhMDEtY2RuLjEx//b2xvbG8=Y2RuLm9yZy9maXh0dXJlLzAwMDAvVm8udnNlLnR5YXpoa2llLjUuc2V6b24uMS5tcDQ=",
+  "subtitle": "[ru]https://data01-cdn.11cdn.org/fixture/s5e1.ru.vtt?shift=0,[eng]https://data01-cdn.11cdn.org/fixture/s5e1.en.vtt",
+  "galabel": "4448_913061",
+  "id": "1"
+ },
+ {
+  "title": "2 серия SD/FullHD<br>LostFilm",
+  "file": "#2Ly9kYXRhMDItY2RuLjEx//b2xvbG8=Y2RuLm9yZy9maXh0dXJlLzAwMDAvVm8udnNlLnR5YXpoa2llLjUuc2V6b24uMi5tcDQ=",
+  "subtitle": "",
+  "galabel": "4448_913062",
+  "id": "2"
+ },
+ {
+  "title": "3 серия SD/FullHD<br>LostFilm",
+  "file": "#2Ly9kYXRhMDMtY2RuLjEx//b2xvbG8=Y2RuLm9yZy9maXh0dXJlLzAwMDAvVm8udnNlLnR5YXpoa2llLjUuc2V6b24uMy5tcDQ=",
+  "subtitle": "",
+  "galabel": "4448_913063",
+  "id": "3"
+ },
+ {
+  "title": "Бонусы",
+  "folder": [
+   {
+    "title": "15-16 серия SD/FullHD<br>Гоблин",
+    "file": "#2Ly9kYXRhMDktY2RuLjEx//b2xvbG8=Y2RuLm9yZy9maXh0dXJlLzAwMDAvYm9udXMuMTUubXA0",
+    "subtitle": ""
+   }
+  ]
+ }
+]

@@ -1,0 +1,36 @@
+<!DOCTYPE html><html><head><script>
+function makePlayer(opts) { /* the player loader */ }
+</script></head><body><div id="player"></div>
+<script data-name="mk">
+		makePlayer({
+			blocked: false ,
+			title: "Интерстеллар",
+			id: 852209 ,
+			poster: 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==',
+            
+			source: {
+				dash: "https://hye1eaipby4w.interkh.com/fixture/1260892.mpd?ha=0000&hc=0000&hi=0000&ht=0000&hu=0000&t=1796668851",
+                dasha: "https://hye1eaipby4w.interkh.com/fixture/1260892.mpd?ha=0000&hc=0000&hi=0000&ht=0000&hu=0000&t=1796668851",
+				hls: "https://hye1eaipby4w.interkh.com/fixture/master.m3u8?ha=0000&hc=0000&hi=0000&ht=0000&hu=0000&t=1796668851",
+				audio: {"names":["Рус. Дублированный","Омикрон","Ю. Сербин","Ю. Живов","Д. Есарев","Укр. Дубльований","Eng.Original"],"order":[0,1,2,3,4,5,6]},
+				cc: [{"url":"https://hye1eaipby4w.interkh.com/fixture/38863d1849.vtt?ha=0000&hc=0000&hi=0000&ht=0000&hu=0000&t=1796668851","name":"Укр. форсовані - 1"},{"url":"https://hye1eaipby4w.interkh.com/fixture/10d4e8c570.vtt?ha=0000&hc=0000&hi=0000&ht=0000&hu=0000&t=1796668851","name":"Рус. полные - 2"},{"url":"https://hye1eaipby4w.interkh.com/fixture/d70c46316d.vtt?ha=0000&hc=0000&hi=0000&ht=0000&hu=0000&t=1796668851","name":"Рус. форсированные - 3"},{"url":"https://hye1eaipby4w.interkh.com/fixture/c75576db93.vtt?ha=0000&hc=0000&hi=0000&ht=0000&hu=0000&t=1796668851","name":"Укр. повні gen. - 4"},{"url":"https://hye1eaipby4w.interkh.com/fixture/15ce3dd8d1.vtt?ha=0000&hc=0000&hi=0000&ht=0000&hu=0000&t=1796668851","name":"Eng. full - 5"}]
+
+			},
+			sections: [],
+			qualityByWidth: {"864":480},
+			p2p: {
+				geo: ["GE","","AS16010"],
+				tolerance:  4 ,
+				tracker: function () {
+					var now = Date.now();
+					if (lastTracker + 3e5 < now) tracker = false; 
+					lastTracker = now;
+					return (tracker= !tracker) ?"wss://fixture.invalid/ws" :"wss://fixture.invalid/ws"
+				},
+				longDownload: 300 * 1000
+			}
+		});
+
+		var videoKey = 1260892 ;
+    </script>
+</body></html>

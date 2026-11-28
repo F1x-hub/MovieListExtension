@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from temp/tv-mockup/icons.js (LIVE). Tint it in code. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp" android:height="20dp"
+    android:viewportWidth="20" android:viewportHeight="20">
+    <path android:pathData="M10 7A3 3 0 1 0 10 13A3 3 0 1 0 10 7Z"
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd" />
+    <path android:pathData="M4.2 4.6A8 8 0 0 0 4.2 15.4M15.8 4.6A8 8 0 0 1 15.8 15.4"
+        android:strokeColor="#FFFFFFFF" android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>

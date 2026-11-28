@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from temp/tv-mockup/icons.js (WATCHED_FILLED). Tint it in code. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp" android:height="20dp"
+    android:viewportWidth="20" android:viewportHeight="20">
+    <path android:pathData="M6 2H14A4 4 0 0 1 18 6V14A4 4 0 0 1 14 18H6A4 4 0 0 1 2 14V6A4 4 0 0 1 6 2ZM5.2 10.2L6.6 8.8L9 11.2L12.6 6.9L14.1 8.3L9 14.1Z"
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd" />
+</vector>

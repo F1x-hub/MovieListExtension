@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="redirect_description">Открывает TCL Home при включении телевизора, после сна и вместо штатного главного экрана Google TV.</string>
+</resources>
