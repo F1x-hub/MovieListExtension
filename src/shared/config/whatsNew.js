@@ -1,5 +1,16 @@
 export const whatsNew = [
     {
+        id: '1.5.13', version: '1.5.13', date: '2026-11-28',
+        highlights: [
+            { id: 'seans-name', title: { ru: 'Теперь «Сеанс»', en: 'Now «Screening»' }, text: { ru: 'Так расширение называется в списке Chrome, на панели и на всех его страницах.', en: 'That is the extension’s name in Chrome’s list, on the toolbar and on every page.' } },
+            { id: 'kp-sources', title: { ru: 'Collaps, Alloha и Veoveo', en: 'Collaps, Alloha and Veoveo' }, text: { ru: 'Три новых источника ищут фильм по ID Кинопоиска, поэтому тёзка или ремейк вместо нужного фильма не подставится. Если источник открылся, но видео так и не пошло, «Смотреть» сам перейдёт к следующему.', en: 'Three new sources find a film by its Kinopoisk ID, so a namesake or a remake cannot stand in for it. If a source opens but the video never starts, «Watch Movie» moves on to the next one by itself.' } },
+            { id: 'ambient-light', title: { ru: 'Подсветка вокруг плеера', en: 'Light around the player' }, text: { ru: 'Цвета кадра мягко расходятся за окном плеера, как в YouTube. Включается в меню плеера, пункт «Подсветка».', en: 'The colours of the picture spread softly behind the player window, as on YouTube. Turn it on in the player menu under «Ambient light».' } },
+            { id: 'countries-map', title: { ru: 'Карта стран', en: 'A map of countries' }, text: { ru: 'В «Статистике» профиля появилась карта мира: страна тем ярче, чем больше вы оценили её фильмов.', en: 'The profile’s Statistics has a world map: the more films you rated from a country, the brighter it is.' } },
+            { id: 'studio-page', title: { ru: 'Страница студии', en: 'Studio pages' }, text: { ru: 'Студии на странице фильма теперь ссылки: у каждой свои фильмы и сериалы с сортировкой.', en: 'The studios on a film page are now links, each to its own films and series with sorting.' } },
+            { id: 'soft-cursors', title: { ru: 'Мягкие курсоры', en: 'Soft cursors' }, text: { ru: 'У страниц расширения свои курсоры без острых углов. Размер и скругление меняются в настройках, там же их можно выключить.', en: 'The extension’s pages have their own cursors with no sharp corners. Change their size and roundness in Settings, or turn them off there.' } }
+        ]
+    },
+    {
         id: '1.5.12', version: '1.5.12', date: '2026-11-26',
         highlights: [
             { id: 'marathon-history', title: { ru: 'Итоги марафонов', en: 'Marathon results' }, text: { ru: 'Под текущим раундом видны все прошлые: победитель, средняя оценка компании, кто какой фильм принёс и как его оценили.', en: 'Every past round shows under the current one: the winner, the company’s average, who brought each film and how it was rated.' } },

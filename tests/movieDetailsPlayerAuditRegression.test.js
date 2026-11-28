@@ -264,7 +264,11 @@ return toPlayerFrameSrcAttribute;`)();
     const listeners = [...cleaner.matchAll(/(?:addEventListener|listen)\((?:window, )?'message', \((\w+)\) => \{\s*\n\s*(.*)/g)];
     assert.ok(listeners.length >= 4, 'all cleaner message listeners must be checked');
     listeners.forEach(([, eventName, firstLine]) => {
-        assert.equal(firstLine.trim(), `if (!isTrustedHostMessage(${eventName})) return;`, 'every cleaner command listener must verify the host first');
+        // A listener may also drop everything on the extension's own pages before the host check.
+        assert.ok([
+            `if (!isTrustedHostMessage(${eventName})) return;`,
+            `if (isExtensionPageContext() || !isTrustedHostMessage(${eventName})) return;`
+        ].includes(firstLine.trim()), 'every cleaner command listener must verify the host first');
     });
 
     const trust = new Function('window', 'chrome', `${cleaner.match(/function isExtensionPageContext[\s\S]*?function postToHost/)[0].replace(/function postToHost$/, '')}
