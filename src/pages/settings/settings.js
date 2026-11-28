@@ -1,5 +1,6 @@
 import { i18n } from '../../shared/i18n/I18n.js';
 import { bindWhatsNewSettings } from '../../shared/components/WhatsNewSettings.js';
+import { TvLoginPanel } from './TvLoginPanel.js';
 
 const SUBTITLE_APPEARANCE_STORAGE_KEY = 'movieExtensionSubtitleAppearanceV1';
 const EXTENSION_UPDATE_STATE_STORAGE_KEY = 'extension_update_state_v2';
@@ -223,6 +224,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize Navigation. It renders itself once it knows the session; rendering
     // any earlier would paint the account block without it.
     new Navigation('navbar');
+
+    // Settings → «Телевизор»: signs the Android TV app in to this account.
+    const currentFirebaseUser = () => (typeof firebaseManager === 'undefined'
+        ? null
+        : firebaseManager.auth?.currentUser || firebaseManager.getCurrentUser?.() || null);
+    const tvLoginPanel = new TvLoginPanel({ getUser: currentFirebaseUser });
+    tvLoginPanel.bind();
+    window.addEventListener('authStateChanged', () => tvLoginPanel.applyUser(currentFirebaseUser()));
+    if (typeof firebaseManager !== 'undefined' && firebaseManager.waitForAuthReady) {
+        firebaseManager.waitForAuthReady(5000)
+            .then(() => tvLoginPanel.applyUser(currentFirebaseUser()))
+            .catch(() => {});
+    }
 
     // Intercept Navigation
     setupNavigationInterception();

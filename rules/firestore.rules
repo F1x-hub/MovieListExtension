@@ -697,6 +697,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Android TV device sign-in (functions/tvLogin.js): login codes and their rate-limit
+    // counters are server state only. Clients use the tvLogin* HTTPS functions.
+    match /tvLogins/{loginId} {
+      allow read, write: if false;
+    }
+
     match /watchRoomAclOutbox/{eventId} {
       allow read, write: if false;
     }

@@ -5,7 +5,7 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret, defineString } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { getDatabaseWithUrl } = require("firebase-admin/database");
 const { createKinopoiskProxyHandler } = require("./kinopoiskProxy");
 const { getFirestoreUsage } = require("./firestoreUsage");
@@ -25,6 +25,7 @@ const { createExpiredWatchRoomCleanup } = require("./watchRoomCleanup");
 const { createRandomMarathonHandler } = require("./randomMarathon");
 const { createBattleshipHandler } = require("./battleship");
 const { createChessHandler } = require("./chess");
+const { createTvLoginHandlers } = require("./tvLogin");
 const { createZalpHandler } = require("./zalp");
 const {
   buildMovieRatingProjection,
@@ -328,6 +329,33 @@ exports.chess = onRequest(
     auth: getAuth(app),
   })
 );
+
+/**
+ * Device sign-in for the Android TV app (functions/tvLogin.js): the TV starts a login and
+ * polls for it, an approved user confirms the code from the extension or the Hosting page
+ * `/tv`. Minting the custom token needs "Service Account Token Creator" on the runtime
+ * service account. Low instance caps bound the cost of abuse.
+ */
+let tvLoginHandlers = null;
+function getTvLoginHandlers() {
+  if (!tvLoginHandlers) {
+    tvLoginHandlers = createTvLoginHandlers({
+      db,
+      auth: getAuth(app),
+      toTimestamp: (millis) => Timestamp.fromMillis(millis),
+    });
+  }
+  return tvLoginHandlers;
+}
+const TV_LOGIN_OPTIONS = {
+  region: "us-central1",
+  timeoutSeconds: 15,
+  memory: "256MiB",
+  maxInstances: 2,
+};
+exports.tvLoginStart = onRequest(TV_LOGIN_OPTIONS, (req, res) => getTvLoginHandlers().start(req, res));
+exports.tvLoginApprove = onRequest(TV_LOGIN_OPTIONS, (req, res) => getTvLoginHandlers().approve(req, res));
+exports.tvLoginPoll = onRequest(TV_LOGIN_OPTIONS, (req, res) => getTvLoginHandlers().poll(req, res));
 
 exports.cleanupExpiredWatchRoomsStaging = onSchedule(
   {

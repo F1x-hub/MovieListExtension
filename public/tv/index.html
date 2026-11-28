@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <meta name="referrer" content="no-referrer">
+    <title>Сеанс — вход на телевизоре</title>
+    <!--
+        Opened from the QR on the Android TV app (`/tv?c=<code>`). Signs in with Google on
+        this authorized domain and approves the TV through `tvLoginApprove`
+        (functions/tvLogin.js): a lookup that names the device, then an explicit
+        «Это мой телевизор». The extension's Settings → «Телевизор» does the same.
+    -->
+    <style>
+        :root {
+            color-scheme: dark light;
+            --bg: #09090b;
+            --surface: #18181b;
+            --border: #3f3f46;
+            --text: #fafafa;
+            --text-2: #a1a1aa;
+            --button-bg: #fafafa;
+            --button-text: #09090b;
+            --danger: #f87171;
+        }
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: #f4f4f5;
+                --surface: #ffffff;
+                --border: #d4d4d8;
+                --text: #09090b;
+                --text-2: #52525b;
+                --button-bg: #09090b;
+                --button-text: #fafafa;
+                --danger: #b91c1c;
+            }
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 48px 16px;
+            background: var(--bg);
+            color: var(--text);
+            font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        }
+        main {
+            width: 100%;
+            max-width: 420px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 28px 24px;
+        }
+        h1 { margin: 0 0 8px; font-size: 22px; font-weight: 700; }
+        p { margin: 0 0 16px; }
+        .muted { color: var(--text-2); font-size: 14px; }
+        [hidden] { display: none !important; }
+        label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 14px; }
+        input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg);
+            color: var(--text);
+            font: 600 26px/1.2 ui-monospace, "Geist Mono", Menlo, Consolas, monospace;
+            letter-spacing: 0.3em;
+            text-align: center;
+            text-transform: uppercase;
+        }
+        input:focus-visible, button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+        button {
+            width: 100%;
+            min-height: 48px;
+            margin-top: 16px;
+            border: 1px solid var(--button-bg);
+            border-radius: 10px;
+            background: var(--button-bg);
+            color: var(--button-text);
+            font-family: inherit;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        button.secondary { background: transparent; color: var(--text); border-color: var(--border); }
+        button:disabled { cursor: progress; opacity: 0.7; }
+        .device {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 14px 16px;
+            margin-bottom: 16px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+        }
+        .device strong { font-size: 18px; overflow-wrap: anywhere; }
+        .error { color: var(--danger); font-size: 14px; margin: 8px 0 0; min-height: 1em; }
+        .hint { padding: 12px 14px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 10px; }
+        .hint p { margin: 0; font-size: 14px; }
+        .hint button { margin-top: 12px; min-height: 40px; }
+        .account { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-top: 24px; }
+        .account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .account button { width: auto; min-height: 36px; margin: 0; padding: 0 12px; font-size: 14px; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Вход на телевизоре</h1>
+
+    <section id="signInStep" hidden>
+        <p>Войдите тем же аккаунтом Google, что и в расширении «Сеанс», чтобы подтвердить телевизор.</p>
+        <div class="hint" id="webviewHint" hidden>
+            <p>Похоже, страница открыта внутри приложения для QR-кодов. Вход через Google там может не сработать. Откройте её в браузере: меню ⋮ или «Поделиться» → «Открыть в браузере».</p>
+            <button type="button" class="secondary" id="copyLinkBtn">Скопировать ссылку</button>
+        </div>
+        <button type="button" id="googleBtn">Войти через Google</button>
+        <p class="error" id="signInError" role="alert"></p>
+    </section>
+
+    <form id="codeStep" hidden novalidate>
+        <label for="codeInput">Код с экрана телевизора</label>
+        <input id="codeInput" name="code" maxlength="7" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7Q4MD" aria-describedby="codeError">
+        <p class="error" id="codeError" role="alert"></p>
+        <button type="submit" id="findBtn">Продолжить</button>
+    </form>
+
+    <section id="confirmStep" hidden>
+        <p>Телевизор просит войти в ваш аккаунт:</p>
+        <div class="device">
+            <strong id="deviceName"></strong>
+            <span class="muted" id="deviceTime"></span>
+        </div>
+        <p class="muted">Подтверждайте только телевизор, который стоит перед вами и показывает этот код. На нём будут видны ваши закладки, и с него можно будет добавлять новые.</p>
+        <button type="button" id="confirmBtn">Это мой телевизор</button>
+        <button type="button" class="secondary" id="otherCodeBtn">Другой код</button>
+        <p class="error" id="confirmError" role="alert"></p>
+    </section>
+
+    <section id="doneStep" hidden>
+        <p role="status">Подтверждено. Телевизор войдёт через несколько секунд.</p>
+    </section>
+
+    <div class="account" id="account" hidden>
+        <span class="muted" id="accountName"></span>
+        <button type="button" class="secondary" id="switchBtn">Сменить аккаунт</button>
+    </div>
+</main>
+
+<script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import {
+        getAuth, onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, GoogleAuthProvider,
+    } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+    // The extension's public web config (src/shared/firestore.js). The popup flow keeps
+    // working when the browser blocks third-party storage, which breaks redirects.
+    const app = initializeApp({
+        apiKey: 'AIzaSyC6PI4cBRzn6KLVJ6ikensKus6LaulabO4',
+        authDomain: 'movielistdb-13208.firebaseapp.com',
+        projectId: 'movielistdb-13208',
+        appId: '1:532518163829:web:36a6a62a14adc188f1af3c',
+    });
+    const auth = getAuth(app);
+
+    const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
+    const APPROVE_URL = isLocal && location.search.includes('emulator=1')
+        ? `http://${location.hostname}:5001/movielistdb-13208/us-central1/tvLoginApprove`
+        : 'https://us-central1-movielistdb-13208.cloudfunctions.net/tvLoginApprove';
+    const CODE_PATTERN = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
+    const ERRORS = {
+        CODE_NOT_FOUND: 'Такого кода нет, или он истёк. Сверьте код на экране телевизора.',
+        CODE_USED: 'Этот код уже использован. Получите новый на телевизоре.',
+        RATE_LIMITED: 'Слишком много неверных кодов. Попробуйте через 10 минут.',
+        APPROVAL_REQUIRED: 'Этот аккаунт ещё не одобрен, поэтому войти на телевизоре нельзя.',
+        AUTH_REQUIRED: 'Войдите заново и повторите.',
+        FORMAT: 'В коде 6 букв и цифр, без 0, O, 1, I и L.',
+        NETWORK: 'Не удалось связаться с сервером. Попробуйте ещё раз.',
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const steps = ['signInStep', 'codeStep', 'confirmStep', 'doneStep'];
+    let userCode = null;
+
+    function show(step) {
+        for (const id of steps) $(id).hidden = id !== step;
+    }
+
+    function normalize(value) {
+        const code = String(value ?? '').toUpperCase().replace(/[\s·.\-_]/g, '');
+        return CODE_PATTERN.test(code) ? code : null;
+    }
+
+    async function approve(code, confirm) {
+        const user = auth.currentUser;
+        if (!user) throw Object.assign(new Error('signed out'), { code: 'AUTH_REQUIRED' });
+        const token = await user.getIdToken();
+        let response;
+        try {
+            response = await fetch(APPROVE_URL, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userCode: code, confirm }),
+            });
+        } catch {
+            throw Object.assign(new Error('network'), { code: 'NETWORK' });
+        }
+        const result = await response.json().catch(() => null);
+        if (!response.ok) throw Object.assign(new Error('failed'), { code: result?.code || 'NETWORK' });
+        return result;
+    }
+
+    function busy(button, on) {
+        button.disabled = on;
+        if (on) button.setAttribute('aria-busy', 'true');
+        else button.removeAttribute('aria-busy');
+    }
+
+    async function lookUp() {
+        const code = normalize($('codeInput').value);
+        $('codeError').textContent = '';
+        if (!code) {
+            $('codeError').textContent = ERRORS.FORMAT;
+            $('codeInput').focus();
+            return;
+        }
+        busy($('findBtn'), true);
+        try {
+            const result = await approve(code, false);
+            userCode = code;
+            $('deviceName').textContent = result.deviceName || 'Телевизор';
+            const time = new Date(Number(result.requestedAt) || Date.now())
+                .toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            $('deviceTime').textContent = `Запрос в ${time}`;
+            $('confirmError').textContent = '';
+            show('confirmStep');
+            $('confirmBtn').focus();
+        } catch (error) {
+            $('codeError').textContent = ERRORS[error.code] || ERRORS.NETWORK;
+            $('codeInput').focus();
+        } finally {
+            busy($('findBtn'), false);
+        }
+    }
+
+    $('googleBtn').addEventListener('click', async () => {
+        $('signInError').textContent = '';
+        busy($('googleBtn'), true);
+        try {
+            await signInWithPopup(auth, new GoogleAuthProvider());
+        } catch (error) {
+            const code = error?.code;
+            if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return;
+            // In-app browsers (QR scanners, messengers) often refuse popups: try the redirect flow.
+            if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/web-storage-unsupported'].includes(code)) {
+                try {
+                    await signInWithRedirect(auth, new GoogleAuthProvider());
+                    return;
+                } catch {
+                    $('webviewHint').hidden = false;
+                }
+            }
+            $('signInError').textContent = 'Не удалось войти. Откройте страницу в обычном браузере и повторите.';
+        } finally {
+            busy($('googleBtn'), false);
+        }
+    });
+
+    $('codeStep').addEventListener('submit', (event) => {
+        event.preventDefault();
+        lookUp();
+    });
+
+    $('confirmBtn').addEventListener('click', async () => {
+        if (!userCode) return;
+        busy($('confirmBtn'), true);
+        try {
+            await approve(userCode, true);
+            userCode = null;
+            show('doneStep');
+            // The code is spent: drop it from the address bar and history.
+            history.replaceState(null, '', location.pathname);
+        } catch (error) {
+            $('confirmError').textContent = ERRORS[error.code] || ERRORS.NETWORK;
+        } finally {
+            busy($('confirmBtn'), false);
+        }
+    });
+
+    $('otherCodeBtn').addEventListener('click', () => {
+        userCode = null;
+        $('codeInput').value = '';
+        show('codeStep');
+        $('codeInput').focus();
+    });
+
+    $('switchBtn').addEventListener('click', () => signOut(auth));
+
+    // QR scanners and messengers open links in their own WebView, where Google sign-in is unreliable.
+    const ua = navigator.userAgent;
+    const inApp = /; wv\)|FBAN|FBAV|Instagram|Line\/|Telegram|VKClient|MicroMessenger/i.test(ua)
+        || (/iPhone|iPad|iPod/.test(ua) && /AppleWebKit/.test(ua) && !/Safari\//.test(ua));
+    if (inApp) $('webviewHint').hidden = false;
+    $('copyLinkBtn').addEventListener('click', async () => {
+        try {
+            await navigator.clipboard.writeText(location.href);
+            $('copyLinkBtn').textContent = 'Ссылка скопирована';
+        } catch {
+            $('copyLinkBtn').textContent = location.href;
+        }
+    });
+    getRedirectResult(auth).catch(() => {
+        $('signInError').textContent = 'Не удалось войти. Откройте страницу в обычном браузере и повторите.';
+    });
+
+    const codeFromLink = normalize(new URLSearchParams(location.search).get('c'));
+    if (codeFromLink) $('codeInput').value = codeFromLink;
+
+    onAuthStateChanged(auth, (user) => {
+        $('account').hidden = !user;
+        $('accountName').textContent = user ? (user.displayName || user.email || '') : '';
+        if (!user) {
+            show('signInStep');
+            return;
+        }
+        if (!$('doneStep').hidden) return;
+        show('codeStep');
+        if (normalize($('codeInput').value)) lookUp();
+        else $('codeInput').focus();
+    });
+</script>
+</body>
+</html>

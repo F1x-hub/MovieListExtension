@@ -101,6 +101,7 @@ async function mount(browser, { legacy = false, enabled = true, deferredGet = fa
         };
         window.Navigation = class { render() {} };
         window.bindWhatsNewSettings = () => {};
+        window.TvLoginPanel = class { bind() {} applyUser() {} };
         const componentAction = async (method, id, options) => {
             fixture.componentCalls.push({ method, id, options });
             if (fixture.componentMode === 'error') throw new Error('COMPONENT_APPLY_FAILED');

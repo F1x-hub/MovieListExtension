@@ -67,6 +67,12 @@
                             </span>
                             <span data-i18n="settings.integrations.title">Интеграции</span>
                         </button>
+                        <button class="sidebar-link" type="button" data-target="tv">
+                            <span class="icon">
+                                <svg data-icon="TV" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.6 2L10 5L13.4 2"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 6H15A2 2 0 0 1 17 8V15A2 2 0 0 1 15 17H5A2 2 0 0 1 3 15V8A2 2 0 0 1 5 6Z"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M12 6H15A2 2 0 0 1 17 8V15A2 2 0 0 1 15 17H12ZM14.6 8.4A1 1 0 1 0 14.6 10.4A1 1 0 1 0 14.6 8.4ZM14.6 11.8A1 1 0 1 0 14.6 13.8A1 1 0 1 0 14.6 11.8Z"/></svg>
+                            </span>
+                            <span data-i18n="settings.tv_login.title">Телевизор</span>
+                        </button>
                         <button class="sidebar-link" type="button" data-target="updates">
                             <span class="icon">
                                 <svg data-icon="UPDATE" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3H14A3 3 0 0 1 17 6V14A3 3 0 0 1 14 17H6A3 3 0 0 1 3 14V6A3 3 0 0 1 6 3Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 13.4V7M7.2 9.8L10 7L12.8 9.8"/></svg>
@@ -422,6 +428,50 @@
                             </div>
 
                             <p class="setting-desc integration-note" data-i18n="settings.integrations.note">Расширение не хранит пароли и куки этих сайтов: используется сессия браузера, в которой вы вошли на imdb.com или kinopoisk.ru.</p>
+                        </div>
+                    </div>
+
+                    <!-- TV pane: the Android TV app shows a 6-character code; the owner confirms the device here -->
+                    <div class="settings-pane" id="pane-tv">
+                        <div class="pane-header">
+                            <h2 data-i18n="settings.tv_login.title">Телевизор</h2>
+                            <p data-i18n="settings.tv_login.description">Вход в приложение «Сеанс» на Android TV под вашим аккаунтом.</p>
+                        </div>
+
+                        <div class="settings-section tv-login-panel" id="tvLoginPanel">
+                            <p class="setting-desc" id="tvLoginSignedOut" data-i18n="settings.tv_login.signed_out" hidden>Сначала войдите в расширение: телевизор войдёт в тот же аккаунт.</p>
+
+                            <form class="tv-login-step" id="tvLoginCodeForm" novalidate hidden>
+                                <p class="tv-login-text" data-i18n="settings.tv_login.intro">Откройте «Сеанс» на телевизоре и введите код с его экрана.</p>
+                                <label class="tv-login-label" for="tvLoginCodeInput" data-i18n="settings.tv_login.code_label">Код с телевизора</label>
+                                <div class="tv-login-code-row">
+                                    <input type="text" id="tvLoginCodeInput" class="tv-login-code-input" name="userCode" maxlength="7" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" aria-describedby="tvLoginCodeHint tvLoginCodeError" placeholder="K7Q4MD">
+                                    <button type="submit" class="btn btn-primary" id="tvLoginFindBtn" data-i18n="settings.tv_login.find">Продолжить</button>
+                                </div>
+                                <p class="tv-login-hint" id="tvLoginCodeHint" data-i18n="settings.tv_login.code_hint">6 букв и цифр, например K7Q·4MD</p>
+                                <p class="tv-login-error" id="tvLoginCodeError" role="alert"></p>
+                            </form>
+
+                            <div class="tv-login-step" id="tvLoginConfirmStep" hidden>
+                                <p class="tv-login-text" data-i18n="settings.tv_login.confirm_intro">Телевизор просит войти в ваш аккаунт:</p>
+                                <div class="tv-login-device">
+                                    <span class="tv-login-device__name" id="tvLoginDeviceName"></span>
+                                    <span class="tv-login-device__time" id="tvLoginDeviceTime"></span>
+                                </div>
+                                <p class="tv-login-text tv-login-text--muted" data-i18n="settings.tv_login.warning">Подтверждайте только телевизор, который стоит перед вами и показывает этот код.</p>
+                                <p class="tv-login-error" id="tvLoginConfirmError" role="alert"></p>
+                                <div class="tv-login-actions">
+                                    <button type="button" class="btn btn-secondary" id="tvLoginCancelBtn" data-i18n="settings.tv_login.cancel">Отмена</button>
+                                    <button type="button" class="btn btn-primary" id="tvLoginConfirmBtn" data-i18n="settings.tv_login.confirm">Это мой телевизор</button>
+                                </div>
+                            </div>
+
+                            <div class="tv-login-step" id="tvLoginDoneStep" hidden>
+                                <p class="tv-login-text" role="status" data-i18n="settings.tv_login.done">Подтверждено. Телевизор войдёт через несколько секунд.</p>
+                                <div class="tv-login-actions">
+                                    <button type="button" class="btn btn-secondary" id="tvLoginAgainBtn" data-i18n="settings.tv_login.again">Ввести другой код</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 

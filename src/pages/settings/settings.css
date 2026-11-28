@@ -1945,3 +1945,116 @@
     margin-top: var(--space-lg);
     opacity: 0.8;
 }
+
+/* Settings → «Телевизор»: the TV sign-in code, then the device to confirm */
+.tv-login-panel {
+    max-width: 560px;
+}
+
+.tv-login-step[hidden] {
+    display: none;
+}
+
+.tv-login-text {
+    margin: 0 0 16px;
+    color: var(--theme-text-primary);
+    font-size: var(--font-size-md);
+    line-height: 1.5;
+}
+
+.tv-login-text--muted {
+    margin: 16px 0 0;
+    color: var(--theme-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.tv-login-label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--theme-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+}
+
+.tv-login-code-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: stretch;
+}
+
+.tv-login-code-input {
+    box-sizing: border-box;
+    flex: 1 1 220px;
+    min-width: 0;
+    min-height: 48px;
+    padding: 0 12px;
+    color: var(--theme-text-primary);
+    background: var(--theme-bg-primary);
+    border: 1px solid var(--theme-border-hover);
+    border-radius: var(--radius-md);
+    font-family: var(--font-data);
+    font-size: var(--font-size-2xl);
+    letter-spacing: 0.3em;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.tv-login-code-input::placeholder {
+    color: var(--theme-text-muted);
+    opacity: 1;
+}
+
+.tv-login-code-input:focus-visible {
+    outline: 2px solid var(--theme-text-primary);
+    outline-offset: 2px;
+}
+
+.tv-login-code-input[aria-invalid="true"] {
+    border-color: var(--ui-color-status-danger);
+}
+
+.tv-login-hint {
+    margin: 8px 0 0;
+    color: var(--theme-text-muted);
+    font-size: var(--font-size-xs);
+}
+
+.tv-login-error {
+    margin: 8px 0 0;
+    color: var(--ui-color-status-danger);
+    font-size: var(--font-size-sm);
+}
+
+.tv-login-error:empty {
+    display: none;
+}
+
+.tv-login-device {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 16px;
+    background: var(--theme-bg-tertiary);
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-md);
+}
+
+.tv-login-device__name {
+    color: var(--theme-text-primary);
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.tv-login-device__time {
+    color: var(--theme-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.tv-login-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 20px;
+}

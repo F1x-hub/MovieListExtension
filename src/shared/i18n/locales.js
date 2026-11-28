@@ -1306,6 +1306,30 @@ export const locales = {
                     native_host_timeout: "The native folder picker did not respond in time. Close its dialog and try again."
                 }
             },
+            tv_login: {
+                title: "TV",
+                description: "Sign in to the «Сеанс» app on an Android TV with your account.",
+                intro: "Open «Сеанс» on the TV and enter the code shown on its screen.",
+                signed_out: "Sign in to the extension first: the TV signs in to the same account.",
+                code_label: "Code from the TV",
+                code_hint: "6 letters and digits, for example K7Q·4MD",
+                find: "Continue",
+                confirm_intro: "A TV asks to sign in to your account:",
+                device_default: "TV",
+                requested_at: "Request at {time}",
+                warning: "Confirm only a TV that is in front of you and shows this code. It will see your bookmarks and can add new ones.",
+                confirm: "This is my TV",
+                done: "Confirmed. The TV will sign in within a few seconds.",
+                cancel: "Cancel",
+                again: "Enter another code",
+                error_format: "The code has 6 letters and digits, without 0, O, 1, I and L.",
+                error_not_found: "No such code, or it has expired. Check the code on the TV screen.",
+                error_used: "This code was already used. Get a new one on the TV.",
+                error_rate: "Too many wrong codes. Try again in 10 minutes.",
+                error_approval: "Your account is not approved yet, so it cannot sign in a TV.",
+                error_auth: "Sign in to the extension again and repeat.",
+                error_network: "Could not reach the server. Try again."
+            },
             nav: {
                 appearance: "Appearance",
                 language: "Language",
@@ -4458,6 +4482,30 @@ export const locales = {
                     native_host_timeout: "Системный выбор папки не ответил вовремя. Закройте его окно и повторите попытку."
                 }
             },
+            tv_login: {
+                title: "Телевизор",
+                description: "Вход в приложение «Сеанс» на Android TV под вашим аккаунтом.",
+                intro: "Откройте «Сеанс» на телевизоре и введите код с его экрана.",
+                signed_out: "Сначала войдите в расширение: телевизор войдёт в тот же аккаунт.",
+                code_label: "Код с телевизора",
+                code_hint: "6 букв и цифр, например K7Q·4MD",
+                find: "Продолжить",
+                confirm_intro: "Телевизор просит войти в ваш аккаунт:",
+                device_default: "Телевизор",
+                requested_at: "Запрос в {time}",
+                warning: "Подтверждайте только телевизор, который стоит перед вами и показывает этот код. На нём будут видны ваши закладки, и с него можно будет добавлять новые.",
+                confirm: "Это мой телевизор",
+                done: "Подтверждено. Телевизор войдёт через несколько секунд.",
+                cancel: "Отмена",
+                again: "Ввести другой код",
+                error_format: "В коде 6 букв и цифр, без 0, O, 1, I и L.",
+                error_not_found: "Такого кода нет, или он истёк. Сверьте код на экране телевизора.",
+                error_used: "Этот код уже использован. Получите новый на телевизоре.",
+                error_rate: "Слишком много неверных кодов. Попробуйте через 10 минут.",
+                error_approval: "Ваш аккаунт ещё не одобрен, поэтому войти на телевизоре нельзя.",
+                error_auth: "Войдите в расширение заново и повторите.",
+                error_network: "Не удалось связаться с сервером. Попробуйте ещё раз."
+            },
             nav: {
                 appearance: "Внешний вид",
                 language: "Язык",
@@ -4509,6 +4557,16 @@ export const locales = {
                 light: { title: "Светлая", description: "Тёмный текст на белом." },
                 auto: { title: "Как в системе", description: "Следует за режимом Chrome." }
             },
+            cursor: {
+                title: "Курсор",
+                description: "Свой курсор на страницах расширения. Меняется сразу, на всех открытых вкладках.",
+                variant: "Вариант курсора",
+                soft: { title: "Мягкий", description: "Стрелка, рука и палочка без острых углов." },
+                controls_legend: "Параметры курсора",
+                size: "Размер",
+                softness: "Скругление",
+                reset_button: "Вернуть как было"
+            },
             display_mode: {
                 title: "Режим отображения",
                 description: "Выберите, как вы хотите взаимодействовать с расширением.",
@@ -4532,16 +4590,6 @@ export const locales = {
             updates: {
                 title: "Автоматические обновления",
                 description: "Загружать новые версии в фоне и устанавливать их после завершения просмотра.",
-            cursor: {
-                title: "Курсор",
-                description: "Свой курсор на страницах расширения. Меняется сразу, на всех открытых вкладках.",
-                variant: "Вариант курсора",
-                soft: { title: "Мягкий", description: "Стрелка, рука и палочка без острых углов." },
-                controls_legend: "Параметры курсора",
-                size: "Размер",
-                softness: "Скругление",
-                reset_button: "Вернуть как было"
-            },
                 page_description: "Проверяйте и безопасно устанавливайте новые версии расширения.",
                 current_version: "Текущая версия",
                 toggle_label: "Устанавливать обновления автоматически",
