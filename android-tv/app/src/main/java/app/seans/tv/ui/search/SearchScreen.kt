@@ -1,13 +1,9 @@
 package app.seans.tv.ui.search
 
-import android.app.Activity
-import android.content.Intent
-import android.speech.RecognizerIntent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -19,13 +15,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -44,7 +40,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -82,6 +80,8 @@ fun SearchScreen(graph: AppGraph, onOpenDetails: (TitleRef) -> Unit) {
     val keys = remember { RowFocus() }
     val results = remember { RowFocus() }
     val memory = vm
+    // What the viewer says shows in the field at once and is searched once they finish.
+    val voice = rememberVoiceInput(onPartial = { vm.set(it) }, onFinal = { vm.set(it) })
     LaunchedEffect(Unit) {
         withFrameNanos { }
         val last = memory.lastFocus
@@ -90,19 +90,28 @@ fun SearchScreen(graph: AppGraph, onOpenDetails: (TitleRef) -> Unit) {
             last.startsWith("kp:") -> results.request(last.removePrefix("kp:").toLongOrNull())
             else -> keys.request(last)
         }
-        if (!ok) keys.request("А")
+        // Voice comes first: the microphone key is where a new search starts.
+        if (!ok && !(voice.available && keys.request("voice"))) keys.request("А")
     }
 
-    val voice = rememberVoiceSearch { vm.set(it) }
-
-    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier.fillMaxSize().onPreviewKeyEvent { event ->
+            // Google TV keeps its microphone button to itself; a remote that sends SEARCH is served here.
+            val search = event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_SEARCH
+            if (search && voice.available && event.type == KeyEventType.KeyUp) voice.toggle()
+            search && voice.available
+        },
+    ) {
         Column(
             Modifier
                 .padding(start = SeansSpace.SafeX, top = SeansSpace.SafeY, bottom = SeansSpace.SafeY)
                 .width(340.dp)
                 .fillMaxHeight(),
         ) {
-            SearchField(query)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (voice.available) MicKey(voice, keys, memory)
+                SearchField(query, listening = voice.listening, problem = voice.problem, modifier = Modifier.weight(1f))
+            }
             Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 LetterRows.forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -115,18 +124,6 @@ fun SearchScreen(graph: AppGraph, onOpenDetails: (TitleRef) -> Unit) {
                     Key("Стереть", keys, memory, weight = 2f, muted = true, id = "back") { vm.backspace() }
                     Key("Очистить", keys, memory, weight = 2f, muted = true, id = "clear") { vm.clear() }
                 }
-            }
-            Spacer(Modifier.weight(1f))
-            if (voice != null) {
-                val requester = remember { FocusRequester() }
-                DisposableEffect(Unit) {
-                    keys.register("voice", requester)
-                    onDispose { keys.unregister("voice", requester) }
-                }
-                SeansButton(
-                    "Голосовой поиск", onClick = voice, icon = SeansIcons.Mic,
-                    modifier = Modifier.focusRequester(requester).onFocusChanged { if (it.isFocused) memory.lastFocus = "voice" },
-                )
             }
         }
 
@@ -151,11 +148,44 @@ fun SearchScreen(graph: AppGraph, onOpenDetails: (TitleRef) -> Unit) {
     }
 }
 
+/** The microphone: an icon-only key, square, left of the field. Pressed again it stops listening. */
 @Composable
-private fun SearchField(query: String) {
+private fun MicKey(voice: VoiceInput, keys: RowFocus, memory: SearchViewModel) {
+    val requester = remember { FocusRequester() }
+    DisposableEffect(Unit) {
+        keys.register("voice", requester)
+        onDispose { keys.unregister("voice", requester) }
+    }
+    val interaction = rememberFocusInteraction()
+    val focused = interaction.focused
+    val fill by animateColorAsState(if (focused) SeansColors.Text else SeansColors.Bg2, tween(SeansMotion.Focus), label = "mic")
+    // While it listens the icon breathes, so the viewer knows to speak.
+    val pulse = rememberInfiniteTransition(label = "listen")
+    val alpha by pulse.animateFloat(1f, 0.35f, infiniteRepeatable(tween(600), RepeatMode.Reverse), label = "alpha")
+    Box(
+        Modifier
+            .size(48.dp)
+            .focusRequester(requester)
+            .onFocusChanged { if (it.isFocused) memory.lastFocus = "voice" }
+            .seansClickable(interaction, 1.08f, description = if (voice.listening) "Остановить голосовой ввод" else "Голосовой поиск", onClick = voice::toggle)
+            .roundedFill({ fill }, SeansRadius.Md)
+            .then(if (focused) Modifier else Modifier.roundedLine(SeansColors.Line, SeansRadius.Md)),
+        contentAlignment = Alignment.Center,
+    ) {
+        SeansIcon(
+            SeansIcons.Mic,
+            modifier = Modifier.graphicsLayer { this.alpha = if (voice.listening) alpha else 1f },
+            tint = if (focused) SeansColors.OnFocus else SeansColors.Text,
+            size = 22.dp,
+        )
+    }
+}
+
+@Composable
+private fun SearchField(query: String, listening: Boolean, problem: String?, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(SeansRadius.Md)
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .height(48.dp)
             .clip(shape)
@@ -168,7 +198,12 @@ private fun SearchField(query: String) {
         SeansIcon(SeansIcons.Search, tint = SeansColors.Text2)
         if (query.isEmpty()) {
             Caret()
-            SText("Название фильма или сериала", SeansText.Field.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), color = SeansColors.Text3, maxLines = 1)
+            val hint = when {
+                listening -> "Говорите…"
+                problem != null -> problem
+                else -> "Название фильма или сериала"
+            }
+            SText(hint, SeansText.Field.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), color = SeansColors.Text3, maxLines = 1)
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SText(query, SeansText.Field, maxLines = 1)
@@ -255,26 +290,4 @@ private fun ResultGrid(items: List<TitleSummary>, results: RowFocus, memory: Sea
             )
         }
     }
-}
-
-/**
- * Voice input through the system recogniser (`RecognizerIntent`, no microphone permission). Null
- * when the TV has no recogniser, and then the button is not shown.
- */
-@Composable
-private fun rememberVoiceSearch(onText: (String) -> Unit): (() -> Unit)? {
-    val context = LocalContext.current
-    val intent = remember {
-        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
-            .putExtra(RecognizerIntent.EXTRA_PROMPT, "Название фильма или сериала")
-    }
-    val available = remember { intent.resolveActivity(context.packageManager) != null }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(onText)
-        }
-    }
-    return if (available) ({ runCatching { launcher.launch(intent) } }) else null
 }
