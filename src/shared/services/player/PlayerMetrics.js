@@ -7,7 +7,7 @@
     const TTFF_BUCKETS_MS = Object.freeze([250, 500, 1000, 2000, 4000, 8000, 15000, 30000, 60000, 120000, MAX_TIME_MS]);
     const SOURCES = new Set(['animego', 'seasonvar', 'exfs', 'kinogo', 'rutube', 'officialyt', 'hdrezka', 'collaps', 'alloha', 'veoveo', 'kodik', 'torrent', 'unknown']);
     const TYPES = new Set(['resolveOk', 'resolveFail', 'fallback', 'decodeFailed']);
-    const REASONS = new Set(['policy', 'decode', 'aborted', 'timeout', 'network', 'http', 'unknown']);
+    const REASONS = new Set(['policy', 'decode', 'aborted', 'timeout', 'network', 'http', 'no-playback', 'region-blocked', 'unknown']);
     let queue = Promise.resolve();
     const own = (value, key) => {
         try { return Object.getOwnPropertyDescriptor(value || {}, key)?.value; } catch { return undefined; }

@@ -5,6 +5,13 @@
     // How long a newly chosen title-only frame's own episode reports wait for it to
     // be moved to the viewer's episode (holdNativeProviderReports).
     const NATIVE_REPORT_HOLD_MS = 20000;
+    // How long a provider frame told to play may take before its film has to run
+    // (PLAYER_PLAYBACK_STARTED): a blocked or dead stream loads the page and stops there.
+    const PLAYBACK_CONFIRM_MS = 30000;
+    // A viewer who is busy in the frame (a dub, an advert's skip button, its own play
+    // button) gets at least this long after their click before the source is given up.
+    const PLAYBACK_INTERACTION_GRACE_MS = 25000;
+    const PLAYBACK_HIDDEN_RECHECK_MS = 5000;
     const methods = {
         async initializeWatchEntry() {
             this.proPlayerEnabled = await global.ProPlayerPreferences?.isEnabled() === true;
@@ -41,6 +48,10 @@
                     this.watchEntryController?.destroy();
                     this.watchEntryController = null;
                     this.watchSourceRun = null;
+                    clearTimeout(this.playbackConfirmation?.timer);
+                    this.playbackConfirmation = null;
+                    if (this.playbackInteractionListener) global.removeEventListener('blur', this.playbackInteractionListener);
+                    this.playbackInteractionListener = null;
                     this.playerMetricsDispose?.();
                     this.playerDiagnosticsPanel?.destroy();
                     this.playerDiagnosticsPanel = null;
@@ -168,6 +179,100 @@
         startPlayerFrame(iframe = this.elements?.videoContainer?.querySelector?.('iframe')) {
             if (!iframe || this.broadcastLock || this.broadcastEpisode || this.watchRoomController?.room) return;
             this.postToPlayerFrame(iframe, { type: 'PLAYER_START' });
+            this.armPlaybackConfirmation(iframe);
+        },
+        /**
+         * Frames with the extension's scripts (KinoGo, Ex-FS, Collaps, Alloha: `PARTIAL`)
+         * say when their film really plays. Their load event proves nothing: a provider
+         * that does not serve this viewer's country loads its page all the same.
+         */
+        isPlaybackConfirmable(providerId) {
+            return Boolean(providerId)
+                && this.playbackController?.getAdapter?.(providerId)?.getProgressConfidence?.() === 'PARTIAL';
+        },
+        /**
+         * Armed when the frame loads (`restart: false`) and again by PLAYER_START, which
+         * restarts the clock. The load matters: a provider that shows only a notice builds
+         * no video, so its frame never sends PLAYER_READY and the page never sends a start.
+         */
+        armPlaybackConfirmation(iframe, { restart = true } = {}) {
+            const requestId = this.sourceSwitchRequestId;
+            const providerId = this.playbackController?.getActiveProvider?.() || this.activePlayerId;
+            if (!this.proPlayerEnabled || !iframe || !this.isPlaybackConfirmable(providerId)
+                || this.broadcastLock || this.broadcastEpisode || this.watchRoomController?.room) return false;
+            const previous = this.playbackConfirmation;
+            if (previous?.requestId === requestId && (previous.confirmed || (!restart && previous.iframe === iframe))) return false;
+            clearTimeout(previous?.timer);
+            const watch = { requestId, providerId, iframe, confirmed: false, failed: false,
+                interacted: previous?.requestId === requestId && previous.interacted, timer: null, deadline: 0 };
+            this.playbackConfirmation = watch;
+            this.schedulePlaybackConfirmation(watch, PLAYBACK_CONFIRM_MS);
+            this.installPlaybackInteractionWatch();
+            return true;
+        },
+        schedulePlaybackConfirmation(watch, delayMs) {
+            clearTimeout(watch.timer);
+            watch.deadline = Date.now() + delayMs;
+            watch.timer = setTimeout(() => this.expirePlaybackConfirmation(watch), delayMs);
+        },
+        /** Focus moving into the player frame is the viewer's click there. */
+        installPlaybackInteractionWatch() {
+            if (this.playbackInteractionListener || typeof global.addEventListener !== 'function') return;
+            this.playbackInteractionListener = () => setTimeout(() => {
+                const watch = this.playbackConfirmation;
+                if (!watch || watch.confirmed || watch.failed || watch.interacted) return;
+                if (global.document?.activeElement !== watch.iframe) return;
+                watch.interacted = true;
+                const remaining = watch.deadline - Date.now();
+                if (remaining < PLAYBACK_INTERACTION_GRACE_MS) this.schedulePlaybackConfirmation(watch, PLAYBACK_INTERACTION_GRACE_MS);
+            }, 0);
+            global.addEventListener('blur', this.playbackInteractionListener);
+        },
+        expirePlaybackConfirmation(watch) {
+            if (this.playbackConfirmation !== watch || watch.confirmed) return;
+            const container = this.elements?.videoContainer;
+            const frame = container?.querySelector?.('iframe[data-player-source-active="true"]');
+            if (!this.isSourceSwitchRequestCurrent(watch.requestId) || frame !== watch.iframe || !frame?.isConnected
+                || this.watchRoomController?.room || this.broadcastEpisode) {
+                this.playbackConfirmation = null;
+                return;
+            }
+            // Another check has already given the source up.
+            if (['error', 'unavailable'].includes(container.dataset?.sourceState)) {
+                this.playbackConfirmation = null;
+                return;
+            }
+            // Chrome holds back a hidden page's media: the time does not count.
+            if (global.document?.hidden) {
+                this.schedulePlaybackConfirmation(watch, PLAYBACK_HIDDEN_RECHECK_MS);
+                return;
+            }
+            watch.failed = true;
+            console.warn('[MovieDetails] The source opened but its film never started', {
+                providerId: global.PlayerDiagnostics?.safeSourceId?.(watch.providerId) || 'unknown'
+            });
+            const fallback = 'Источник открылся, но видео так и не запустилось.';
+            this.setPlayerSourceState('unavailable', {
+                reason: 'no-playback',
+                message: global.PlayerLocale?.t?.('source_no_playback', {}, fallback) || fallback,
+                onRetry: () => this.changeVideoSource(`parser:${watch.providerId}`, { manualRetry: true }),
+                onResearch: () => this.forceResearchSources(`parser:${watch.providerId}`, watch.providerId)
+            });
+        },
+        /** PLAYER_PLAYBACK_STARTED from the active frame: its film plays for this viewer. */
+        confirmFramePlayback() {
+            const requestId = this.sourceSwitchRequestId;
+            const watch = this.playbackConfirmation;
+            const providerId = this.playbackController?.getActiveProvider?.() || this.activePlayerId;
+            if (watch?.requestId === requestId) {
+                clearTimeout(watch.timer);
+                watch.confirmed = true;
+                // Given up too early (a long advert, a viewer who pressed play late): it plays.
+                if (watch.failed && this.elements?.videoContainer?.dataset?.sourceState === 'unavailable') {
+                    this.setPlayerSourceState('ready');
+                }
+            }
+            this.observePlayerMetrics?.('confirmed', { requestId, parserId: providerId, reason: 'confirmed' });
         },
         /** Once per source request, so a player rebuilt later cannot undo a pause. */
         startReadyPlayerFrame(iframe) {
@@ -199,7 +304,11 @@
         sourceLabel(value) {
             const button = [...(this.elements?.sourceButtonsContainer?.querySelectorAll('.source-btn') || [])]
                 .find(candidate => candidate.dataset.value === value);
-            const text = (button?.textContent || '').replace(/\s+/g, ' ').split('—')[0].trim();
+            // The button also holds its state («, воспроизводится»), which is not its name.
+            const name = [...(button?.childNodes || [])]
+                .filter(node => !node.classList?.contains('source-btn__state'))
+                .map(node => node.textContent).join('');
+            const text = name.replace(/\s+/g, ' ').split('—')[0].trim();
             return text || 'источник';
         },
         notifySourceSwitch(fromValue, toValue, attemptNumber, total) {
@@ -279,9 +388,16 @@
                         && captured === identity(this.playbackController?.getSelection?.())
                 });
             }
-            if (!['ready', 'error', 'unavailable'].includes(state) || attempt.complete) return;
+            if (state === 'ready' && attempt.awaitPlayback && !attempt.complete) {
+                this.armPlaybackConfirmation(this.elements?.videoContainer?.querySelector?.('iframe[data-player-source-active="true"]'),
+                    { restart: false });
+            }
+            if (!['ready', 'confirmed', 'error', 'unavailable'].includes(state) || attempt.complete) return;
+            // A frame that only loaded, or only loaded slowly, has not shown that its film
+            // plays here: PLAYER_PLAYBACK_STARTED or the no-playback check decides.
+            if (attempt.awaitPlayback && (state === 'ready' || reason === 'timeout')) return;
             attempt.complete = true;
-            void global.PlayerMetrics.record(state === 'ready' ? 'resolveOk' : 'resolveFail', { providerId, reason });
+            void global.PlayerMetrics.record(['ready', 'confirmed'].includes(state) ? 'resolveOk' : 'resolveFail', { providerId, reason });
             if (!video) void global.PlayerMetrics.record('ttff', { providerId });
         },
         async refreshExpiredWatchSource({ parserId, movieId, requestId, status, resource }) {

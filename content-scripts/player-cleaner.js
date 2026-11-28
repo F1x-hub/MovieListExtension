@@ -305,6 +305,68 @@
         return true;
     };
 
+    const isProviderFrame = () => window.self !== window.top && /^https?:$/.test(window.location.protocol);
+
+    // A provider that does not serve the viewer's country still loads its page and
+    // often its own player, then shows a notice instead of the film. The host would
+    // take the page for a working source; only this frame can read the notice.
+    const REGION_BLOCK_PATTERNS = [
+        // `\w` is Latin only: Russian endings need `\p{L}` and the `u` flag.
+        /(?:не\s?доступ\p{L}*|заблокирова\p{L}*|запрещ\p{L}*|ограничен\p{L}*)(?:\s+для\s+просмотра)?\s+в\s+ваш(?:ем|ей)\s+(?:регионе|стране)/iu,
+        /не\s+может\s+быть\s+(?:воспроизвед\p{L}*|показан\p{L}*)\s+в\s+ваш(?:ем|ей)\s+(?:регионе|стране)/iu,
+        /(?:not\s+available|unavailable|blocked|restricted)\s+in\s+your\s+(?:country|region|location)/i,
+        /geo-?block/i
+    ];
+    let playbackStartReported = false;
+    const reportProviderRegionBlock = () => {
+        if (providerContentErrorReported || playbackStartReported || !document.body || !isProviderFrame()) return false;
+        const text = String(document.body.innerText || '').replace(/\s+/g, ' ').trim();
+        // A player frame holds a few words; a long page is a site, not a notice.
+        if (!text || text.length > 4000 || !REGION_BLOCK_PATTERNS.some(pattern => pattern.test(text))) return false;
+        providerContentErrorReported = true;
+        console.warn('[PlayerCleaner] The provider does not serve this region', { hostname: window.location.hostname });
+        postToHost({
+            type: 'PLAYER_SOURCE_STATE',
+            state: 'unavailable',
+            reason: 'region-blocked',
+            url: window.location.href
+        });
+        return true;
+    };
+    const scheduleRegionBlockCheck = delays => delays.forEach(delay => setTimeout(reportProviderRegionBlock, delay));
+
+    // The host counts a source as working only once the film itself plays: a frame
+    // that loads and then never starts (a blocked stream, a dead balancer) is a failed
+    // source for this viewer. Adverts run in their own elements (Venom's VAST player,
+    // see findContentVideo) and are short, so neither counts.
+    const PLAYBACK_START_ADVANCE_S = 1;
+    const MIN_CONTENT_DURATION_S = 90;
+    let playbackStartBaseline = null;
+    const isContentVideo = video => video === permanentVideo || video === findContentVideo();
+    const onPlaybackProgress = event => {
+        const video = event.target;
+        if (playbackStartReported || video?.tagName !== 'VIDEO' || video.dataset?.ghost === 'true'
+            || video.classList?.contains('ghost-video') || !isProviderFrame()) return;
+        if (video.paused || video.seeking || !isContentVideo(video)) return;
+        const duration = Number(video.duration);
+        if (Number.isFinite(duration) && duration > 0 && duration < MIN_CONTENT_DURATION_S) return;
+        const time = Number(video.currentTime) || 0;
+        if (playbackStartBaseline?.video !== video) {
+            playbackStartBaseline = { video, time };
+            return;
+        }
+        if (time - playbackStartBaseline.time < PLAYBACK_START_ADVANCE_S) return;
+        playbackStartReported = true;
+        postToHost({ type: 'PLAYER_PLAYBACK_STARTED' });
+    };
+    document.addEventListener('timeupdate', onPlaybackProgress, true);
+    // Every start the host asks for is confirmed afresh by its own progress.
+    const resetPlaybackStartReport = () => {
+        playbackStartReported = false;
+        playbackStartBaseline = null;
+        scheduleRegionBlockCheck([3000, 8000, 15000]);
+    };
+
     const scheduleProviderContentErrorCheck = () => {
         [0, 250, 750, 1500].forEach(delay => {
             setTimeout(reportProviderContentError, delay);
@@ -312,6 +374,7 @@
         // After the host has handled the frame's load event, which would overwrite this.
         setTimeout(() => reportEmptyProviderPage(), 750);
         setTimeout(() => reportEmptyProviderPage(true), 8000);
+        scheduleRegionBlockCheck([1500, 4000, 9000]);
     };
 
     // An extension-page parser video (AnimeGo) whose episodes the host owns:
@@ -6369,6 +6432,7 @@
                  console.warn('[MovieExtension] No video element found to pause');
             }
         } else if (event.data.type === 'PLAYER_START') {
+            resetPlaybackStartReport();
             startProviderVideo();
         }
     });

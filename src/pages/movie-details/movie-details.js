@@ -7687,7 +7687,15 @@ class MovieDetailsManager {
                     }
                     const movieId = String(this.selectedMovie?.kinopoiskId || '');
                     this.invalidateSourceCache(movieId);
+                    // Only reasons the page knows travel on; a frame's text never does.
+                    const reason = ['region-blocked', 'provider-empty-page', 'provider-content-not-found'].includes(event.data.reason)
+                        ? event.data.reason : undefined;
+                    const regionMessage = 'Этот источник не работает в вашем регионе.';
                     this.setPlayerSourceState(state, {
+                        reason,
+                        message: reason === 'region-blocked'
+                            ? window.PlayerLocale?.t?.('source_region_blocked', {}, regionMessage) || regionMessage
+                            : undefined,
                         onRetry: () => this.changeVideoSource(parserId ? `parser:${parserId}` : url),
                         onResearch: () => this.forceResearchSources(
                             parserId ? `parser:${parserId}` : url,
@@ -7696,6 +7704,8 @@ class MovieDetailsManager {
                     });
                     this.updatePlayerNavigationControls();
                 }
+            } else if (event.data.type === 'PLAYER_PLAYBACK_STARTED') {
+                this.confirmFramePlayback?.();
             } else if (event.data.type === 'PLAYER_EPISODE_NAVIGATION_REQUEST') {
                 // The frame has just built its player. The canonical picker mode is sent
                 // only for 3 s after a navigation update, and a source that took longer to
@@ -7928,6 +7938,7 @@ class MovieDetailsManager {
         const playerMessageTypes = new Set([
             'PLAYER_READY',
             'PLAYER_SOURCE_STATE',
+            'PLAYER_PLAYBACK_STARTED',
             'PLAYER_EPISODE_NAVIGATE',
             'PLAYER_EPISODE_NAVIGATION_REQUEST',
             'UPDATE_WATCHING_PROGRESS',
@@ -9502,7 +9513,8 @@ class MovieDetailsManager {
             providerKey = url.replace('parser:', '');
         }
         this.playerMetricsDispose?.();
-        this.playerMetricsAttempt = { requestId, providerId: providerKey, startAt: globalThis.performance?.now?.() ?? Date.now(), complete: false, attached: false };
+        this.playerMetricsAttempt = { requestId, providerId: providerKey, startAt: globalThis.performance?.now?.() ?? Date.now(), complete: false, attached: false,
+            awaitPlayback: Boolean(this.isPlaybackConfirmable?.(providerKey)) };
 
         this.unavailableProviderIds?.delete?.(providerKey);
 

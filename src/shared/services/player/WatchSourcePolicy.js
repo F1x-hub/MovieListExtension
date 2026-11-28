@@ -4,6 +4,7 @@
     const key = movieId => `watchPrefs_${String(movieId)}`;
     const NEUTRAL_HEALTH = 0.5;
     const MIN_ATTEMPTS = 3;
+    const BAD_HEALTH = 0.3;
 
     function providerOf(value) {
         try {
@@ -49,9 +50,17 @@
             rank: value === 'parser:veoveo' ? 1 : anime && value === 'parser:animego' ? -1 : film && value === 'parser:rutube' ? 1 : 0
         })).sort((a, b) => a.rank - b.rank || b.health - a.health || a.index - b.index).map(entry => entry.value);
     }
+    /** Started for this viewer too rarely to be tried first again (enough attempts, low score). */
+    function isKnownBad(value, health) {
+        const known = health ? health[providerOf(value)] : undefined;
+        return Number.isFinite(known) && known < BAD_HEALTH;
+    }
     function select(values, { room, explicit, preference, last, ...options } = {}) {
         const ordered = rank(values, options);
-        return [room, explicit, preference, last].find(value => ordered.includes(value)) || ordered[0] || null;
+        // A remembered choice is a convenience, not a command: one that no longer starts
+        // here (a source blocked in the viewer's country) gives way to the healthiest one.
+        const remembered = [preference, last].filter(value => !isKnownBad(value, options.health));
+        return [room, explicit, ...remembered].find(value => ordered.includes(value)) || ordered[0] || null;
     }
     async function read(movieId) {
         if (!movieId) return null;
@@ -69,5 +78,5 @@
     function createRun(movieId, manual = false) {
         return { movieId: String(movieId), manual, attempted: new Set(), failed: new Set(), switching: false };
     }
-    global.WatchSourcePolicy = Object.freeze({ rank, select, read, save, createRun, healthFromReport, providerOf });
+    global.WatchSourcePolicy = Object.freeze({ rank, select, read, save, createRun, healthFromReport, providerOf, isKnownBad, BAD_HEALTH });
 })(typeof window !== 'undefined' ? window : globalThis);

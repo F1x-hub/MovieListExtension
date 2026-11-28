@@ -34,3 +34,16 @@ test('ranking tries the healthiest source first and keeps the old order without 
     // Anime preference still beats health.
     assert.equal(policy.rank(['parser:kinogo', 'parser:animego'], { anime: true, health })[0], 'parser:animego');
 });
+
+test('a remembered source that keeps failing here gives way to the healthiest one', () => {
+    const values = ['parser:exfs', 'parser:kinogo', 'parser:seasonvar'];
+    const health = policy.healthFromReport(report);
+    assert.equal(policy.isKnownBad('parser:exfs', health), true);
+    assert.equal(policy.isKnownBad('parser:rutube', health), false, 'too few attempts is not a verdict');
+    assert.equal(policy.select(values, { last: 'parser:exfs', health }), 'parser:kinogo', 'a failing last source is skipped');
+    assert.equal(policy.select(values, { preference: 'parser:exfs', last: 'parser:seasonvar', health }), 'parser:seasonvar',
+        'the next remembered source that still works wins');
+    assert.equal(policy.select(values, { explicit: 'parser:exfs', health }), 'parser:exfs', 'the viewer\'s own press still wins');
+    assert.equal(policy.select(values, { room: 'parser:exfs', health }), 'parser:exfs', 'a watch room still wins');
+    assert.equal(policy.select(values, { last: 'parser:exfs' }), 'parser:exfs', 'without metrics the last source is kept');
+});

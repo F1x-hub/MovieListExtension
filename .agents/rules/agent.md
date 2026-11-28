@@ -377,6 +377,16 @@ checklist; `npm run test:visual-design` enforces much of it.
   by parser priority and lets slower providers finish in the background; a
   lower-priority result never overrides an explicit choice. Provider frames fetch nothing until
   the host sends `PLAYER_START` (on `PLAYER_READY`, outside broadcasts and watch rooms).
+- A loaded frame is not a working source. For `PARTIAL` adapters (KinoGo, Ex-FS, Collaps,
+  Alloha) `PlayerMetrics` counts `resolveOk` only on the frame's `PLAYER_PLAYBACK_STARTED`
+  (the content video advanced 1 s, duration not under 90 s), and `armPlaybackConfirmation`
+  gives up a source with `no-playback` 30 s after the frame's load or, restarting the clock,
+  `PLAYER_START`: a frame showing only a notice builds no video and never sends
+  `PLAYER_READY`, so the start alone would leave it unwatched (paused while hidden, at least
+  25 s after a click in the frame); a later start puts it back to `ready`. The cleaner also
+  reports a region or country notice as `region-blocked`. `OPAQUE` frames keep their load
+  event as the signal. `WatchSourcePolicy.select()` lets a remembered source (`preference`,
+  `last`) win only while its health is not below 0.3; room and explicit choices always win.
 - Parser caches never store an empty source, episode or season list as a success. Do not add an
   HTTP preflight before mounting cached embeds: stale ones recover through the lifecycle and
   `forceResearchSources()`. `ParserRegistry.searchAll()` callback options (`onResult`) never
