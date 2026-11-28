@@ -338,6 +338,95 @@
         facade.on?.('playlistItem', onEpisode);
     }
 
+    // Venom names its audio tracks from the balancer's list (`source.audio.names`) by
+    // position alone. For some films that list belongs to another release: «Мстители»
+    // (KP 263531) carries «Рус. Дублированный, Укр., Ю. Сербин, Eng.Original» over files
+    // that are English, English, Russian dub, Russian, so «Дублированный» played English
+    // (heard on 2026-11-28). The HLS manifest tags every track with its language
+    // (`NAME="rus2",LANGUAGE="ru"`), and on other films those tags match the names. When
+    // they clearly disagree, the names are moved onto the tracks of their language.
+    const NAME_LANGUAGES = [
+        ['ru', /^(?:рус|rus)|\(рус/i],
+        ['uk', /^(?:укр|ukr)|\(укр|дубльован/i],
+        ['en', /^(?:eng|англ)|english/i]
+    ];
+    const TAG_LANGUAGES = { rus: 'ru', ukr: 'uk', eng: 'en' };
+
+    function nameLanguage(name) {
+        const text = String(name || '').trim();
+        return NAME_LANGUAGES.find(([, pattern]) => pattern.test(text))?.[0] || null;
+    }
+
+    /** Languages of the first audio group, in track order, from an HLS master playlist. */
+    function trackLanguages(master) {
+        const tracks = String(master).split(/\r?\n/).filter(line => line.startsWith('#EXT-X-MEDIA:') && /TYPE=AUDIO/.test(line));
+        const group = tracks[0]?.match(/GROUP-ID="([^"]*)"/)?.[1];
+        return tracks.filter(line => line.match(/GROUP-ID="([^"]*)"/)?.[1] === group).map(line => {
+            const language = line.match(/LANGUAGE="([a-z]{2,3})/i)?.[1]?.toLowerCase();
+            if (language) return TAG_LANGUAGES[language] || language;
+            const name = line.match(/NAME="([a-z]{3})/i)?.[1]?.toLowerCase();
+            return TAG_LANGUAGES[name] || null;
+        });
+    }
+
+    /** Names placed on the tracks of their language, or null when the names fit already. */
+    function namesForTracks(names, languages) {
+        if (names.length !== languages.length || new Set(languages.filter(Boolean)).size < 2) return null;
+        const spoken = names.map(nameLanguage);
+        const conflicts = spoken.filter((language, index) => language && languages[index] && language !== languages[index]).length;
+        // One stray tag proves nothing; a list from another release disagrees in several places.
+        if (conflicts < 2) return null;
+        const placed = new Array(names.length).fill(null);
+        const place = (name, language) => {
+            const index = languages.findIndex((tag, at) => tag === language && placed[at] === null);
+            if (index >= 0) placed[index] = name;
+        };
+        names.forEach((name, index) => { if (spoken[index]) place(name, spoken[index]); });
+        // A name without a language marker is a voiceover author: Russian in these catalogues.
+        names.forEach((name, index) => { if (!spoken[index] && name !== 'delete') place(name, 'ru'); });
+        return placed.map((name, index) => name ?? `Дорожка ${index + 1} (${languages[index] || '?'})`);
+    }
+
+    function alignAudioNamesWithTracks(facade, options) {
+        const source = options?.source;
+        const names = source?.audio?.names;
+        if (!Array.isArray(names) || names.length < 2 || typeof source.hls !== 'string'
+            || typeof window.fetch !== 'function' || typeof facade?.once !== 'function') return;
+        let internal = null;
+        let believed = null;
+        // Venom reads the names when its engine reports the tracks. A list it built
+        // before the manifest came is built again, and the track Venom believed it was
+        // playing is asked for under its new place.
+        const rebuild = () => {
+            const engine = internal?.source;
+            if (!believed || !engine || typeof engine.transformAudioList !== 'function' || !Array.isArray(engine.audioList)) return;
+            const order = engine.audioOrder?.length === names.length ? engine.audioOrder : names.map((_, index) => index);
+            const expected = [];
+            names.forEach((name, index) => { expected[order[index]] = name; });
+            const visible = expected.filter(name => !engine.isAudioBlocked?.(name));
+            if (visible.length === engine.audioList.length && visible.every((name, index) => name === engine.audioList[index])) return;
+            let playing = null;
+            try { playing = believed[engine.originalAudio]; } catch { /* No engine yet. */ }
+            engine.transformAudioList(names.map((_, index) => String(index + 1)));
+            engine.emit?.(engine.events?.AUDIO_LIST || 'audioList', engine.audioList);
+            const wanted = engine.audioList.indexOf(playing);
+            if (wanted >= 0) engine.audio = wanted;
+        };
+        facade.once('timeupdate', function captureInternal() {
+            if (this?.source) internal = this;
+            rebuild();
+        });
+        window.fetch(source.hls).then(response => (response.ok ? response.text() : '')).then(master => {
+            const fixed = namesForTracks(names, trackLanguages(master));
+            if (!fixed) return;
+            believed = [...names];
+            // Venom keeps this very array: changed in place, its engines and renewals see it.
+            names.splice(0, names.length, ...fixed);
+            console.info('[ProviderAdGuard] Audio names moved onto their tracks', { from: believed, to: fixed });
+            rebuild();
+        }).catch(() => { /* Venom keeps the balancer's names. */ });
+    }
+
     function installVenomFactoryGuard() {
         let library;
         Object.defineProperty(window, 'VenomPlayer', {
@@ -361,6 +450,8 @@
                         catch { /* Venom keeps the engine it chose. */ }
                         try { keepPlaybackSmooth(player, prepared); }
                         catch { /* The chosen quality stays. */ }
+                        try { alignAudioNamesWithTracks(player, prepared); }
+                        catch { /* Venom keeps the balancer's names. */ }
                         try { window.MovieExtensionPreviewBridge?.trackVenom(player, prepared); }
                         catch { /* Preview discovery must not interrupt provider playback. */ }
                         return player;

@@ -424,6 +424,13 @@ checklist; `npm run test:visual-design` enforces much of it.
   seeds Allplay's saved one, disables WebRTC, and lowers a step on stalls. A quality the viewer
   pressed (Venom's own key, `movieExtension_qualityChosen`, `qualityChosen` in WatchPreferences) is
   never changed, and an automatic choice is never saved as one.
+- Venom names audio tracks from `source.audio.names` by position only, and some balancer lists
+  belong to another release («Мстители», KP 263531). `alignAudioNamesWithTracks` reads the track
+  languages from `source.hls` (`LANGUAGE`, else the `NAME` prefix) and, only on two or more
+  conflicts with at least two tagged languages, rewrites that same array in place (Venom and its
+  renewals keep the reference); a list built before the manifest arrived is rebuilt. Lengths must
+  match. DASH `lang` values are positional (`ru0`…) and say nothing. Allplay (Alloha) serves one
+  stream per dub, so a mislabelled dub there cannot be corrected.
 - Provider embedding: the iframe itself is `no-referrer`, so the DOM never sees the extension
   URL, and `provider-embed-rules.json` restores the source site's Referer only for
   extension-initiated subframes marked `movieExtensionSite`. Without it providers substitute
